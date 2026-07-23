@@ -1,0 +1,56 @@
+{
+  "cv": {
+    "title": "string",
+    "targetRole": "string",
+    "personalSummary": "string",
+    "coreSkills": [
+      {
+        "name": "string",
+        "evidence": "string"
+      }
+    ],
+    "qualifications": [
+      {
+        "qualificationName": "string",
+        "issuingBody": "string",
+        "status": "string",
+        "grade": "string",
+        "dateAchieved": "string",
+        "expectedCompletion": "string"
+      }
+    ],
+    "workHistory": [
+      {
+        "jobTitle": "string",
+        "employer": "string",
+        "startDate": "string",
+        "endDate": "string",
+        "responsibilities": [
+          "string"
+        ],
+        "tailoredDescription": "string"
+      }
+    ]
+  },
+  "coverLetter": {
+    "title": "string",
+    "jobTitle": "string",
+    "companyName": "string",
+    "greeting": "string",
+    "openingParagraph": "string",
+    "bodyParagraphs": [
+      "string"
+    ],
+    "closingParagraph": "string",
+    "signOff": "string"
+  },
+  "generationNotes": {
+    "assumptionsMade": [
+      "string"
+    ],
+    "missingInformation": [
+      "string"
+    ],
+    "tailoringSummary": "string"
+  }
+}

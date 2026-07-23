@@ -1,0 +1,34 @@
+spring:
+  application:
+    name: cv-cover-letter-service
+
+server:
+  port: ${SERVER_PORT:8091}
+
+llm:
+  task-type: ${LLM_TASK_TYPE:CV_COVER_LETTER_GENERATION}
+  language: ${LLM_LANGUAGE:UK English}
+  temperature: ${LLM_TEMPERATURE:0.3}
+  max-tokens: ${LLM_MAX_TOKENS:3000}
+
+services:
+  llm-gateway:
+    base-url: ${LLM_GATEWAY_BASE_URL:http://localhost:8090}
+  document-store-service:
+    base-url: ${DOCUMENT_STORE_SERVICE_BASE_URL:http://localhost:8089}
+  application-tracker-service:
+    base-url: ${APPLICATION_TRACKER_SERVICE_BASE_URL:http://localhost:8088}
+  payment-service:
+    base-url: ${PAYMENT_SERVICE_BASE_URL:http://localhost:8099}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{correlationId}] [%X{serviceName}] [%thread] %logger{36} - %msg%n"
+  level:
+    com.jobseekercopilot: ${APP_LOG_LEVEL:INFO}
