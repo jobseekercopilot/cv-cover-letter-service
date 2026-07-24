@@ -5,6 +5,10 @@ spring:
 server:
   port: ${SERVER_PORT:8091}
 
+cv-cover-letter:
+  security:
+    gateway-token: ${CV_COVER_LETTER_GATEWAY_TOKEN:}
+
 llm:
   task-type: ${LLM_TASK_TYPE:CV_COVER_LETTER_GENERATION}
   language: ${LLM_LANGUAGE:UK English}

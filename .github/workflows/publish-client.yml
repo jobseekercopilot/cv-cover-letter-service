@@ -70,7 +70,7 @@ jobs:
       - name: Reject an existing immutable coordinate
         env:
           PACKAGE_URL: >-
-            https://maven.pkg.github.com/jobseekercopilot/cv-cover-letter-service/com/jobseekercopilot/clients/cv-cover-letter-service-client/1.0.0-rev.68b4cf9d3f23/cv-cover-letter-service-client-1.0.0-rev.68b4cf9d3f23.pom
+            https://maven.pkg.github.com/jobseekercopilot/cv-cover-letter-service/com/jobseekercopilot/clients/cv-cover-letter-service-client/2.0.0-rev.87fc2393309a/cv-cover-letter-service-client-2.0.0-rev.87fc2393309a.pom
         run: |
           response_file="${{ runner.temp }}/package-response"
           status="$(

@@ -19,10 +19,18 @@ done
 
 jq -e '
     (.openapi | type == "string" and startswith("3.")) and
-    (.info.version == "1.0.0") and
+    (.info.version == "2.0.0") and
     (.paths["/api/v1/cv-cover-letter/generate"].post.operationId == "generate") and
     (.paths["/api/v1/cv-cover-letter/generate"].post.parameters
-        | any(.name == "X-User-Id" and .in == "header")) and
+        | any(.name == "X-Document-Owner" and .in == "header" and
+              .required == true and .schema.type == "string")) and
+    (.paths["/api/v1/cv-cover-letter/generate"].post.parameters
+        | all(.name != "X-User-Id")) and
+    (.paths["/api/v1/cv-cover-letter/generate"].post.security
+        | any(has("serviceToken"))) and
+    (.components.securitySchemes.serviceToken.type == "apiKey") and
+    (.components.securitySchemes.serviceToken.in == "header") and
+    (.components.securitySchemes.serviceToken.name == "X-Service-Token") and
     (.paths["/api/v1/cv-cover-letter/generate"].post.requestBody.required == true) and
     (.paths["/api/v1/cv-cover-letter/generate"].post.requestBody.content["application/json"].schema["$ref"]
         == "#/components/schemas/GenerateRequest") and
@@ -39,4 +47,4 @@ jq -e '
           index("PART_TIME_UNDER_16") != null and index("FLEXIBLE") != null)
 ' "$contract" >/dev/null
 
-echo "API contract policy: CV and Cover Letter OpenAPI source is present, intact and compatible"
+echo "API contract policy: authenticated CV and Cover Letter OpenAPI source is present and intact"

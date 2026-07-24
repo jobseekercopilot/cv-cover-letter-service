@@ -8,7 +8,7 @@ import json
 import unittest
 from pathlib import Path
 
-from openapi_breaking import breaking_changes
+from openapi_breaking import breaking_changes, major_version_allows_breaking
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -54,6 +54,15 @@ class OpenApiBreakingTests(unittest.TestCase):
             ]["targetWeeklyHours"]["enum"].pop()
         )
         self.assertTrue(any("enum values were removed" in finding for finding in findings))
+
+    def test_breaking_change_requires_new_major_version(self) -> None:
+        same_major = copy.deepcopy(self.contract)
+        same_major["info"]["version"] = "2.1.0"
+        new_major = copy.deepcopy(self.contract)
+        new_major["info"]["version"] = "3.0.0"
+
+        self.assertFalse(major_version_allows_breaking(self.contract, same_major))
+        self.assertTrue(major_version_allows_breaking(self.contract, new_major))
 
 
 if __name__ == "__main__":

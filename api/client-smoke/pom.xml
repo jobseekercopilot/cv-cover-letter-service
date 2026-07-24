@@ -17,7 +17,7 @@
         <dependency>
             <groupId>com.jobseekercopilot.clients</groupId>
             <artifactId>cv-cover-letter-service-client</artifactId>
-            <version>1.0.0-rev.68b4cf9d3f23</version>
+            <version>2.0.0-rev.87fc2393309a</version>
         </dependency>
     </dependencies>
 

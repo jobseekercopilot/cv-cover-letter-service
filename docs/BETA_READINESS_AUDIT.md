@@ -37,11 +37,17 @@ the underlying document database.
   advisory database: 46 dependencies, 10 vulnerable dependencies, 142
   vulnerability matches, including 18 Critical and 39 High matches. Results
   require reachability/false-positive triage; the report was not committed.
+- The CVCL-02 producer slice authenticates the Document Generation Gateway
+  with a dedicated runtime credential, accepts exactly one trusted owner
+  context, overwrites caller-controlled body identity before domain work, and
+  publishes the breaking identity contract as OpenAPI `2.0.0`.
 
 ## Confirmed blockers
 
-1. The service trusts a caller-supplied `X-User-Id`, falling back to
-   `request.userProfile.userId`; identity is not authenticated.
+1. Gateway-to-service identity is now authenticated at this producer boundary.
+   Beta still requires the Gateway consumer rollout, runtime secret wiring,
+   outbound Payment/Document Store/Application Tracker identities, and
+   fleet-level negative-path evidence.
 2. The entire enriched profile, including contact data, is serialised for the
    model without a documented allowlist or minimisation decision.
 3. Job and profile content are concatenated with instructions, so untrusted
@@ -67,8 +73,8 @@ the underlying document database.
 13. Current tests do not cover prompt-injection corpora, unsupported claims,
     malformed/oversized structured output, duplicate requests, partial
     downstream failure, user approval, or privacy minimisation.
-14. Document Generation Gateway still needs the same reproducible contract
-    approach under DOCGEN-02/DOCGEN-03.
+14. Document Generation Gateway must consume this authenticated `2.0.0`
+    contract and provide its own dedicated credential under DOCGEN-03/GW-01.
 15. Current Spring, Tomcat, Jackson, logging, Swagger UI, and generated-client
     dependency findings include untriaged Critical/High advisories.
 

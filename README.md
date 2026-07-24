@@ -24,6 +24,18 @@ are recorded in [`api/client-release.json`](api/client-release.json). Generated
 client source and packages are disposable build output and are never committed.
 See [`api/README.md`](api/README.md) for the release and compatibility policy.
 
+## Gateway identity boundary
+
+The generation endpoint accepts calls only from the Document Generation
+Gateway. Configure `CV_COVER_LETTER_GATEWAY_TOKEN` with a dedicated secret of
+at least 32 bytes. The Gateway must send that credential once in
+`X-Service-Token` and its authenticated user's stable subject once in
+`X-Document-Owner`. Caller-controlled identity in the request body or the
+obsolete `X-User-Id` header never selects the owner.
+
+See [`docs/AUTHORIZATION_BOUNDARY.md`](docs/AUTHORIZATION_BOUNDARY.md) for the
+failure contract, rotation guidance and remaining downstream boundaries.
+
 The LLM Gateway, Document Store and Application Tracker clients are generated
 during Maven `generate-sources` from reviewed, checksum-protected producer
 contracts under `src/main/openapi`. The raw Payment reserve/commit/release
