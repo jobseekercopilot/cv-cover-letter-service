@@ -4,10 +4,10 @@ Domain service that builds the CV/cover-letter prompt, requests generation from
 `llm-gateway`, validates and renders the response, stores both documents, and
 creates an application record.
 
-This migration baseline is **not beta-ready**. The current build depends on
-untracked `systemPath` client JARs, generated claims are not traceable to source
-facts, the prompt is vulnerable to instructions in untrusted content, and
-documents are persisted before user approval. See
+This service is **not beta-ready**. Its build is reproducible from committed
+source, but generated claims are not traceable to source facts, the prompt is
+vulnerable to instructions in untrusted content, and documents are persisted
+before user approval. See
 [`docs/BETA_READINESS_AUDIT.md`](docs/BETA_READINESS_AUDIT.md).
 
 ## Technology
@@ -19,18 +19,29 @@ documents are persisted before user approval. See
 ## API contract
 
 [`contracts/openapi.json`](contracts/openapi.json) is the migration-time
-OpenAPI snapshot. Contract publication and reproducible client generation are
-tracked as beta blockers.
+OpenAPI snapshot. Publishing a producer-owned contract and proving downstream
+compatibility remain tracked beta-readiness work.
+
+The LLM Gateway, Document Store and Application Tracker clients are generated
+during Maven `generate-sources` from reviewed, checksum-protected producer
+contracts under `src/main/openapi`. The raw Payment reserve/commit/release
+adapter is checked against its pinned producer contract. Generated sources and
+binaries are build outputs and are not committed. See
+[`docs/CONTRACT_GOVERNANCE.md`](docs/CONTRACT_GOVERNANCE.md).
 
 ## Build
 
 ```bash
-mvn -B clean verify
+./scripts/test-contract-policy.sh
+./scripts/verify-contracts.sh
+mvn -B --no-transfer-progress clean verify
+docker build --tag local/cv-cover-letter-service .
 ```
 
-The command currently fails in a clean clone because generated service clients
-are referenced from an untracked local `libs/` directory. Compiled clients must
-not be committed as the fix.
+These commands are the clean-clone verification contract. They require no
+sibling repository, local `libs/` directory, generated JAR or preinstalled
+Job Seeker Copilot artifact. Tests use mocks and local application endpoints;
+they make no live or paid model request.
 
 ## Safe local use
 
