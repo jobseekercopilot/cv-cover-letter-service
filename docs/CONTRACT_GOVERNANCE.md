@@ -21,7 +21,8 @@ broad duplicated profile/job body with bounded provenance-aware input
 snapshots. Consumers must authenticate the user, bind the resulting stable
 subject to the owner header, and assemble only the documented version `1.0`
 snapshot. The immutable Java coordinate and source revision are recorded in
-`api/client-release.json`.
+`api/client-release.json`:
+`com.jobseekercopilot.clients:cv-cover-letter-service-client:3.0.0-rev.3fed226ad104`.
 
 ## Current pins
 
