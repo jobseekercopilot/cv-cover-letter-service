@@ -26,11 +26,13 @@ the underlying document database.
 - The migration-time contract is `contracts/openapi.json`.
 - Gitleaks and targeted personal-data checks passed on the source snapshot.
 - No live model request was made.
-- A clean `mvn -B clean verify` fails before compilation because four
-  `systemPath` client JARs are absent. Fourteen test methods exist in source,
-  but they were not executed in the clean migration candidate.
-- The candidate container build fails at `COPY libs ./libs`; no image was
-  produced.
+- The DOCGEN-02 CV/Cover Letter slice replaces three imported `systemPath`
+  clients with deterministic source generation from exact
+  revision/checksum-pinned producer contracts. It removes an unused Payment
+  client JAR and checks the handwritten Payment adapter against the pinned
+  Payment producer contract. Contract policy tests, Maven verification and the
+  source-only container build run in CI without sibling repositories, local
+  `libs/` or preinstalled Job Seeker Copilot artifacts.
 - OWASP Dependency-Check 12.1.8 completed against the cached 2026-07-18
   advisory database: 46 dependencies, 10 vulnerable dependencies, 142
   vulnerability matches, including 18 Critical and 39 High matches. Results
@@ -65,8 +67,8 @@ the underlying document database.
 13. Current tests do not cover prompt-injection corpora, unsupported claims,
     malformed/oversized structured output, duplicate requests, partial
     downstream failure, user approval, or privacy minimisation.
-14. The build depends on untracked LLM, document-store,
-    application-tracker, and payment client JARs.
+14. Document Generation Gateway still needs the same reproducible contract
+    approach under DOCGEN-02/DOCGEN-03.
 15. Current Spring, Tomcat, Jackson, logging, Swagger UI, and generated-client
     dependency findings include untriaged Critical/High advisories.
 

@@ -21,6 +21,7 @@
         <java.version>17</java.version>
         <lombok.version>1.18.32</lombok.version>
         <springdoc.version>2.3.0</springdoc.version>
+        <openapi-generator.version>7.5.0</openapi-generator.version>
     </properties>
 
     <dependencies>
@@ -31,34 +32,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.jobseekercopilot.generated</groupId>
-            <artifactId>llm-gateway-client</artifactId>
-            <version>1.0.0</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/libs/llm-gateway-client-1.0.0.jar</systemPath>
-        </dependency>
-        <dependency>
-            <groupId>com.jobseekercopilot.generated</groupId>
-            <artifactId>document-store-service-client</artifactId>
-            <version>1.0.0</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/libs/document-store-service-client-1.0.0.jar</systemPath>
-        </dependency>
-        <dependency>
-            <groupId>com.jobseekercopilot.generated</groupId>
-            <artifactId>application-tracker-service-client</artifactId>
-            <version>1.0.0</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/libs/application-tracker-service-client-1.0.0.jar</systemPath>
-        </dependency>
-        <dependency>
-            <groupId>com.jobseekercopilot.generated</groupId>
-            <artifactId>payment-service-client</artifactId>
-            <version>1.0.0</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/libs/payment-service-client-1.0.0.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>org.openapitools</groupId>
@@ -89,6 +62,69 @@
     <build>
         <plugins>
             <plugin>
+                <groupId>org.openapitools</groupId>
+                <artifactId>openapi-generator-maven-plugin</artifactId>
+                <version>${openapi-generator.version}</version>
+                <executions>
+                    <execution>
+                        <id>generate-llm-gateway-client</id>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <inputSpec>${project.basedir}/src/main/openapi/llm-gateway.json</inputSpec>
+                            <output>${project.build.directory}/generated-sources/openapi/llm-gateway</output>
+                            <apiPackage>com.jobseekercopilot.generated.llmgateway.api</apiPackage>
+                            <modelPackage>com.jobseekercopilot.generated.llmgateway.model</modelPackage>
+                            <invokerPackage>com.jobseekercopilot.generated.llmgateway.client</invokerPackage>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>generate-document-store-client</id>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <inputSpec>${project.basedir}/src/main/openapi/document-store-service.json</inputSpec>
+                            <output>${project.build.directory}/generated-sources/openapi/document-store-service</output>
+                            <apiPackage>com.jobseekercopilot.generated.documentstoreservice.api</apiPackage>
+                            <modelPackage>com.jobseekercopilot.generated.documentstoreservice.model</modelPackage>
+                            <invokerPackage>com.jobseekercopilot.generated.documentstoreservice.client</invokerPackage>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>generate-application-tracker-client</id>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <inputSpec>${project.basedir}/src/main/openapi/application-tracker-service.json</inputSpec>
+                            <output>${project.build.directory}/generated-sources/openapi/application-tracker-service</output>
+                            <apiPackage>com.jobseekercopilot.generated.applicationtrackerservice.api</apiPackage>
+                            <modelPackage>com.jobseekercopilot.generated.applicationtrackerservice.model</modelPackage>
+                            <invokerPackage>com.jobseekercopilot.generated.applicationtrackerservice.client</invokerPackage>
+                        </configuration>
+                    </execution>
+                </executions>
+                <configuration>
+                    <generatorName>java</generatorName>
+                    <library>resttemplate</library>
+                    <generateApiTests>false</generateApiTests>
+                    <generateModelTests>false</generateModelTests>
+                    <generateApiDocumentation>false</generateApiDocumentation>
+                    <generateModelDocumentation>false</generateModelDocumentation>
+                    <skipValidateSpec>false</skipValidateSpec>
+                    <configOptions>
+                        <annotationLibrary>none</annotationLibrary>
+                        <dateLibrary>java8</dateLibrary>
+                        <hideGenerationTimestamp>true</hideGenerationTimestamp>
+                        <openApiNullable>false</openApiNullable>
+                        <useJakartaEe>true</useJakartaEe>
+                        <useRuntimeException>true</useRuntimeException>
+                    </configOptions>
+                </configuration>
+            </plugin>
+            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
@@ -104,9 +140,6 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
-                <configuration>
-                    <includeSystemScope>true</includeSystemScope>
-                </configuration>
             </plugin>
         </plugins>
     </build>
