@@ -12,6 +12,18 @@ from pathlib import Path
 HTTP_METHODS = {"get", "put", "post", "delete", "options", "head", "patch", "trace"}
 
 
+def _major_version(document: dict) -> int:
+    version = document.get("info", {}).get("version", "")
+    try:
+        return int(version.split(".", maxsplit=1)[0])
+    except (AttributeError, ValueError) as error:
+        raise ValueError(f"invalid OpenAPI info.version: {version!r}") from error
+
+
+def major_version_allows_breaking(base: dict, current: dict) -> bool:
+    return _major_version(current) > _major_version(base)
+
+
 def _enum_values(schema: dict) -> set:
     values = schema.get("enum", [])
     return set(values) if isinstance(values, list) else set()
@@ -144,6 +156,17 @@ def main() -> int:
 
     findings = breaking_changes(base, current)
     if findings:
+        try:
+            major_release = major_version_allows_breaking(base, current)
+        except ValueError as error:
+            print(f"OpenAPI compatibility check failed: {error}", file=sys.stderr)
+            return 1
+        if major_release:
+            print(
+                "OpenAPI compatibility check accepted reviewed breaking changes "
+                "under a new major version"
+            )
+            return 0
         print("OpenAPI compatibility check failed:", file=sys.stderr)
         for finding in findings:
             print(f"- {finding}", file=sys.stderr)

@@ -18,7 +18,9 @@ The public producer contract is now `2.0.0`. Generation requires the
 `serviceToken` API-key scheme in `X-Service-Token` and one required
 `X-Document-Owner` header. This deliberate major-version change removes
 caller-controlled `X-User-Id`; consumers must authenticate the user themselves
-and bind the resulting stable subject to the owner header.
+and bind the resulting stable subject to the owner header. Its immutable Java
+coordinate is
+`com.jobseekercopilot.clients:cv-cover-letter-service-client:2.0.0-rev.87fc2393309a`.
 
 ## Current pins
 
