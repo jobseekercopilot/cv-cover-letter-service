@@ -7,6 +7,13 @@ adapter, so its current reserve/commit/release boundary is pinned and checked
 without generating an unused fourth client. No compiled client JAR is committed
 or loaded from `libs/`.
 
+The service also owns `contracts/openapi.json` as its public producer contract.
+Its Java client is generated independently under `api/client`, with immutable
+release metadata, source-revision and checksum provenance, byte-for-byte
+generation/package checks, a conservative breaking-change gate and a fresh
+authenticated smoke consumer. Publication is restricted to `develop` and
+refuses to overwrite an existing coordinate.
+
 ## Current pins
 
 | Producer | Revision | Contract | Version | SHA-256 | Use |
