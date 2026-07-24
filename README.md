@@ -24,6 +24,13 @@ are recorded in [`api/client-release.json`](api/client-release.json). Generated
 client source and packages are disposable build output and are never committed.
 See [`api/README.md`](api/README.md) for the release and compatibility policy.
 
+Generation accepts only the versioned, bounded profile and canonical-job
+snapshots documented in
+[`docs/GENERATION_INPUT_CONTRACT.md`](docs/GENERATION_INPUT_CONTRACT.md).
+Unknown fields and invalid provenance fail closed; deterministic warnings
+report missing, normalised, duplicate, or conflicting evidence. Contact
+details remain render-only and are not sent to the model.
+
 ## Gateway identity boundary
 
 The generation endpoint accepts calls only from the Document Generation

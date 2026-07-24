@@ -32,7 +32,7 @@ public class CvCoverLetterController {
 
     @PostMapping("/generate")
     @Operation(
-            summary = "Generate and store a tailored CV and cover letter",
+            summary = "Generate from bounded canonical job and profile snapshots",
             parameters = @Parameter(
                     name = "X-Document-Owner",
                     in = ParameterIn.HEADER,
@@ -52,7 +52,6 @@ public class CvCoverLetterController {
             String documentOwner,
             @Valid @RequestBody GenerateRequest request
     ) {
-        request.getUserProfile().setUserId(documentOwner);
-        return ResponseEntity.ok(cvCoverLetterService.generate(request));
+        return ResponseEntity.ok(cvCoverLetterService.generate(documentOwner, request));
     }
 }

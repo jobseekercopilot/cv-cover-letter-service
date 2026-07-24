@@ -15,6 +15,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -37,9 +39,10 @@ class CvCoverLetterControllerIntegrationTest {
 
     @Test
     void validRequestReturnsGeneratedResponse() throws Exception {
-        when(cvCoverLetterService.generate(any())).thenReturn(GenerateCvCoverLetterResponse.builder()
+        when(cvCoverLetterService.generate(anyString(), any())).thenReturn(GenerateCvCoverLetterResponse.builder()
                 .applicationId("application-1").cvDocumentId("cv-1")
-                .coverLetterDocumentId("letter-1").cvContent("CV content").build());
+                .coverLetterDocumentId("letter-1").cvContent("CV content")
+                .inputSchemaVersion("1.0").build());
 
         mockMvc.perform(post("/api/v1/cv-cover-letter/generate")
                         .header("X-Service-Token", SERVICE_TOKEN)
@@ -52,10 +55,13 @@ class CvCoverLetterControllerIntegrationTest {
                 .andExpect(jsonPath("$.cvDocumentId").value("cv-1"));
 
         ArgumentCaptor<GenerateRequest> request = ArgumentCaptor.forClass(GenerateRequest.class);
-        verify(cvCoverLetterService).generate(request.capture());
+        verify(cvCoverLetterService).generate(eq("owner-123"), request.capture());
         org.junit.jupiter.api.Assertions.assertEquals(
-                "owner-123",
-                request.getValue().getUserProfile().getUserId());
+                "1.0",
+                request.getValue().getInputSchemaVersion());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "job-456",
+                request.getValue().getJob().getProvenance().getResourceId());
     }
 
     @Test
@@ -64,9 +70,59 @@ class CvCoverLetterControllerIntegrationTest {
                         .header("X-Service-Token", SERVICE_TOKEN)
                         .header("X-Document-Owner", "owner-123")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"userProfile\":{},\"job\":{}}"))
+                        .content("{\"inputSchemaVersion\":\"1.0\",\"profile\":{},\"job\":{}}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400));
+    }
+
+    @Test
+    void legacyBroadOrUnknownInputFailsClosed() throws Exception {
+        mockMvc.perform(post("/api/v1/cv-cover-letter/generate")
+                        .header("X-Service-Token", SERVICE_TOKEN)
+                        .header("X-Document-Owner", "owner-123")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"userProfile":{"userId":"body-owner"},"job":{
+                                "id":"job-456","title":"Developer","company":"Example",
+                                "description":"Build services"}}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+
+        mockMvc.perform(post("/api/v1/cv-cover-letter/generate")
+                        .header("X-Service-Token", SERVICE_TOKEN)
+                        .header("X-Document-Owner", "owner-123")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validRequest().replace(
+                                "\"description\":\"Build useful services\"",
+                                "\"description\":\"Build useful services\",\"matchScore\":0.99")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+
+        verifyNoInteractions(cvCoverLetterService);
+    }
+
+    @Test
+    void invalidDateAndMaximumSizeFailBeforeGeneration() throws Exception {
+        mockMvc.perform(post("/api/v1/cv-cover-letter/generate")
+                        .header("X-Service-Token", SERVICE_TOKEN)
+                        .header("X-Document-Owner", "owner-123")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validRequest().replace("2026-07-20", "20 July 2026")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+
+        mockMvc.perform(post("/api/v1/cv-cover-letter/generate")
+                        .header("X-Service-Token", SERVICE_TOKEN)
+                        .header("X-Document-Owner", "owner-123")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validRequest().replace(
+                                "Build useful services",
+                                "x".repeat(12001))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+
+        verifyNoInteractions(cvCoverLetterService);
     }
 
     @Test
@@ -119,8 +175,30 @@ class CvCoverLetterControllerIntegrationTest {
 
     private String validRequest() {
         return """
-                {"userProfile":{"userId":"body-selected-victim"},"job":{"id":"job-456",
-                "title":"Java Developer","company":"Example Ltd","description":"Build useful services"}}
+                {
+                  "inputSchemaVersion":"1.0",
+                  "profile":{
+                    "provenance":{"owner":"USER_PROFILE_SERVICE","resourceId":"profile-123",
+                      "version":"profile-v7","capturedAt":"2026-07-24T12:00:00Z"},
+                    "contact":{
+                      "provenance":{"owner":"AUTHENTICATION_SERVICE","resourceId":"account-123",
+                        "version":"account-v3","capturedAt":"2026-07-24T12:00:00Z"},
+                      "fullName":"Alex Candidate","email":"alex@example.com"
+                    },
+                    "location":"London",
+                    "skills":["Java"],
+                    "targetRoles":["Backend Developer"],
+                    "qualifications":[],
+                    "employmentHistory":[]
+                  },
+                  "job":{
+                    "provenance":{"owner":"JOB_SERVICE","resourceId":"job-456",
+                      "version":"job-v12","capturedAt":"2026-07-24T12:00:00Z"},
+                    "title":"Java Developer","company":"Example Ltd",
+                    "location":"Manchester","employmentType":"Permanent",
+                    "postedDate":"2026-07-20","description":"Build useful services"
+                  }
+                }
                 """;
     }
 }

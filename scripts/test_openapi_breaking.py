@@ -39,27 +39,27 @@ class OpenApiBreakingTests(unittest.TestCase):
 
     def test_required_property_addition_is_rejected(self) -> None:
         findings = self.findings_after(
-            lambda current: current["components"]["schemas"]["UserProfile"]
+            lambda current: current["components"]["schemas"]["ProfileInputSnapshot"]
             .setdefault("required", [])
-            .append("skills")
+            .append("location")
         )
         self.assertTrue(
-            any("optional property became required: skills" in finding for finding in findings)
+            any("optional property became required: location" in finding for finding in findings)
         )
 
     def test_enum_narrowing_is_rejected(self) -> None:
         findings = self.findings_after(
-            lambda current: current["components"]["schemas"]["Aspirations"][
+            lambda current: current["components"]["schemas"]["SnapshotProvenance"][
                 "properties"
-            ]["targetWeeklyHours"]["enum"].pop()
+            ]["owner"]["enum"].pop()
         )
         self.assertTrue(any("enum values were removed" in finding for finding in findings))
 
     def test_breaking_change_requires_new_major_version(self) -> None:
         same_major = copy.deepcopy(self.contract)
-        same_major["info"]["version"] = "2.1.0"
+        same_major["info"]["version"] = "3.1.0"
         new_major = copy.deepcopy(self.contract)
-        new_major["info"]["version"] = "3.0.0"
+        new_major["info"]["version"] = "4.0.0"
 
         self.assertFalse(major_version_allows_breaking(self.contract, same_major))
         self.assertTrue(major_version_allows_breaking(self.contract, new_major))
