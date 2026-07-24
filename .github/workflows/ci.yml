@@ -15,6 +15,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Test producer API contract policy
+        run: ./scripts/test-api-contract-policy.sh
+      - name: Verify producer API contract
+        run: ./scripts/verify-api-contract.sh
       - name: Test pinned contract policy
         run: ./scripts/test-contract-policy.sh
       - name: Verify pinned producer contracts
@@ -27,6 +33,12 @@ jobs:
       - name: Reject forbidden repository artefacts
         run: |
           test -z "$(find . -path './.git' -prune -o \( -name target -o -name libs -o -name '*.jar' -o -name '*.class' \) -print)"
+      - name: Verify producer-owned Java client
+        run: |
+          python3 scripts/verify_client_release.py
+          python3 scripts/test_openapi_breaking.py
+          ./scripts/test-client-generation.sh
+          mvn -B --no-transfer-progress -f api/client/pom.xml clean verify
       - name: Build and test
         run: mvn -B --no-transfer-progress clean verify
       - name: Build source-only container

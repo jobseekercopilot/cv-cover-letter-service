@@ -19,5 +19,6 @@ test-results/
 playwright-report/
 .idea/
 .vscode/
+__pycache__/
 *.iml
 .DS_Store
