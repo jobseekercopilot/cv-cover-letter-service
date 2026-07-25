@@ -96,6 +96,6 @@ If injection or data disclosure is suspected:
 Physical trusted/untrusted separation remains active when selecting an approved
 rollback bundle. Older bundles have fewer explicit safety instructions and
 their exemplar output is compiled into a closed structural schema, but local
-parser `2.0.0` response, text, array and active-content limits still apply.
+parser `3.0.0` response, text, array and active-content limits still apply.
 Rollback is an emergency containment action, not evidence that the newer
 evaluation policy passed.

@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedApplicationDocuments;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidLlmResponseException;
+import com.jobseekercopilot.cvcoverletter.model.ClaimEvidenceCatalog;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
@@ -18,7 +19,7 @@ import org.springframework.web.util.HtmlUtils;
 @Component
 public class LlmResponseParser {
 
-    static final String PARSER_VERSION = "2.0.0";
+    static final String PARSER_VERSION = "3.0.0";
     static final int MAX_RAW_RESPONSE_CHARACTERS = 100_000;
     static final int MAX_FALLBACK_TEXT_CHARACTERS = 4_000;
     static final int MAX_FALLBACK_ARRAY_ITEMS = 40;
@@ -34,14 +35,27 @@ public class LlmResponseParser {
             Pattern.compile("[\\p{Cc}&&[^\\r\\n\\t]]");
 
     private final ObjectMapper objectMapper;
+    private final ClaimEvidenceValidator claimEvidenceValidator;
 
-    public LlmResponseParser(ObjectMapper objectMapper) {
+    public LlmResponseParser(
+            ObjectMapper objectMapper,
+            ClaimEvidenceValidator claimEvidenceValidator
+    ) {
         this.objectMapper = objectMapper.copy()
                 .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
                 .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        this.claimEvidenceValidator = claimEvidenceValidator;
     }
 
     public GeneratedApplicationDocuments parse(String rawResponse, JsonNode schema) {
+        return parse(rawResponse, schema, null);
+    }
+
+    public GeneratedApplicationDocuments parse(
+            String rawResponse,
+            JsonNode schema,
+            ClaimEvidenceCatalog evidenceCatalog
+    ) {
         if (rawResponse == null || rawResponse.isBlank()) {
             throw new InvalidLlmResponseException("LLM gateway returned an empty response");
         }
@@ -59,7 +73,13 @@ public class LlmResponseParser {
             }
             validateSchema(output, schema, "$");
             validatePlainText(output, "$");
-            return objectMapper.treeToValue(output, GeneratedApplicationDocuments.class);
+            GeneratedApplicationDocuments documents =
+                    objectMapper.treeToValue(output, GeneratedApplicationDocuments.class);
+            if (evidenceCatalog != null
+                    && schema.path("properties").path("claims").isObject()) {
+                claimEvidenceValidator.validate(output, documents, evidenceCatalog);
+            }
+            return documents;
         } catch (JsonProcessingException exception) {
             // Parser exceptions can contain model-output fragments, so do not retain the cause.
             throw new InvalidLlmResponseException("LLM response was not valid JSON");

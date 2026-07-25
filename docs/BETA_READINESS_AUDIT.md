@@ -69,6 +69,14 @@ the underlying document database.
   the DOCGEN-10 gateway audit contract, validates its actual model and
   deployment/policy evidence before persistence, records the exact model in
   the Payment commit and logs the complete non-payload version set.
+- The DOCGEN-08 foundation releases prompt bundle `1.3.0` and schema `3.0.0`.
+  It sends only a server-built approved-evidence catalogue to the model,
+  requires explicit supported, reworded, confirmation-required or rejected
+  dispositions, and validates complete final-path coverage before rendering.
+  Unknown evidence, duplicated or missing paths, review-only material in final
+  content, mismatched atomic facts, uncited metrics and unsupported
+  tool/qualification/motivation/availability/salary/right-to-work claims fail
+  before document, application or billing-commit side effects.
 
 ## Confirmed blockers
 
@@ -92,10 +100,11 @@ the underlying document database.
    prompt/schema/parser/model/deployment contract metadata are implemented.
    Durable attachment of the complete generation provenance to immutable
    document versions remains dependent on DOC-06.
-7. Generated claims have no evidence references or disposition such as
-   supported, reworded, confirmation required, or rejected.
-8. Prompt rules allow reasonable professional inferences, which can become
-   unsupported claims.
+7. Generated claims now carry approved evidence references and explicit
+   dispositions, and unsupported material fails closed. Durable attachment of
+   this provenance to immutable stored documents remains dependent on DOC-06.
+8. Unsupported professional inference is forbidden. The controlled, audited
+   user correction and approval path remains dependent on DOCGEN-16.
 9. Documents and an application are persisted before any user review or
    approval.
 10. The save/export/application/credit sequence is non-atomic. Retries can
@@ -107,11 +116,12 @@ the underlying document database.
     actual usage. The pre-reservation token estimate remains approximate, and
     customer pricing, AI Credit valuation and exhaustion policy remain Payment
     workstream dependencies.
-13. Current tests cover the prompt-injection corpus and malformed, truncated,
+13. Current tests cover the prompt-injection and hallucination corpora plus
+    malformed, truncated,
     fenced, trailing, duplicate, missing, null, unknown, wrong-type, oversized,
     active-content, filtered and schema-mismatched output handling. They do not
-    yet cover unsupported claims, duplicate requests, every partial downstream
-    failure, user approval or the complete privacy evidence required for beta.
+    yet cover duplicate requests, every partial downstream failure, user
+    approval or the complete privacy evidence required for beta.
 14. Document Generation Gateway must consume the bounded authenticated `3.1.0`
     contract and provide its own dedicated credential under DOCGEN-03/GW-01.
 15. Current Spring, Tomcat, Jackson, logging, Swagger UI, and generated-client

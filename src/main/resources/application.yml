@@ -16,7 +16,7 @@ llm:
   max-tokens: ${LLM_MAX_TOKENS:3000}
 
 prompt:
-  selected-release-id: ${PROMPT_BUNDLE_RELEASE:cv-cover-letter-1.2.0}
+  selected-release-id: ${PROMPT_BUNDLE_RELEASE:cv-cover-letter-1.3.0}
 
 services:
   llm-gateway:

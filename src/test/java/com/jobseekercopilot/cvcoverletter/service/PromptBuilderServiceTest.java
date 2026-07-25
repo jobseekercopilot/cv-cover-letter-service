@@ -22,8 +22,9 @@ class PromptBuilderServiceTest {
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBuilderService service = new PromptBuilderService(
                 objectMapper,
-                registry(objectMapper, "cv-cover-letter-1.2.0"),
-                properties);
+                registry(objectMapper, "cv-cover-letter-1.3.0"),
+                properties,
+                new ClaimEvidenceCatalogFactory());
         GenerationInputNormalizer normalizer = new GenerationInputNormalizer(
                 Clock.fixed(Instant.parse("2026-07-24T13:00:00Z"), ZoneOffset.UTC));
 
@@ -32,9 +33,9 @@ class PromptBuilderServiceTest {
 
         assertTrue(result.getTrustedInstructions().contains("TRUTHFULNESS RULES"));
         assertTrue(result.getTrustedInstructions().contains("UK English"));
-        assertTrue(result.getTrustedInstructions().contains("aim for 5 to 7 concise paragraphs"));
-        assertTrue(result.getTrustedInstructions().contains("role and company fit"));
-        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.2.0"));
+        assertTrue(result.getTrustedInstructions().contains("Aim for 5 to 7 concise paragraphs"));
+        assertTrue(result.getTrustedInstructions().contains("specific to the job"));
+        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.3.0"));
         assertTrue(result.getTrustedInstructions().contains("UNTRUSTED CONTENT RULES"));
         assertTrue(result.getTrustedInstructions().contains(
                 "[CANONICAL JOB FACTS SUPPLIED THROUGH THE UNTRUSTED INPUT CHANNEL]"));
@@ -43,6 +44,8 @@ class PromptBuilderServiceTest {
         assertTrue(result.getUntrustedInput().contains("UNTRUSTED_DATA_ONLY"));
         assertTrue(result.getUntrustedInput().contains("Build useful and reliable services."));
         assertTrue(result.getUntrustedInput().contains("Built and maintained Java services."));
+        assertTrue(result.getUntrustedInput().contains("\"evidenceId\""));
+        assertTrue(result.getUntrustedInput().contains("PROFILE.SKILL.1"));
         assertTrue(result.getOutputSchema().has("properties"));
         assertTrue(result.getOutputSchema().toString().contains("\"coverLetter\""));
         assertTrue(result.getOutputSchema().path("additionalProperties").isBoolean());
@@ -50,7 +53,9 @@ class PromptBuilderServiceTest {
         assertTrue(result.getOutputSchema().at(
                 "/properties/coverLetter/properties/bodyParagraphs/maxItems").asInt() == 7);
         assertTrue(result.getGenerationMetadata().bundleSha256().matches("[a-f0-9]{64}"));
-        assertTrue(result.getGenerationMetadata().schemaVersion().equals("2.0.0"));
+        assertTrue(result.getGenerationMetadata().schemaVersion().equals("3.0.0"));
+        assertTrue(result.getEvidenceCatalog().records().stream()
+                .anyMatch(record -> record.evidenceId().equals("JOB.TITLE")));
         assertFalse(result.getTrustedInstructions().contains("Build useful and reliable services."));
         assertFalse(result.getTrustedInstructions().contains("Built and maintained Java services."));
         assertFalse(result.getTrustedInstructions().contains("\"coverLetter\""));

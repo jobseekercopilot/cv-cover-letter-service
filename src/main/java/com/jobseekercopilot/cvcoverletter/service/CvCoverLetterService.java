@@ -174,7 +174,19 @@ public class CvCoverLetterService {
                     prompt.getGenerationMetadata().evaluationPolicyVersion(),
                     LlmResponseParser.PARSER_VERSION);
             GeneratedApplicationDocuments documents =
-                    responseParser.parse(llmResponse.getOutput(), prompt.getOutputSchema());
+                    responseParser.parse(
+                            llmResponse.getOutput(),
+                            prompt.getOutputSchema(),
+                            prompt.getEvidenceCatalog());
+            if (documents.getClaims() != null) {
+                log.info(
+                        "LLM claim evidence accepted userId={} jobId={} policyVersion={} evidenceRecords={} claims={}",
+                        userId,
+                        jobId,
+                        ClaimEvidenceValidator.POLICY_VERSION,
+                        prompt.getEvidenceCatalog().records().size(),
+                        documents.getClaims().size());
+            }
             String cvContent = cvRenderer.render(documents.getCv(), input.contact());
             String coverLetterContent = coverLetterRenderer.render(documents.getCoverLetter(), input.contact());
 
