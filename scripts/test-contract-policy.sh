@@ -95,6 +95,30 @@ if "$repository_root/scripts/verify-contracts.sh" "$temporary_dir/document-field
     exit 1
 fi
 
+copy_contracts "$temporary_dir/document-security"
+jq 'del(.components.securitySchemes.serviceToken)' \
+    "$temporary_dir/document-security/document-store-service.json" \
+    > "$temporary_dir/document-security/changed.json"
+mv "$temporary_dir/document-security/changed.json" \
+   "$temporary_dir/document-security/document-store-service.json"
+refresh_manifest "$temporary_dir/document-security"
+if "$repository_root/scripts/verify-contracts.sh" "$temporary_dir/document-security" >/dev/null 2>&1; then
+    echo "contract policy negative test accepted removal of Store service identity" >&2
+    exit 1
+fi
+
+copy_contracts "$temporary_dir/document-owner"
+jq '.paths["/api/v1/documents"].post.parameters = []' \
+    "$temporary_dir/document-owner/document-store-service.json" \
+    > "$temporary_dir/document-owner/changed.json"
+mv "$temporary_dir/document-owner/changed.json" \
+   "$temporary_dir/document-owner/document-store-service.json"
+refresh_manifest "$temporary_dir/document-owner"
+if "$repository_root/scripts/verify-contracts.sh" "$temporary_dir/document-owner" >/dev/null 2>&1; then
+    echo "contract policy negative test accepted removal of Store owner context" >&2
+    exit 1
+fi
+
 copy_contracts "$temporary_dir/tracker-security"
 jq 'del(.components.securitySchemes.serviceToken)' \
     "$temporary_dir/tracker-security/application-tracker-service.json" \

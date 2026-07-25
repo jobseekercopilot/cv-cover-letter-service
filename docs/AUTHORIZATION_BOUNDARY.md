@@ -29,10 +29,26 @@ Use a separate secret for this boundary; do not reuse credentials for other
 services. Inject it at runtime, keep it out of images and source control, and
 rotate the Gateway and this service together.
 
+## Outbound identities
+
+The service uses two further runtime credentials:
+
+- `DOCUMENT_STORE_PRODUCER_TOKEN` authenticates only Document Store producer
+  calls. Each create also sends the trusted inbound subject exactly once as
+  `X-Document-Owner`; the request-body user ID is set from the same subject.
+- `APPLICATION_TRACKER_PRODUCER_TOKEN` authenticates only Application Tracker
+  producer calls. Application creation binds the trusted inbound subject to
+  the request owner. This role cannot change status, withdraw or delete.
+
+Both credentials must contain at least 32 UTF-8 bytes and must be distinct
+from each other and from `CV_COVER_LETTER_GATEWAY_TOKEN`. Missing, weak or
+reused values prevent startup. Credentials are never accepted from a request,
+written to logs or embedded in a generated client.
+
 ## Remaining CVCL-02 work
 
-This boundary does not yet authenticate the service's outbound calls to
-Payment, Document Store, or Application Tracker. Runtime secret wiring and
-fleet-level end-to-end negative tests are also required before beta. User
-approval, prompt safety, output quality, idempotency, and transaction recovery
-remain in their existing workstreams and are not expanded by this change.
+Payment still uses its legacy caller-controlled owner header and its
+reserve/commit/release idempotency semantics are not approved. Infrastructure
+runtime secret wiring/rotation and fleet-level negative tests are also required
+before beta. User approval, prompt safety, output quality, idempotency, and
+transaction recovery remain in their existing workstreams.

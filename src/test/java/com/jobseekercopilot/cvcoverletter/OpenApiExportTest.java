@@ -21,8 +21,14 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
 
-@SpringBootTest(properties = "cv-cover-letter.security.gateway-token="
-        + "test-only-cv-gateway-service-token-32-bytes")
+@SpringBootTest(properties = {
+        "cv-cover-letter.security.gateway-token="
+                + "test-only-cv-gateway-service-token-32-bytes",
+        "cv-cover-letter.security.document-store-producer-token="
+                + "test-only-document-store-producer-token-32-bytes",
+        "cv-cover-letter.security.application-tracker-producer-token="
+                + "test-only-application-tracker-producer-token-32-bytes"
+})
 @AutoConfigureMockMvc
 class OpenApiExportTest {
     @Autowired private MockMvc mockMvc;

@@ -94,7 +94,7 @@ class CvCoverLetterServiceTest {
         UUID cvId = UUID.randomUUID();
         UUID letterId = UUID.randomUUID();
         UUID applicationId = UUID.randomUUID();
-        when(documentStoreApi.createDocument(any())).thenReturn(
+        when(documentStoreApi.createDocument(any(), any())).thenReturn(
                 new GeneratedDocumentResponse().id(cvId),
                 new GeneratedDocumentResponse().id(letterId));
         when(applicationTrackerApi.createApplication(any()))
@@ -116,12 +116,16 @@ class CvCoverLetterServiceTest {
 
         ArgumentCaptor<com.jobseekercopilot.generated.documentstoreservice.model.CreateDocumentRequest> documentCaptor =
                 ArgumentCaptor.forClass(com.jobseekercopilot.generated.documentstoreservice.model.CreateDocumentRequest.class);
-        verify(documentStoreApi, org.mockito.Mockito.times(2)).createDocument(documentCaptor.capture());
+        verify(documentStoreApi, org.mockito.Mockito.times(2))
+                .createDocument(documentCaptor.capture(), org.mockito.Mockito.eq("user-123"));
         assertEquals("CV", documentCaptor.getAllValues().get(0).getDocumentType().getValue());
         assertEquals("COVER_LETTER", documentCaptor.getAllValues().get(1).getDocumentType().getValue());
+        assertEquals("user-123", documentCaptor.getAllValues().get(0).getUserId());
+        assertEquals("user-123", documentCaptor.getAllValues().get(1).getUserId());
 
         ArgumentCaptor<CreateApplicationRequest> applicationCaptor = ArgumentCaptor.forClass(CreateApplicationRequest.class);
         verify(applicationTrackerApi).createApplication(applicationCaptor.capture());
+        assertEquals("user-123", applicationCaptor.getValue().getUserId());
         assertEquals(cvId.toString(), applicationCaptor.getValue().getCvDocumentId());
         assertEquals(letterId.toString(), applicationCaptor.getValue().getCoverLetterDocumentId());
         assertEquals("Example Ltd", applicationCaptor.getValue().getCompanyName());
@@ -178,16 +182,40 @@ class CvCoverLetterServiceTest {
         when(paymentBillingClient.reserve(any(), any())).thenReturn(
                 new PaymentBillingClient.ReservationResponse(reservationId, "user-123", 5000, 40000, "RESERVED"));
         when(llmGatewayApi.generateV2(any())).thenReturn(successfulResponse(validJson()));
-        when(documentStoreApi.createDocument(any()))
+        when(documentStoreApi.createDocument(any(), any()))
                 .thenReturn(new GeneratedDocumentResponse().id(UUID.randomUUID()))
                 .thenThrow(new RestClientException("down"));
 
         assertThrows(DownstreamServiceException.class, () -> service.generate("user-123", request));
 
-        verify(documentStoreApi, org.mockito.Mockito.times(2)).createDocument(any());
+        verify(documentStoreApi, org.mockito.Mockito.times(2))
+                .createDocument(any(), org.mockito.Mockito.eq("user-123"));
         verifyNoInteractions(applicationTrackerApi);
         verify(paymentBillingClient, never()).commit(any(), any(), any());
         verify(paymentBillingClient).release("user-123", reservationId, "Document generation failed");
+    }
+
+    @Test
+    void releasesReservationAndDoesNotCommitWhenTrackerDeniesProducer() {
+        UUID reservationId = UUID.randomUUID();
+        when(paymentBillingClient.reserve(any(), any())).thenReturn(
+                new PaymentBillingClient.ReservationResponse(
+                        reservationId, "user-123", 5000, 40000, "RESERVED"));
+        when(llmGatewayApi.generateV2(any())).thenReturn(successfulResponse(validJson()));
+        when(documentStoreApi.createDocument(any(), any())).thenReturn(
+                new GeneratedDocumentResponse().id(UUID.randomUUID()),
+                new GeneratedDocumentResponse().id(UUID.randomUUID()));
+        when(applicationTrackerApi.createApplication(any()))
+                .thenThrow(new RestClientException("producer denied"));
+
+        DownstreamServiceException failure = assertThrows(
+                DownstreamServiceException.class,
+                () -> service.generate("user-123", request));
+
+        assertEquals("Application tracker is unavailable", failure.getMessage());
+        verify(paymentBillingClient, never()).commit(any(), any(), any());
+        verify(paymentBillingClient).release(
+                "user-123", reservationId, "Document generation failed");
     }
 
     @ParameterizedTest

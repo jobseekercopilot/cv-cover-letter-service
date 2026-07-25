@@ -339,7 +339,8 @@ public class CvCoverLetterService {
                     input.ownerId(),
                     input.jobProvenance().getResourceId(),
                     type);
-            GeneratedDocumentResponse response = documentStoreApi.createDocument(documentRequest);
+            GeneratedDocumentResponse response =
+                    documentStoreApi.createDocument(documentRequest, input.ownerId());
             if (response == null) {
                 throw new DownstreamServiceException("Document store failed to save " + type, null);
             }
