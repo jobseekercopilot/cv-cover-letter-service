@@ -65,7 +65,10 @@ the underlying document database.
   duplicate, incomplete, unknown, wrong-type, oversized, active-markup and
   control-character output before any document or application write and
   releases the billing reservation. Prompt/schema, LLM-contract and parser
-  versions are logged without output payloads.
+  versions are logged without output payloads. The final consumer slice pins
+  the DOCGEN-10 gateway audit contract, validates its actual model and
+  deployment/policy evidence before persistence, records the exact model in
+  the Payment commit and logs the complete non-payload version set.
 
 ## Confirmed blockers
 
@@ -86,10 +89,9 @@ the underlying document database.
    attachment to immutable document versions remains blocked on DOC-06.
 5. CV and cover-letter generation are coupled into one prompt and request.
 6. Strict schema enforcement, bounds, active-content rejection and
-   prompt/schema/parser contract metadata are implemented. LLM Gateway v2 does
-   not expose provider/model/deployment identity, so complete model-version
-   audit evidence remains blocked on DOCGEN-10. Durable prompt/schema
-   provenance also remains dependent on DOC-06.
+   prompt/schema/parser/model/deployment contract metadata are implemented.
+   Durable attachment of the complete generation provenance to immutable
+   document versions remains dependent on DOC-06.
 7. Generated claims have no evidence references or disposition such as
    supported, reworded, confirmation required, or rejected.
 8. Prompt rules allow reasonable professional inferences, which can become
@@ -101,8 +103,10 @@ the underlying document database.
 11. Normalised prompt input is capped at 40,000 characters. There is no
     request idempotency key, duplicate-click protection, or service-owned
     per-user usage guard.
-12. Token estimation is approximate and pricing/model-version assumptions are
-    not governed or surfaced as cost evidence.
+12. The gateway now supplies versioned operational provider-cost evidence from
+    actual usage. The pre-reservation token estimate remains approximate, and
+    customer pricing, AI Credit valuation and exhaustion policy remain Payment
+    workstream dependencies.
 13. Current tests cover the prompt-injection corpus and malformed, truncated,
     fenced, trailing, duplicate, missing, null, unknown, wrong-type, oversized,
     active-content, filtered and schema-mismatched output handling. They do not

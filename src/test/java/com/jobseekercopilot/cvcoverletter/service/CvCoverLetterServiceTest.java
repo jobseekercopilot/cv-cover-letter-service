@@ -17,6 +17,7 @@ import com.jobseekercopilot.generated.applicationtrackerservice.model.CreateAppl
 import com.jobseekercopilot.generated.documentstoreservice.api.GeneratedDocumentsApi;
 import com.jobseekercopilot.generated.documentstoreservice.model.GeneratedDocumentResponse;
 import com.jobseekercopilot.generated.llmgateway.api.ModelGenerationApi;
+import com.jobseekercopilot.generated.llmgateway.model.GenerationAudit;
 import com.jobseekercopilot.generated.llmgateway.model.GenerationRequest;
 import com.jobseekercopilot.generated.llmgateway.model.GenerationResponse;
 import com.jobseekercopilot.generated.llmgateway.model.GenerationUsage;
@@ -146,7 +147,25 @@ class CvCoverLetterServiceTest {
         verify(paymentBillingClient).commit(org.mockito.Mockito.eq("user-123"), any(), commitCaptor.capture());
         assertEquals(7300L, commitCaptor.getValue().actualTokens());
         assertNull(commitCaptor.getValue().provider());
-        assertNull(commitCaptor.getValue().model());
+        assertEquals("gpt-4.1-mini-2025-04-14", commitCaptor.getValue().model());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                output.getAll().contains("modelId=gpt-4.1-mini-2025-04-14"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                output.getAll().contains("modelDeploymentVersion=document-generation-model-2026-07"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                output.getAll().contains("admissionPolicyVersion=document-generation-admission-2026-07"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                output.getAll().contains("pricingVersion=openai-standard-2026-07-25"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                output.getAll().contains("promptRelease=cv-cover-letter-1.2.0"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                output.getAll().contains("templateVersion=1.1.0"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                output.getAll().contains("rulesVersion=1.2.0"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                output.getAll().contains("schemaVersion=2.0.0"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                output.getAll().contains("parserVersion=2.0.0"));
         assertFalse(output.getAll().contains("input-secret-sentinel"));
         assertFalse(output.getAll().contains("response-secret-sentinel"));
     }
@@ -181,6 +200,26 @@ class CvCoverLetterServiceTest {
 
         verify(paymentBillingClient, never()).commit(any(), any(), any());
         verify(paymentBillingClient).release("user-123", reservationId, "Document generation failed");
+        verifyNoInteractions(documentStoreApi, applicationTrackerApi);
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidGenerationAudits")
+    void invalidGenerationAuditFailsBeforePersistenceAndBillingCommit(GenerationAudit invalidAudit) {
+        UUID reservationId = UUID.randomUUID();
+        when(paymentBillingClient.reserve(any(), any())).thenReturn(
+                new PaymentBillingClient.ReservationResponse(
+                        reservationId, "user-123", 5000, 40000, "RESERVED"));
+        when(llmGatewayApi.generateV2(any())).thenReturn(
+                successfulResponse(validJson()).audit(invalidAudit));
+
+        assertThrows(
+                InvalidLlmResponseException.class,
+                () -> service.generate("user-123", request));
+
+        verify(paymentBillingClient, never()).commit(any(), any(), any());
+        verify(paymentBillingClient).release(
+                "user-123", reservationId, "Document generation failed");
         verifyNoInteractions(documentStoreApi, applicationTrackerApi);
     }
 
@@ -236,6 +275,7 @@ class CvCoverLetterServiceTest {
                 .finishReason(GenerationResponse.FinishReasonEnum.COMPLETED)
                 .schemaId("cv-cover-letter-output")
                 .schemaVersion("2.0.0")
+                .audit(generationAudit())
                 .usage(usage());
     }
 
@@ -259,6 +299,29 @@ class CvCoverLetterServiceTest {
                         "A capable developer.",
                         "<script>response-secret-sentinel</script>"),
                 "```json\n" + validJson() + "\n```");
+    }
+
+    private static Stream<GenerationAudit> invalidGenerationAudits() {
+        return Stream.<GenerationAudit>of(
+                null,
+                generationAudit().modelId("model with whitespace"),
+                generationAudit().modelDeploymentVersion(" "),
+                generationAudit().admissionPolicyVersion(" "),
+                generationAudit().pricingVersion(" "),
+                generationAudit().estimatedInputTokensAtAdmission(-1L),
+                generationAudit().estimatedCostMicroUsd(-1L),
+                generationAudit().currency("EUR"));
+    }
+
+    private static GenerationAudit generationAudit() {
+        return new GenerationAudit()
+                .modelId("gpt-4.1-mini-2025-04-14")
+                .modelDeploymentVersion("document-generation-model-2026-07")
+                .admissionPolicyVersion("document-generation-admission-2026-07")
+                .pricingVersion("openai-standard-2026-07-25")
+                .estimatedInputTokensAtAdmission(5_372L)
+                .estimatedCostMicroUsd(41_400L)
+                .currency("USD");
     }
 
     private PromptGenerationMetadata promptMetadata() {

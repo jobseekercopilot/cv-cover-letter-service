@@ -58,8 +58,8 @@ verify_source \
 verify_source \
     llm-gateway \
     jobseekercopilot/llm-gateway \
-    0e2cf79a5fc231971aabdd96e2d1117f84c5c9c0 \
-    6557c9f3d1c216fdd12d2fd157ca79b82356c00131ac48c62cef4ea441cedd1d
+    c0a2eb1fa7adb437cf5cda10a491112108619f66 \
+    d45bf93cdadf181b9de387aa6358690fc1c83b4543e47934a2d1380e48dd16ec
 verify_source \
     payment-service \
     jobseekercopilot/payment-service \
@@ -92,7 +92,20 @@ jq -e '
     (.components.schemas.GenerationLimits.properties.temperature.maximum == 1) and
     (.components.schemas.GenerationResponse.properties
         | has("output") and has("finishReason") and has("usage") and
-          has("schemaId") and has("schemaVersion")) and
+          has("schemaId") and has("schemaVersion") and has("audit")) and
+    (.components.schemas.GenerationResponse.required | index("audit") != null) and
+    (.components.schemas.GenerationResponse.properties.audit["$ref"]
+        == "#/components/schemas/GenerationAudit") and
+    (.components.schemas.GenerationAudit.additionalProperties == false) and
+    ((.components.schemas.GenerationAudit.required | sort)
+        == ["admissionPolicyVersion", "currency", "estimatedCostMicroUsd",
+            "estimatedInputTokensAtAdmission", "modelDeploymentVersion",
+            "modelId", "pricingVersion"]) and
+    ((.components.schemas.GenerationAudit.properties | keys)
+        == ["admissionPolicyVersion", "currency", "estimatedCostMicroUsd",
+            "estimatedInputTokensAtAdmission", "modelDeploymentVersion",
+            "modelId", "pricingVersion"]) and
+    (.components.schemas.GenerationAudit.properties | has("provider") | not) and
     (.components.schemas.GenerationUsage.properties
         | has("inputTokens") and has("outputTokens") and has("totalTokens"))
 ' "$contract_dir/llm-gateway.json" >/dev/null
