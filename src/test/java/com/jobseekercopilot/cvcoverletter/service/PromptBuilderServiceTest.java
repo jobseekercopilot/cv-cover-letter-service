@@ -22,7 +22,7 @@ class PromptBuilderServiceTest {
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBuilderService service = new PromptBuilderService(
                 objectMapper,
-                registry(objectMapper, "cv-cover-letter-1.1.0"),
+                registry(objectMapper, "cv-cover-letter-1.2.0"),
                 properties);
         GenerationInputNormalizer normalizer = new GenerationInputNormalizer(
                 Clock.fixed(Instant.parse("2026-07-24T13:00:00Z"), ZoneOffset.UTC));
@@ -34,7 +34,7 @@ class PromptBuilderServiceTest {
         assertTrue(result.getTrustedInstructions().contains("UK English"));
         assertTrue(result.getTrustedInstructions().contains("aim for 5 to 7 concise paragraphs"));
         assertTrue(result.getTrustedInstructions().contains("role and company fit"));
-        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.1.0"));
+        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.2.0"));
         assertTrue(result.getTrustedInstructions().contains("UNTRUSTED CONTENT RULES"));
         assertTrue(result.getTrustedInstructions().contains(
                 "[CANONICAL JOB FACTS SUPPLIED THROUGH THE UNTRUSTED INPUT CHANNEL]"));
@@ -45,8 +45,12 @@ class PromptBuilderServiceTest {
         assertTrue(result.getUntrustedInput().contains("Built and maintained Java services."));
         assertTrue(result.getOutputSchema().has("properties"));
         assertTrue(result.getOutputSchema().toString().contains("\"coverLetter\""));
+        assertTrue(result.getOutputSchema().path("additionalProperties").isBoolean());
+        assertTrue(result.getOutputSchema().at("/properties/cv/properties/title/pattern").isTextual());
+        assertTrue(result.getOutputSchema().at(
+                "/properties/coverLetter/properties/bodyParagraphs/maxItems").asInt() == 7);
         assertTrue(result.getGenerationMetadata().bundleSha256().matches("[a-f0-9]{64}"));
-        assertTrue(result.getGenerationMetadata().schemaVersion().equals("1.0.0"));
+        assertTrue(result.getGenerationMetadata().schemaVersion().equals("2.0.0"));
         assertFalse(result.getTrustedInstructions().contains("Build useful and reliable services."));
         assertFalse(result.getTrustedInstructions().contains("Built and maintained Java services."));
         assertFalse(result.getTrustedInstructions().contains("\"coverLetter\""));

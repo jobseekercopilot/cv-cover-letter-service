@@ -23,6 +23,8 @@ import com.jobseekercopilot.generated.llmgateway.model.GenerationUsage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -31,6 +33,7 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.web.client.RestClientException;
 
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -74,9 +77,7 @@ class CvCoverLetterServiceTest {
                         .taskType("CV_COVER_LETTER_GENERATION")
                         .trustedInstructions("trusted generation rules")
                         .untrustedInput("{\"job\":\"input-secret-sentinel\"}")
-                        .outputSchema(new ObjectMapper().readTree("""
-                                {"type":"object","additionalProperties":false}
-                                """))
+                        .outputSchema(activeOutputSchema())
                         .generationMetadata(promptMetadata())
                         .build());
         when(paymentBillingClient.reserve(any(), any())).thenReturn(
@@ -106,7 +107,7 @@ class CvCoverLetterServiceTest {
         assertEquals("trusted generation rules", llmRequest.getTrustedInstructions());
         assertEquals("{\"job\":\"input-secret-sentinel\"}", llmRequest.getUntrustedInput());
         assertEquals("cv-cover-letter-output", llmRequest.getOutput().getSchemaId());
-        assertEquals("1.0.0", llmRequest.getOutput().getSchemaVersion());
+        assertEquals("2.0.0", llmRequest.getOutput().getSchemaVersion());
         assertEquals(0.25, llmRequest.getLimits().getTemperature());
         assertEquals(2500, llmRequest.getLimits().getMaxOutputTokens());
 
@@ -127,8 +128,9 @@ class CvCoverLetterServiceTest {
         assertEquals("Tailored Developer CV", actual.getCvTitle());
         assertEquals("Tailored Developer CV", actual.getCvContent().lines().findFirst().orElseThrow());
         assertEquals("1.0", actual.getInputSchemaVersion());
-        assertEquals("cv-cover-letter-1.1.0", actual.getGenerationMetadata().releaseId());
-        assertEquals("1.1.0", actual.getGenerationMetadata().rulesVersion());
+        assertEquals("cv-cover-letter-1.2.0", actual.getGenerationMetadata().releaseId());
+        assertEquals("1.2.0", actual.getGenerationMetadata().rulesVersion());
+        assertEquals("2.0.0", actual.getGenerationMetadata().schemaVersion());
         assertEquals(normalizedInput.warnings(), actual.getInputWarnings());
         org.junit.jupiter.api.Assertions.assertTrue(
                 actual.getCoverLetterContent().contains("Dear Hiring Manager,"));
@@ -167,12 +169,13 @@ class CvCoverLetterServiceTest {
         verify(paymentBillingClient).release("user-123", reservationId, "Document generation failed");
     }
 
-    @Test
-    void releasesReservationAndDoesNotCommitWhenLlmResponseCannotBeParsed() {
+    @ParameterizedTest
+    @MethodSource("invalidModelOutputs")
+    void releasesReservationAndPersistsNothingWhenModelOutputIsUnsafe(String unsafeOutput) {
         UUID reservationId = UUID.randomUUID();
         when(paymentBillingClient.reserve(any(), any())).thenReturn(
                 new PaymentBillingClient.ReservationResponse(reservationId, "user-123", 5000, 40000, "RESERVED"));
-        when(llmGatewayApi.generateV2(any())).thenReturn(successfulResponse("not json"));
+        when(llmGatewayApi.generateV2(any())).thenReturn(successfulResponse(unsafeOutput));
 
         assertThrows(InvalidLlmResponseException.class, () -> service.generate("user-123", request));
 
@@ -232,7 +235,7 @@ class CvCoverLetterServiceTest {
                 .output(output)
                 .finishReason(GenerationResponse.FinishReasonEnum.COMPLETED)
                 .schemaId("cv-cover-letter-output")
-                .schemaVersion("1.0.0")
+                .schemaVersion("2.0.0")
                 .usage(usage());
     }
 
@@ -243,18 +246,33 @@ class CvCoverLetterServiceTest {
                 .totalTokens(7300L);
     }
 
+    private static Stream<String> invalidModelOutputs() {
+        return Stream.of(
+                "not json",
+                validJson().replace(
+                        "\"cv\": {",
+                        "\"unexpected\":\"response-secret-sentinel\",\"cv\": {"),
+                validJson().replace(
+                        "Tailored Developer CV",
+                        "x".repeat(201)),
+                validJson().replace(
+                        "A capable developer.",
+                        "<script>response-secret-sentinel</script>"),
+                "```json\n" + validJson() + "\n```");
+    }
+
     private PromptGenerationMetadata promptMetadata() {
         return new PromptGenerationMetadata(
-                "cv-cover-letter-1.1.0",
+                "cv-cover-letter-1.2.0",
                 "cv-cover-letter",
-                "1.1.0",
+                "1.2.0",
                 "a".repeat(64),
                 "1.1.0",
                 "b".repeat(64),
-                "1.1.0",
+                "1.2.0",
                 "c".repeat(64),
                 "cv-cover-letter-output",
-                "1.0.0",
+                "2.0.0",
                 "d".repeat(64),
                 "1.0.0",
                 "e".repeat(64)
@@ -269,7 +287,7 @@ class CvCoverLetterServiceTest {
                     "targetRole": "Developer",
                     "personalSummary": "A capable developer.",
                     "coreSkills": [{"name":"Java","evidence":"Built services"}],
-                    "qualifications": [{"qualificationName":"BSc Computing","issuingBody":"Example University","status":"Completed","grade":"First","dateAchieved":"2024"}],
+                    "qualifications": [{"qualificationName":"BSc Computing","issuingBody":"Example University","status":"Completed","grade":"First","dateAchieved":"2024","expectedCompletion":""}],
                     "workHistory": [{"jobTitle":"Engineer","employer":"Acme","startDate":"2022","endDate":"Present","responsibilities":["Built APIs"],"tailoredDescription":"Relevant delivery."}]
                   },
                   "coverLetter": {
@@ -285,5 +303,15 @@ class CvCoverLetterServiceTest {
                   "generationNotes": {"assumptionsMade":[],"missingInformation":[],"tailoringSummary":"Focused on Java."}
                 }
                 """;
+    }
+
+    private com.fasterxml.jackson.databind.JsonNode activeOutputSchema() throws Exception {
+        try (java.io.InputStream input = getClass().getResourceAsStream(
+                "/prompts/bundles/cv-cover-letter-1.2.0/output-schema.json")) {
+            if (input == null) {
+                throw new IllegalStateException("Active output schema fixture is missing.");
+            }
+            return new ObjectMapper().readTree(input);
+        }
     }
 }

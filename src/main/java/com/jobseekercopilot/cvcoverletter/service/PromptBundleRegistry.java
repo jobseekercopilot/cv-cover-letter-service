@@ -144,6 +144,9 @@ public class PromptBundleRegistry {
         if (schemaNode == null || !schemaNode.isObject()) {
             throw new IllegalStateException("Prompt output schema must be a JSON object in " + releaseId);
         }
+        if ("ACTIVE".equals(manifest.releaseStatus())) {
+            validateStrictOutputSchema(schemaNode, "$");
+        }
         JsonNode evaluationPolicyNode = objectMapper.readTree(evaluationPolicyBytes);
         if (evaluationPolicyNode == null
                 || !evaluationPolicyNode.isObject()
@@ -222,6 +225,81 @@ public class PromptBundleRegistry {
                 || !SHA_256.matcher(value(manifest.schemaSha256())).matches()
                 || !SHA_256.matcher(value(manifest.evaluationPolicySha256())).matches()) {
             throw new IllegalStateException("Prompt bundle manifest is invalid for " + releaseId);
+        }
+    }
+
+    private void validateStrictOutputSchema(JsonNode schema, String path) {
+        String type = schema.path("type").asText();
+        Set<String> keys = new HashSet<>();
+        schema.fieldNames().forEachRemaining(keys::add);
+        switch (type) {
+            case "object" -> {
+                requireSchema(
+                        keys.equals(Set.of("type", "properties", "required", "additionalProperties")),
+                        path,
+                        "object keywords are not in the approved provider subset");
+                JsonNode propertiesNode = schema.path("properties");
+                JsonNode requiredNode = schema.path("required");
+                requireSchema(propertiesNode.isObject(), path, "properties must be an object");
+                requireSchema(requiredNode.isArray(), path, "required must be an array");
+                requireSchema(
+                        schema.path("additionalProperties").isBoolean()
+                                && !schema.path("additionalProperties").asBoolean(),
+                        path,
+                        "additionalProperties must be false");
+                Set<String> properties = new HashSet<>();
+                propertiesNode.fieldNames().forEachRemaining(properties::add);
+                Set<String> required = new HashSet<>();
+                requiredNode.forEach(field -> required.add(field.asText()));
+                requireSchema(
+                        required.size() == requiredNode.size() && required.equals(properties),
+                        path,
+                        "every property must be required exactly once");
+                propertiesNode.fields().forEachRemaining(field ->
+                        validateStrictOutputSchema(field.getValue(), child(path, field.getKey())));
+            }
+            case "array" -> {
+                requireSchema(
+                        keys.equals(Set.of("type", "items", "minItems", "maxItems")),
+                        path,
+                        "array keywords are not in the approved provider subset");
+                requireSchema(schema.path("items").isObject(), path, "items must be an object");
+                requireSchema(
+                        schema.path("minItems").canConvertToInt()
+                                && schema.path("maxItems").canConvertToInt()
+                                && schema.path("minItems").asInt() >= 0
+                                && schema.path("maxItems").asInt() >= schema.path("minItems").asInt(),
+                        path,
+                        "array bounds are invalid");
+                validateStrictOutputSchema(schema.path("items"), path + "[]");
+            }
+            case "string" -> {
+                requireSchema(
+                        keys.equals(Set.of("type", "pattern")),
+                        path,
+                        "string keywords are not in the approved provider subset");
+                requireSchema(schema.path("pattern").isTextual(), path, "string pattern is required");
+                try {
+                    Pattern.compile(schema.path("pattern").asText());
+                } catch (RuntimeException exception) {
+                    throw new IllegalStateException(
+                            "Active output schema is invalid at " + path + ": pattern is invalid",
+                            exception);
+                }
+            }
+            default -> throw new IllegalStateException(
+                    "Active output schema is invalid at " + path + ": unsupported type");
+        }
+    }
+
+    private String child(String path, String field) {
+        return "$".equals(path) ? "$." + field : path + "." + field;
+    }
+
+    private void requireSchema(boolean condition, String path, String message) {
+        if (!condition) {
+            throw new IllegalStateException(
+                    "Active output schema is invalid at " + path + ": " + message);
         }
     }
 

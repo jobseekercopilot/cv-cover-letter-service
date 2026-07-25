@@ -122,6 +122,40 @@ for release_id in "${approved_releases[@]}"; do
     fi
 done
 
+default_schema="$bundle_root/$default_release/output-schema.json"
+[[ "$(wc -c < "$default_schema")" -le 20000 ]] \
+    || fail "active strict output schema exceeds the LLM Gateway limit"
+jq -e '
+    def valid_schema:
+        if .type == "object" then
+            ((keys | sort) == [
+                "additionalProperties",
+                "properties",
+                "required",
+                "type"
+            ]) and
+            (.properties | type == "object") and
+            (.required | type == "array") and
+            (.additionalProperties == false) and
+            ((.required | sort) == (.properties | keys | sort)) and
+            ((.required | unique | length) == (.required | length)) and
+            ([.properties[] | valid_schema] | all)
+        elif .type == "array" then
+            ((keys | sort) == ["items", "maxItems", "minItems", "type"]) and
+            (.items | type == "object" and valid_schema) and
+            (.minItems | type == "number" and . >= 0 and floor == .) and
+            (.maxItems | type == "number" and . >= 0 and floor == .) and
+            (.maxItems >= .minItems)
+        elif .type == "string" then
+            ((keys | sort) == ["pattern", "type"]) and
+            (.pattern | type == "string" and length > 0)
+        else
+            false
+        end;
+    valid_schema
+' "$default_schema" >/dev/null \
+    || fail "active output schema is not strict, bounded or in the approved provider subset"
+
 [[ "$active_count" -eq 1 ]] || fail "exactly one approved release must be ACTIVE"
 mapfile -t packaged_releases < <(
     find "$bundle_root" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
