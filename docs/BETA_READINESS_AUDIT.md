@@ -105,26 +105,31 @@ the underlying document database.
    this provenance to immutable stored documents remains dependent on DOC-06.
 8. Unsupported professional inference is forbidden. The controlled, audited
    user correction and approval path remains dependent on DOCGEN-16.
-9. Documents and an application are persisted before any user review or
+9. Document Store and Application Tracker writes now use distinct,
+   runtime-injected producer identities. Store creates carry the authenticated
+   Gateway owner as explicit owner context, and Tracker creates use that same
+   trusted owner. Infrastructure injection/rotation and integrated negative
+   paths remain open.
+10. Documents and an application are persisted before any user review or
    approval.
-10. The save/export/application/credit sequence is non-atomic. Retries can
+11. The save/export/application/credit sequence is non-atomic. Retries can
     leave partial records, duplicate documents/applications, or repeated cost.
-11. Normalised prompt input is capped at 40,000 characters. There is no
+12. Normalised prompt input is capped at 40,000 characters. There is no
     request idempotency key, duplicate-click protection, or service-owned
     per-user usage guard.
-12. The gateway now supplies versioned operational provider-cost evidence from
+13. The gateway now supplies versioned operational provider-cost evidence from
     actual usage. The pre-reservation token estimate remains approximate, and
     customer pricing, AI Credit valuation and exhaustion policy remain Payment
     workstream dependencies.
-13. Current tests cover the prompt-injection and hallucination corpora plus
+14. Current tests cover the prompt-injection and hallucination corpora plus
     malformed, truncated,
     fenced, trailing, duplicate, missing, null, unknown, wrong-type, oversized,
     active-content, filtered and schema-mismatched output handling. They do not
     yet cover duplicate requests, every partial downstream failure, user
     approval or the complete privacy evidence required for beta.
-14. Document Generation Gateway must consume the bounded authenticated `3.1.0`
+15. Document Generation Gateway must consume the bounded authenticated `3.1.0`
     contract and provide its own dedicated credential under DOCGEN-03/GW-01.
-15. Current Spring, Tomcat, Jackson, logging, Swagger UI, and generated-client
+16. Current Spring, Tomcat, Jackson, logging, Swagger UI, and generated-client
     dependency findings include untriaged Critical/High advisories.
 
 ## Required validation

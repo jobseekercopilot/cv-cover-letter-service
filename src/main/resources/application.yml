@@ -8,6 +8,8 @@ server:
 cv-cover-letter:
   security:
     gateway-token: ${CV_COVER_LETTER_GATEWAY_TOKEN:}
+    document-store-producer-token: ${DOCUMENT_STORE_PRODUCER_TOKEN:}
+    application-tracker-producer-token: ${APPLICATION_TRACKER_PRODUCER_TOKEN:}
 
 llm:
   task-type: ${LLM_TASK_TYPE:CV_COVER_LETTER_GENERATION}
