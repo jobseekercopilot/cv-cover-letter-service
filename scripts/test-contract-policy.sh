@@ -71,6 +71,18 @@ if "$repository_root/scripts/verify-contracts.sh" "$temporary_dir/llm-trust-boun
     exit 1
 fi
 
+copy_contracts "$temporary_dir/llm-audit"
+jq 'del(.components.schemas.GenerationResponse.properties.audit)' \
+    "$temporary_dir/llm-audit/llm-gateway.json" \
+    > "$temporary_dir/llm-audit/changed.json"
+mv "$temporary_dir/llm-audit/changed.json" \
+   "$temporary_dir/llm-audit/llm-gateway.json"
+refresh_manifest "$temporary_dir/llm-audit"
+if "$repository_root/scripts/verify-contracts.sh" "$temporary_dir/llm-audit" >/dev/null 2>&1; then
+    echo "contract policy negative test accepted removal of LLM model/cost audit metadata" >&2
+    exit 1
+fi
+
 copy_contracts "$temporary_dir/document-field"
 jq 'del(.components.schemas.CreateDocumentRequest.properties.content)' \
     "$temporary_dir/document-field/document-store-service.json" \

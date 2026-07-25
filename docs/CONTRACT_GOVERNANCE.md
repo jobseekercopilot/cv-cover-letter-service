@@ -28,7 +28,7 @@ source revision are recorded in `api/client-release.json`:
 
 | Producer | Revision | Contract | Version | SHA-256 | Use |
 | --- | --- | --- | --- | --- | --- |
-| `jobseekercopilot/llm-gateway` | `0e2cf79a5fc231971aabdd96e2d1117f84c5c9c0` | `contracts/openapi.json` | `2.0.0` | `6557c9f3d1c216fdd12d2fd157ca79b82356c00131ac48c62cef4ea441cedd1d` | Generated Java client |
+| `jobseekercopilot/llm-gateway` | `c0a2eb1fa7adb437cf5cda10a491112108619f66` | `contracts/openapi.json` | `2.0.0` | `d45bf93cdadf181b9de387aa6358690fc1c83b4543e47934a2d1380e48dd16ec` | Generated Java client |
 | `jobseekercopilot/document-store-service` | `fedcdbdec63795269c4e4c4f43fc32f38c6327b1` | `contracts/openapi.json` | `1.0.0` | `410ab1a7a2e8a5a5ad374443ec834f6aef7f778f6936b3ef90c33f8e580cdbd9` | Generated Java client |
 | `jobseekercopilot/application-tracker-service` | `d9e6bc9fcbe4ef665334c58672c8062b1e4796aa` | `contracts/openapi.json` | `1.1.0` | `549cebba300c2caf3403b9de01d3c34de84464a280a02183751e8a9583ad982a` | Generated Java client |
 | `jobseekercopilot/payment-service` | `3175e5730cd0743e15455a0acc8e2bc35b56a78f` | `contracts/openapi.json` | `1.0.0` | `2b1bfef95e1ba4c1f191627dfc4972b3ed7a931dead8fbb7aecbf5b793acae7a` | Handwritten adapter compatibility |
@@ -43,7 +43,8 @@ disposable build outputs.
 The policy checks the exact operations and fields currently consumed:
 
 - LLM v2 trust-separated instructions/input, strict output schema, response
-  text and provider-neutral usage;
+  text, provider-neutral usage and mandatory model/deployment/cost audit
+  metadata;
 - Document Store create request and returned document ID;
 - Application Tracker create request, returned application ID and required
   service-token security scheme;

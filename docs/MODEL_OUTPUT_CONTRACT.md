@@ -60,19 +60,19 @@ parser exceptions that may contain model-output fragments. Any failure
 releases the billing reservation; tests prove there is no document save,
 application creation or charge commit after invalid output.
 
-## Version evidence and remaining dependency
+## Version evidence
 
 Successful response metadata and structured logs record the prompt release,
 template, rules and schema versions and their hashes. Request/response logs
-also record LLM contract `2.0` and parser `2.0.0`. Durable attachment of prompt
-and schema provenance to an immutable stored document remains dependent on
-DOC-06.
+also record LLM contract `2.0`, parser `2.0.0`, the actual model ID and the
+gateway-owned deployment, admission and pricing-policy versions. The consumer
+accepts those fields only from the mandatory audit block in the reviewed
+gateway contract pinned at `c0a2eb1`; missing or malformed audit evidence fails
+before document storage, application creation or billing commit. The exact
+model ID is also written to the existing Payment commit record.
 
-The provider-neutral LLM Gateway v2 response does not currently expose the
-selected provider, model or deployment version. DOCGEN-10 in `llm-gateway`
-owns that direct dependency. Until it is delivered, this service cannot provide
-complete model-version audit evidence and DOCGEN-07 must not be treated as
-fully complete.
+Durable attachment of the complete generation provenance to an immutable
+stored document remains dependent on DOC-06 and is outside DOCGEN-07.
 
 All repository tests use synthetic fixtures and mocked downstreams. They make
 no live or paid provider request and use no real job-seeker data or production

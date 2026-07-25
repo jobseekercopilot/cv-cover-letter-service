@@ -16,15 +16,18 @@ import com.jobseekercopilot.generated.documentstoreservice.api.GeneratedDocument
 import com.jobseekercopilot.generated.documentstoreservice.model.CreateDocumentRequest.DocumentTypeEnum;
 import com.jobseekercopilot.generated.documentstoreservice.model.GeneratedDocumentResponse;
 import com.jobseekercopilot.generated.llmgateway.api.ModelGenerationApi;
+import com.jobseekercopilot.generated.llmgateway.model.GenerationAudit;
 import com.jobseekercopilot.generated.llmgateway.model.GenerationLimits;
 import com.jobseekercopilot.generated.llmgateway.model.GenerationOutputContract;
 import com.jobseekercopilot.generated.llmgateway.model.GenerationRequest;
 import com.jobseekercopilot.generated.llmgateway.model.GenerationResponse;
 import com.jobseekercopilot.generated.llmgateway.model.GenerationUsage;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClientException;
 
 @Service
@@ -34,6 +37,8 @@ public class CvCoverLetterService {
     private static final String GENERATION_FEATURE = "CV_AND_COVER_LETTER_GENERATION";
     private static final String REFERENCE_TYPE = "JOB_APPLICATION";
     private static final long MINIMUM_GENERATION_RESERVATION_TOKENS = 5_000L;
+    private static final Pattern POLICY_VERSION =
+            Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{2,127}");
 
     private final PromptBuilderService promptBuilderService;
     private final GenerationInputNormalizer inputNormalizer;
@@ -119,7 +124,7 @@ public class CvCoverLetterService {
                     llmProperties.getTemperature());
             llmResponse = llmGatewayApi.generateV2(llmRequest);
             GenerationUsage usage = llmResponse == null ? null : llmResponse.getUsage();
-            log.info("LLM request completed userId={} jobId={} llmContractVersion={} finishReason={} schemaId={} schemaVersion={} parserVersion={} inputTokens={} outputTokens={} totalTokens={} durationMs={}",
+            log.info("LLM response received userId={} jobId={} llmContractVersion={} finishReason={} schemaId={} schemaVersion={} parserVersion={} inputTokens={} outputTokens={} totalTokens={} durationMs={}",
                     userId,
                     jobId,
                     llmResponse == null ? null : llmResponse.getContractVersion(),
@@ -148,6 +153,26 @@ public class CvCoverLetterService {
 
         try {
             validateGenerationResponse(llmResponse, prompt);
+            GenerationAudit generationAudit = llmResponse.getAudit();
+            log.info("LLM generation provenance accepted userId={} jobId={} llmContractVersion={} modelId={} modelDeploymentVersion={} admissionPolicyVersion={} pricingVersion={} estimatedInputTokensAtAdmission={} estimatedCostMicroUsd={} currency={} promptRelease={} bundleVersion={} templateVersion={} rulesVersion={} schemaId={} schemaVersion={} evaluationPolicyVersion={} parserVersion={}",
+                    userId,
+                    jobId,
+                    llmResponse.getContractVersion(),
+                    generationAudit.getModelId(),
+                    generationAudit.getModelDeploymentVersion(),
+                    generationAudit.getAdmissionPolicyVersion(),
+                    generationAudit.getPricingVersion(),
+                    generationAudit.getEstimatedInputTokensAtAdmission(),
+                    generationAudit.getEstimatedCostMicroUsd(),
+                    generationAudit.getCurrency(),
+                    prompt.getGenerationMetadata().releaseId(),
+                    prompt.getGenerationMetadata().bundleVersion(),
+                    prompt.getGenerationMetadata().templateVersion(),
+                    prompt.getGenerationMetadata().rulesVersion(),
+                    prompt.getGenerationMetadata().schemaId(),
+                    prompt.getGenerationMetadata().schemaVersion(),
+                    prompt.getGenerationMetadata().evaluationPolicyVersion(),
+                    LlmResponseParser.PARSER_VERSION);
             GeneratedApplicationDocuments documents =
                     responseParser.parse(llmResponse.getOutput(), prompt.getOutputSchema());
             String cvContent = cvRenderer.render(documents.getCv(), input.contact());
@@ -166,7 +191,11 @@ public class CvCoverLetterService {
                 throw new DownstreamServiceException("Application tracker returned no application ID", null);
             }
 
-            commitReservation(userId, reservation.reservationId(), llmResponse.getUsage());
+            commitReservation(
+                    userId,
+                    reservation.reservationId(),
+                    llmResponse.getUsage(),
+                    generationAudit);
             log.info("CV/cover letter generation succeeded userId={} jobId={} applicationId={} cvDocumentId={} coverLetterDocumentId={} durationMs={}",
                     userId,
                     jobId,
@@ -220,9 +249,37 @@ public class CvCoverLetterService {
         if (response.getOutput() == null || response.getOutput().isBlank()) {
             throw new InvalidLlmResponseException("LLM gateway returned no generated output");
         }
+        validateGenerationAudit(response.getAudit());
     }
 
-    private void commitReservation(String userId, UUID reservationId, GenerationUsage usage) {
+    private void validateGenerationAudit(GenerationAudit audit) {
+        if (audit == null
+                || !StringUtils.hasText(audit.getModelId())
+                || audit.getModelId().length() > 128
+                || audit.getModelId().chars().anyMatch(Character::isWhitespace)
+                || !validPolicyVersion(audit.getModelDeploymentVersion())
+                || !validPolicyVersion(audit.getAdmissionPolicyVersion())
+                || !validPolicyVersion(audit.getPricingVersion())
+                || audit.getEstimatedInputTokensAtAdmission() == null
+                || audit.getEstimatedInputTokensAtAdmission() < 0
+                || audit.getEstimatedCostMicroUsd() == null
+                || audit.getEstimatedCostMicroUsd() < 0
+                || !"USD".equals(audit.getCurrency())) {
+            throw new InvalidLlmResponseException(
+                    "LLM gateway returned invalid generation audit metadata");
+        }
+    }
+
+    private boolean validPolicyVersion(String value) {
+        return StringUtils.hasText(value) && POLICY_VERSION.matcher(value).matches();
+    }
+
+    private void commitReservation(
+            String userId,
+            UUID reservationId,
+            GenerationUsage usage,
+            GenerationAudit audit
+    ) {
         long actualTokens = usage == null || usage.getTotalTokens() == null
                 ? 0
                 : Math.max(0, usage.getTotalTokens());
@@ -237,6 +294,7 @@ public class CvCoverLetterService {
                 usage == null ? null : usage.getOutputTokens());
         paymentBillingClient.commit(userId, reservationId, PaymentBillingClient.CommitReservationRequest.builder()
                 .actualTokens(actualTokens)
+                .model(audit.getModelId())
                 .inputTokens(usage == null ? null : usage.getInputTokens())
                 .outputTokens(usage == null ? null : usage.getOutputTokens())
                 .description("CV and cover letter generation")
