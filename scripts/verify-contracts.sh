@@ -58,8 +58,8 @@ verify_source \
 verify_source \
     llm-gateway \
     jobseekercopilot/llm-gateway \
-    f91ab264723aa97809990aedfe29d9be77fa68d9 \
-    0adce79ec309bf506da125fb423eacf329cc4bc4061e01ee4b9eefd33b041555
+    0e2cf79a5fc231971aabdd96e2d1117f84c5c9c0 \
+    6557c9f3d1c216fdd12d2fd157ca79b82356c00131ac48c62cef4ea441cedd1d
 verify_source \
     payment-service \
     jobseekercopilot/payment-service \
@@ -68,18 +68,33 @@ verify_source \
 
 jq -e '
     (.openapi | type == "string" and startswith("3.")) and
-    (.info.version == "1.0.0") and
-    (.paths["/api/v1/generate"].post.operationId == "generate") and
-    (.paths["/api/v1/generate"].post.requestBody.content["application/json"].schema["$ref"]
-        == "#/components/schemas/GenerateRequest") and
-    (.components.schemas.GenerateRequest.required | index("prompt") != null) and
-    (.components.schemas.GenerateRequest.properties
-        | has("taskType") and has("prompt") and has("temperature") and has("maxTokens")) and
-    (.components.schemas.GenerateResponse.properties
-        | has("response") and has("usage")) and
-    (.components.schemas.LlmUsage.properties
-        | has("provider") and has("model") and has("inputTokens") and
-          has("outputTokens") and has("totalTokens"))
+    (.info.version == "2.0.0") and
+    (.paths["/api/v2/generations"].post.operationId == "generateV2") and
+    (.paths["/api/v2/generations"].post.requestBody.content["application/json"].schema["$ref"]
+        == "#/components/schemas/GenerationRequest") and
+    (.components.schemas.GenerationRequest.required
+        | index("contractVersion") != null and
+          index("task") != null and
+          index("trustedInstructions") != null and
+          index("untrustedInput") != null and
+          index("output") != null and
+          index("limits") != null) and
+    (.components.schemas.GenerationRequest.additionalProperties == false) and
+    (.components.schemas.GenerationRequest.properties.contractVersion.enum
+        | index("2.0") != null) and
+    (.components.schemas.GenerationRequest.properties.trustedInstructions.maxLength == 12000) and
+    (.components.schemas.GenerationRequest.properties.untrustedInput.maxLength == 40000) and
+    (.components.schemas.GenerationOutputContract.required | index("format") != null) and
+    (.components.schemas.GenerationOutputContract.properties.format.enum
+        | index("JSON_SCHEMA") != null) and
+    (.components.schemas.GenerationOutputContract.properties | has("jsonSchema")) and
+    (.components.schemas.GenerationLimits.properties.maxOutputTokens.maximum == 4096) and
+    (.components.schemas.GenerationLimits.properties.temperature.maximum == 1) and
+    (.components.schemas.GenerationResponse.properties
+        | has("output") and has("finishReason") and has("usage") and
+          has("schemaId") and has("schemaVersion")) and
+    (.components.schemas.GenerationUsage.properties
+        | has("inputTokens") and has("outputTokens") and has("totalTokens"))
 ' "$contract_dir/llm-gateway.json" >/dev/null
 
 jq -e '

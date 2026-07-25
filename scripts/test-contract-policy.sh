@@ -48,14 +48,26 @@ if "$repository_root/scripts/verify-contracts.sh" "$temporary_dir/checksum-drift
 fi
 
 copy_contracts "$temporary_dir/llm-operation"
-jq 'del(.paths["/api/v1/generate"].post)' \
+jq 'del(.paths["/api/v2/generations"].post)' \
     "$temporary_dir/llm-operation/llm-gateway.json" \
     > "$temporary_dir/llm-operation/changed.json"
 mv "$temporary_dir/llm-operation/changed.json" \
    "$temporary_dir/llm-operation/llm-gateway.json"
 refresh_manifest "$temporary_dir/llm-operation"
 if "$repository_root/scripts/verify-contracts.sh" "$temporary_dir/llm-operation" >/dev/null 2>&1; then
-    echo "contract policy negative test accepted removal of LLM generation" >&2
+    echo "contract policy negative test accepted removal of LLM v2 generation" >&2
+    exit 1
+fi
+
+copy_contracts "$temporary_dir/llm-trust-boundary"
+jq '.components.schemas.GenerationRequest.required -= ["trustedInstructions"]' \
+    "$temporary_dir/llm-trust-boundary/llm-gateway.json" \
+    > "$temporary_dir/llm-trust-boundary/changed.json"
+mv "$temporary_dir/llm-trust-boundary/changed.json" \
+   "$temporary_dir/llm-trust-boundary/llm-gateway.json"
+refresh_manifest "$temporary_dir/llm-trust-boundary"
+if "$repository_root/scripts/verify-contracts.sh" "$temporary_dir/llm-trust-boundary" >/dev/null 2>&1; then
+    echo "contract policy negative test accepted removal of the trusted instruction boundary" >&2
     exit 1
 fi
 

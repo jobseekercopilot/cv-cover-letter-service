@@ -17,7 +17,7 @@ import org.springframework.core.io.DefaultResourceLoader;
 class PromptBuilderServiceTest {
 
     @Test
-    void includesOnlyApprovedNormalizedEvidenceRulesAndOutputSchema() {
+    void separatesReviewedInstructionsUntrustedEvidenceAndOutputSchema() {
         LlmProperties properties = new LlmProperties();
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBuilderService service = new PromptBuilderService(
@@ -30,25 +30,37 @@ class PromptBuilderServiceTest {
         CvCoverLetterPrompt result = service.buildPrompt(
                 normalizer.normalize("owner-secret-123", validRequest()));
 
-        assertTrue(result.getFinalPrompt().contains("Build useful and reliable services."));
-        assertTrue(result.getFinalPrompt().contains("Built and maintained Java services."));
-        assertTrue(result.getFinalPrompt().contains("TRUTHFULNESS RULES"));
-        assertTrue(result.getFinalPrompt().contains("\"coverLetter\""));
-        assertTrue(result.getFinalPrompt().contains("UK English"));
-        assertTrue(result.getFinalPrompt().contains("aim for 5 to 7 concise paragraphs"));
-        assertTrue(result.getFinalPrompt().contains("role and company fit"));
-        assertTrue(result.getFinalPrompt().contains("bundle=cv-cover-letter@1.1.0"));
-        assertTrue(result.getFinalPrompt().contains("UNTRUSTED CONTENT RULES"));
-        assertTrue(result.getFinalPrompt().contains("UNTRUSTED CANONICAL JOB FACTS"));
+        assertTrue(result.getTrustedInstructions().contains("TRUTHFULNESS RULES"));
+        assertTrue(result.getTrustedInstructions().contains("UK English"));
+        assertTrue(result.getTrustedInstructions().contains("aim for 5 to 7 concise paragraphs"));
+        assertTrue(result.getTrustedInstructions().contains("role and company fit"));
+        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.1.0"));
+        assertTrue(result.getTrustedInstructions().contains("UNTRUSTED CONTENT RULES"));
+        assertTrue(result.getTrustedInstructions().contains(
+                "[CANONICAL JOB FACTS SUPPLIED THROUGH THE UNTRUSTED INPUT CHANNEL]"));
+        assertTrue(result.getTrustedInstructions().contains(
+                "[STRICT JSON SCHEMA SUPPLIED THROUGH THE OUTPUT CONTRACT]"));
+        assertTrue(result.getUntrustedInput().contains("UNTRUSTED_DATA_ONLY"));
+        assertTrue(result.getUntrustedInput().contains("Build useful and reliable services."));
+        assertTrue(result.getUntrustedInput().contains("Built and maintained Java services."));
+        assertTrue(result.getOutputSchema().has("properties"));
+        assertTrue(result.getOutputSchema().toString().contains("\"coverLetter\""));
         assertTrue(result.getGenerationMetadata().bundleSha256().matches("[a-f0-9]{64}"));
         assertTrue(result.getGenerationMetadata().schemaVersion().equals("1.0.0"));
-        assertFalse(result.getFinalPrompt().contains("owner-secret-123"));
-        assertFalse(result.getFinalPrompt().contains("profile-123"));
-        assertFalse(result.getFinalPrompt().contains("profile-v7"));
-        assertFalse(result.getFinalPrompt().contains("job-456"));
-        assertFalse(result.getFinalPrompt().contains("job-v12"));
-        assertFalse(result.getFinalPrompt().contains("Alex Candidate"));
-        assertFalse(result.getFinalPrompt().contains("alex@example.com"));
+        assertFalse(result.getTrustedInstructions().contains("Build useful and reliable services."));
+        assertFalse(result.getTrustedInstructions().contains("Built and maintained Java services."));
+        assertFalse(result.getTrustedInstructions().contains("\"coverLetter\""));
+        assertFalse(result.getUntrustedInput().contains("TRUTHFULNESS RULES"));
+        assertFalse(result.getUntrustedInput().contains("\"coverLetter\""));
+        assertFalse(result.getUntrustedInput().contains("owner-secret-123"));
+        assertFalse(result.getUntrustedInput().contains("profile-123"));
+        assertFalse(result.getUntrustedInput().contains("profile-v7"));
+        assertFalse(result.getUntrustedInput().contains("job-456"));
+        assertFalse(result.getUntrustedInput().contains("job-v12"));
+        assertFalse(result.getUntrustedInput().contains("Alex Candidate"));
+        assertFalse(result.getUntrustedInput().contains("alex@example.com"));
+        assertFalse(result.toString().contains("Build useful and reliable services."));
+        assertFalse(result.toString().contains("TRUTHFULNESS RULES"));
     }
 
     private PromptBundleRegistry registry(ObjectMapper objectMapper, String releaseId) {

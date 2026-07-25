@@ -15,9 +15,12 @@ import com.jobseekercopilot.generated.applicationtrackerservice.model.CreateAppl
 import com.jobseekercopilot.generated.documentstoreservice.api.GeneratedDocumentsApi;
 import com.jobseekercopilot.generated.documentstoreservice.model.CreateDocumentRequest.DocumentTypeEnum;
 import com.jobseekercopilot.generated.documentstoreservice.model.GeneratedDocumentResponse;
-import com.jobseekercopilot.generated.llmgateway.api.LlmGenerationApi;
-import com.jobseekercopilot.generated.llmgateway.model.GenerateResponse;
-import com.jobseekercopilot.generated.llmgateway.model.LlmUsage;
+import com.jobseekercopilot.generated.llmgateway.api.ModelGenerationApi;
+import com.jobseekercopilot.generated.llmgateway.model.GenerationLimits;
+import com.jobseekercopilot.generated.llmgateway.model.GenerationOutputContract;
+import com.jobseekercopilot.generated.llmgateway.model.GenerationRequest;
+import com.jobseekercopilot.generated.llmgateway.model.GenerationResponse;
+import com.jobseekercopilot.generated.llmgateway.model.GenerationUsage;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,7 +37,7 @@ public class CvCoverLetterService {
 
     private final PromptBuilderService promptBuilderService;
     private final GenerationInputNormalizer inputNormalizer;
-    private final LlmGenerationApi llmGatewayApi;
+    private final ModelGenerationApi llmGatewayApi;
     private final PaymentBillingClient paymentBillingClient;
     private final LlmProperties llmProperties;
     private final LlmResponseParser responseParser;
@@ -52,7 +55,7 @@ public class CvCoverLetterService {
         long promptStartedAt = System.nanoTime();
         log.info("Prompt build started userId={} jobId={}", userId, jobId);
         CvCoverLetterPrompt prompt = promptBuilderService.buildPrompt(input);
-        log.info("Prompt build completed userId={} jobId={} promptRelease={} bundleVersion={} templateVersion={} rulesVersion={} schemaId={} schemaVersion={} evaluationPolicyVersion={} bundleSha256={} estimatedTokens={} durationMs={}",
+        log.info("Prompt build completed userId={} jobId={} llmContractVersion=2.0 promptRelease={} bundleVersion={} templateVersion={} rulesVersion={} schemaId={} schemaVersion={} evaluationPolicyVersion={} bundleSha256={} trustedInstructionCharacters={} untrustedInputCharacters={} estimatedTokens={} durationMs={}",
                 userId,
                 jobId,
                 prompt.getGenerationMetadata().releaseId(),
@@ -63,26 +66,35 @@ public class CvCoverLetterService {
                 prompt.getGenerationMetadata().schemaVersion(),
                 prompt.getGenerationMetadata().evaluationPolicyVersion(),
                 prompt.getGenerationMetadata().bundleSha256(),
-                estimateTokens(prompt.getFinalPrompt()),
+                prompt.getTrustedInstructions().length(),
+                prompt.getUntrustedInput().length(),
+                estimateTokens(prompt),
                 (System.nanoTime() - promptStartedAt) / 1_000_000);
 
-        com.jobseekercopilot.generated.llmgateway.model.GenerateRequest llmRequest =
-                new com.jobseekercopilot.generated.llmgateway.model.GenerateRequest()
-                .taskType(llmProperties.getTaskType())
-                .prompt(prompt.getFinalPrompt())
-                .temperature(llmProperties.getTemperature())
-                .maxTokens(llmProperties.getMaxTokens());
+        GenerationRequest llmRequest = new GenerationRequest()
+                .contractVersion(GenerationRequest.ContractVersionEnum._2_0)
+                .task(prompt.getTaskType())
+                .trustedInstructions(prompt.getTrustedInstructions())
+                .untrustedInput(prompt.getUntrustedInput())
+                .output(new GenerationOutputContract()
+                        .format(GenerationOutputContract.FormatEnum.JSON_SCHEMA)
+                        .schemaId(prompt.getGenerationMetadata().schemaId())
+                        .schemaVersion(prompt.getGenerationMetadata().schemaVersion())
+                        .jsonSchema(prompt.getOutputSchema()))
+                .limits(new GenerationLimits()
+                        .temperature(llmProperties.getTemperature())
+                        .maxOutputTokens(llmProperties.getMaxTokens()));
 
         long reservationStartedAt = System.nanoTime();
         log.info("Billing reservation started userId={} jobId={} estimatedTokens={}",
                 userId,
                 jobId,
-                estimateTokens(prompt.getFinalPrompt()));
+                estimateTokens(prompt));
         PaymentBillingClient.ReservationResponse reservation = paymentBillingClient.reserve(
                 userId,
                 PaymentBillingClient.ReservationRequest.builder()
                         .feature(GENERATION_FEATURE)
-                        .estimatedTokens(estimateTokens(prompt.getFinalPrompt()))
+                        .estimatedTokens(estimateTokens(prompt))
                         .referenceType(REFERENCE_TYPE)
                         .referenceId(jobId)
                         .build());
@@ -96,7 +108,7 @@ public class CvCoverLetterService {
                 reservation.reservedTokens(),
                 (System.nanoTime() - reservationStartedAt) / 1_000_000);
 
-        GenerateResponse llmResponse;
+        GenerationResponse llmResponse;
         try {
             long llmStartedAt = System.nanoTime();
             log.info("LLM request started userId={} jobId={} taskType={} maxTokens={} temperature={}",
@@ -105,11 +117,15 @@ public class CvCoverLetterService {
                     llmProperties.getTaskType(),
                     llmProperties.getMaxTokens(),
                     llmProperties.getTemperature());
-            llmResponse = llmGatewayApi.generate(llmRequest);
-            LlmUsage usage = llmResponse == null ? null : llmResponse.getUsage();
-            log.info("LLM request completed userId={} jobId={} inputTokens={} outputTokens={} totalTokens={} durationMs={}",
+            llmResponse = llmGatewayApi.generateV2(llmRequest);
+            GenerationUsage usage = llmResponse == null ? null : llmResponse.getUsage();
+            log.info("LLM request completed userId={} jobId={} llmContractVersion={} finishReason={} schemaId={} schemaVersion={} inputTokens={} outputTokens={} totalTokens={} durationMs={}",
                     userId,
                     jobId,
+                    llmResponse == null ? null : llmResponse.getContractVersion(),
+                    llmResponse == null ? null : llmResponse.getFinishReason(),
+                    llmResponse == null ? null : llmResponse.getSchemaId(),
+                    llmResponse == null ? null : llmResponse.getSchemaVersion(),
                     usage == null ? null : usage.getInputTokens(),
                     usage == null ? null : usage.getOutputTokens(),
                     usage == null ? null : usage.getTotalTokens(),
@@ -130,7 +146,8 @@ public class CvCoverLetterService {
         }
 
         try {
-            GeneratedApplicationDocuments documents = responseParser.parse(llmResponse.getResponse());
+            validateGenerationResponse(llmResponse, prompt);
+            GeneratedApplicationDocuments documents = responseParser.parse(llmResponse.getOutput());
             String cvContent = cvRenderer.render(documents.getCv(), input.contact());
             String coverLetterContent = coverLetterRenderer.render(documents.getCoverLetter(), input.contact());
 
@@ -175,13 +192,35 @@ public class CvCoverLetterService {
         }
     }
 
-    private long estimateTokens(String prompt) {
-        long estimatedInputTokens = Math.max(1, (long) Math.ceil(prompt.length() / 4.0));
+    private long estimateTokens(CvCoverLetterPrompt prompt) {
+        long requestCharacters = (long) prompt.getTrustedInstructions().length()
+                + prompt.getUntrustedInput().length()
+                + prompt.getOutputSchema().toString().length();
+        long estimatedInputTokens = Math.max(1, (long) Math.ceil(requestCharacters / 4.0));
         long estimatedOutputTokens = Math.max(0, llmProperties.getMaxTokens());
         return Math.max(MINIMUM_GENERATION_RESERVATION_TOKENS, estimatedInputTokens + estimatedOutputTokens);
     }
 
-    private void commitReservation(String userId, UUID reservationId, LlmUsage usage) {
+    private void validateGenerationResponse(
+            GenerationResponse response,
+            CvCoverLetterPrompt prompt
+    ) {
+        if (!"2.0".equals(response.getContractVersion())) {
+            throw new InvalidLlmResponseException("LLM gateway returned an unexpected contract version");
+        }
+        if (response.getFinishReason() != GenerationResponse.FinishReasonEnum.COMPLETED) {
+            throw new InvalidLlmResponseException("LLM generation did not complete safely");
+        }
+        if (!prompt.getGenerationMetadata().schemaId().equals(response.getSchemaId())
+                || !prompt.getGenerationMetadata().schemaVersion().equals(response.getSchemaVersion())) {
+            throw new InvalidLlmResponseException("LLM gateway returned unexpected output schema metadata");
+        }
+        if (response.getOutput() == null || response.getOutput().isBlank()) {
+            throw new InvalidLlmResponseException("LLM gateway returned no generated output");
+        }
+    }
+
+    private void commitReservation(String userId, UUID reservationId, GenerationUsage usage) {
         long actualTokens = usage == null || usage.getTotalTokens() == null
                 ? 0
                 : Math.max(0, usage.getTotalTokens());
@@ -196,8 +235,6 @@ public class CvCoverLetterService {
                 usage == null ? null : usage.getOutputTokens());
         paymentBillingClient.commit(userId, reservationId, PaymentBillingClient.CommitReservationRequest.builder()
                 .actualTokens(actualTokens)
-                .provider(usage == null ? null : usage.getProvider())
-                .model(usage == null ? null : usage.getModel())
                 .inputTokens(usage == null ? null : usage.getInputTokens())
                 .outputTokens(usage == null ? null : usage.getOutputTokens())
                 .description("CV and cover letter generation")

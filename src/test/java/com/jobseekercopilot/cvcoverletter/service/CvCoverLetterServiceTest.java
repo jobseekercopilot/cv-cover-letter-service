@@ -16,20 +16,25 @@ import com.jobseekercopilot.generated.applicationtrackerservice.model.Applicatio
 import com.jobseekercopilot.generated.applicationtrackerservice.model.CreateApplicationRequest;
 import com.jobseekercopilot.generated.documentstoreservice.api.GeneratedDocumentsApi;
 import com.jobseekercopilot.generated.documentstoreservice.model.GeneratedDocumentResponse;
-import com.jobseekercopilot.generated.llmgateway.api.LlmGenerationApi;
-import com.jobseekercopilot.generated.llmgateway.model.GenerateResponse;
-import com.jobseekercopilot.generated.llmgateway.model.LlmUsage;
+import com.jobseekercopilot.generated.llmgateway.api.ModelGenerationApi;
+import com.jobseekercopilot.generated.llmgateway.model.GenerationRequest;
+import com.jobseekercopilot.generated.llmgateway.model.GenerationResponse;
+import com.jobseekercopilot.generated.llmgateway.model.GenerationUsage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.web.client.RestClientException;
 
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
@@ -37,12 +42,12 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-@ExtendWith(MockitoExtension.class)
+@ExtendWith({MockitoExtension.class, OutputCaptureExtension.class})
 class CvCoverLetterServiceTest {
 
     @Mock private PromptBuilderService promptBuilderService;
     @Mock private GenerationInputNormalizer inputNormalizer;
-    @Mock private LlmGenerationApi llmGatewayApi;
+    @Mock private ModelGenerationApi llmGatewayApi;
     @Mock private PaymentBillingClient paymentBillingClient;
     @Mock private GeneratedDocumentsApi documentStoreApi;
     @Mock private ApplicationRecordsApi applicationTrackerApi;
@@ -52,7 +57,7 @@ class CvCoverLetterServiceTest {
     private NormalizedGenerationInput normalizedInput;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         LlmProperties properties = new LlmProperties();
         properties.setTaskType("CV_COVER_LETTER_GENERATION");
         properties.setTemperature(0.25);
@@ -66,7 +71,12 @@ class CvCoverLetterServiceTest {
         when(inputNormalizer.normalize("user-123", request)).thenReturn(normalizedInput);
         when(promptBuilderService.buildPrompt(normalizedInput))
                 .thenReturn(CvCoverLetterPrompt.builder()
-                        .finalPrompt("assembled prompt")
+                        .taskType("CV_COVER_LETTER_GENERATION")
+                        .trustedInstructions("trusted generation rules")
+                        .untrustedInput("{\"job\":\"input-secret-sentinel\"}")
+                        .outputSchema(new ObjectMapper().readTree("""
+                                {"type":"object","additionalProperties":false}
+                                """))
                         .generationMetadata(promptMetadata())
                         .build());
         when(paymentBillingClient.reserve(any(), any())).thenReturn(
@@ -74,8 +84,9 @@ class CvCoverLetterServiceTest {
     }
 
     @Test
-    void generatesStoresBothDocumentsCreatesApplicationAndReturnsContent() {
-        when(llmGatewayApi.generate(any())).thenReturn(new GenerateResponse().response(validJson()).usage(usage()));
+    void generatesStoresBothDocumentsCreatesApplicationAndReturnsContent(CapturedOutput output) {
+        when(llmGatewayApi.generateV2(any())).thenReturn(successfulResponse(
+                validJson().replace("Focused on Java.", "response-secret-sentinel")));
         UUID cvId = UUID.randomUUID();
         UUID letterId = UUID.randomUUID();
         UUID applicationId = UUID.randomUUID();
@@ -87,11 +98,17 @@ class CvCoverLetterServiceTest {
 
         GenerateCvCoverLetterResponse actual = service.generate("user-123", request);
 
-        ArgumentCaptor<com.jobseekercopilot.generated.llmgateway.model.GenerateRequest> llmCaptor =
-                ArgumentCaptor.forClass(com.jobseekercopilot.generated.llmgateway.model.GenerateRequest.class);
-        verify(llmGatewayApi).generate(llmCaptor.capture());
-        assertEquals("assembled prompt", llmCaptor.getValue().getPrompt());
-        assertEquals(0.25, llmCaptor.getValue().getTemperature());
+        ArgumentCaptor<GenerationRequest> llmCaptor = ArgumentCaptor.forClass(GenerationRequest.class);
+        verify(llmGatewayApi).generateV2(llmCaptor.capture());
+        GenerationRequest llmRequest = llmCaptor.getValue();
+        assertEquals(GenerationRequest.ContractVersionEnum._2_0, llmRequest.getContractVersion());
+        assertEquals("CV_COVER_LETTER_GENERATION", llmRequest.getTask());
+        assertEquals("trusted generation rules", llmRequest.getTrustedInstructions());
+        assertEquals("{\"job\":\"input-secret-sentinel\"}", llmRequest.getUntrustedInput());
+        assertEquals("cv-cover-letter-output", llmRequest.getOutput().getSchemaId());
+        assertEquals("1.0.0", llmRequest.getOutput().getSchemaVersion());
+        assertEquals(0.25, llmRequest.getLimits().getTemperature());
+        assertEquals(2500, llmRequest.getLimits().getMaxOutputTokens());
 
         ArgumentCaptor<com.jobseekercopilot.generated.documentstoreservice.model.CreateDocumentRequest> documentCaptor =
                 ArgumentCaptor.forClass(com.jobseekercopilot.generated.documentstoreservice.model.CreateDocumentRequest.class);
@@ -126,7 +143,10 @@ class CvCoverLetterServiceTest {
                 ArgumentCaptor.forClass(PaymentBillingClient.CommitReservationRequest.class);
         verify(paymentBillingClient).commit(org.mockito.Mockito.eq("user-123"), any(), commitCaptor.capture());
         assertEquals(7300L, commitCaptor.getValue().actualTokens());
-        assertEquals("OPENAI", commitCaptor.getValue().provider());
+        assertNull(commitCaptor.getValue().provider());
+        assertNull(commitCaptor.getValue().model());
+        assertFalse(output.getAll().contains("input-secret-sentinel"));
+        assertFalse(output.getAll().contains("response-secret-sentinel"));
     }
 
     @Test
@@ -134,7 +154,7 @@ class CvCoverLetterServiceTest {
         UUID reservationId = UUID.randomUUID();
         when(paymentBillingClient.reserve(any(), any())).thenReturn(
                 new PaymentBillingClient.ReservationResponse(reservationId, "user-123", 5000, 40000, "RESERVED"));
-        when(llmGatewayApi.generate(any())).thenReturn(new GenerateResponse().response(validJson()).usage(usage()));
+        when(llmGatewayApi.generateV2(any())).thenReturn(successfulResponse(validJson()));
         when(documentStoreApi.createDocument(any()))
                 .thenReturn(new GeneratedDocumentResponse().id(UUID.randomUUID()))
                 .thenThrow(new RestClientException("down"));
@@ -152,7 +172,7 @@ class CvCoverLetterServiceTest {
         UUID reservationId = UUID.randomUUID();
         when(paymentBillingClient.reserve(any(), any())).thenReturn(
                 new PaymentBillingClient.ReservationResponse(reservationId, "user-123", 5000, 40000, "RESERVED"));
-        when(llmGatewayApi.generate(any())).thenReturn(new GenerateResponse().response("not json").usage(usage()));
+        when(llmGatewayApi.generateV2(any())).thenReturn(successfulResponse("not json"));
 
         assertThrows(InvalidLlmResponseException.class, () -> service.generate("user-123", request));
 
@@ -166,7 +186,7 @@ class CvCoverLetterServiceTest {
         UUID reservationId = UUID.randomUUID();
         when(paymentBillingClient.reserve(any(), any())).thenReturn(
                 new PaymentBillingClient.ReservationResponse(reservationId, "user-123", 5000, 40000, "RESERVED"));
-        when(llmGatewayApi.generate(any())).thenThrow(new RestClientException("down"));
+        when(llmGatewayApi.generateV2(any())).thenThrow(new RestClientException("down"));
 
         assertThrows(DownstreamServiceException.class, () -> service.generate("user-123", request));
 
@@ -174,10 +194,50 @@ class CvCoverLetterServiceTest {
         verifyNoInteractions(documentStoreApi, applicationTrackerApi);
     }
 
-    private LlmUsage usage() {
-        return new LlmUsage()
-                .provider("OPENAI")
-                .model("gpt-4.1-mini")
+    @Test
+    void filteredGenerationFailsSafelyAndReleasesReservation() {
+        UUID reservationId = UUID.randomUUID();
+        when(paymentBillingClient.reserve(any(), any())).thenReturn(
+                new PaymentBillingClient.ReservationResponse(
+                        reservationId, "user-123", 5000, 40000, "RESERVED"));
+        when(llmGatewayApi.generateV2(any())).thenReturn(successfulResponse(validJson())
+                .finishReason(GenerationResponse.FinishReasonEnum.FILTERED));
+
+        assertThrows(InvalidLlmResponseException.class, () -> service.generate("user-123", request));
+
+        verify(paymentBillingClient).release("user-123", reservationId, "Document generation failed");
+        verify(paymentBillingClient, never()).commit(any(), any(), any());
+        verifyNoInteractions(documentStoreApi, applicationTrackerApi);
+    }
+
+    @Test
+    void mismatchedOutputSchemaFailsSafelyAndReleasesReservation() {
+        UUID reservationId = UUID.randomUUID();
+        when(paymentBillingClient.reserve(any(), any())).thenReturn(
+                new PaymentBillingClient.ReservationResponse(
+                        reservationId, "user-123", 5000, 40000, "RESERVED"));
+        when(llmGatewayApi.generateV2(any())).thenReturn(successfulResponse(validJson())
+                .schemaVersion("unexpected"));
+
+        assertThrows(InvalidLlmResponseException.class, () -> service.generate("user-123", request));
+
+        verify(paymentBillingClient).release("user-123", reservationId, "Document generation failed");
+        verify(paymentBillingClient, never()).commit(any(), any(), any());
+        verifyNoInteractions(documentStoreApi, applicationTrackerApi);
+    }
+
+    private GenerationResponse successfulResponse(String output) {
+        return new GenerationResponse()
+                .contractVersion("2.0")
+                .output(output)
+                .finishReason(GenerationResponse.FinishReasonEnum.COMPLETED)
+                .schemaId("cv-cover-letter-output")
+                .schemaVersion("1.0.0")
+                .usage(usage());
+    }
+
+    private GenerationUsage usage() {
+        return new GenerationUsage()
                 .inputTokens(4200L)
                 .outputTokens(3100L)
                 .totalTokens(7300L);
