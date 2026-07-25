@@ -1,6 +1,6 @@
 # Document-generation input contract
 
-OpenAPI `3.0.0` accepts input snapshot schema `1.0`. The Document Generation
+OpenAPI `3.1.0` accepts input snapshot schema `1.0`. The Document Generation
 Gateway is the only caller. It authenticates the user, places the stable
 subject in `X-Document-Owner`, and assembles the request from authoritative
 service responses. The body deliberately has no user-selected owner.

@@ -15,6 +15,9 @@ llm:
   temperature: ${LLM_TEMPERATURE:0.3}
   max-tokens: ${LLM_MAX_TOKENS:3000}
 
+prompt:
+  selected-release-id: ${PROMPT_BUNDLE_RELEASE:cv-cover-letter-1.1.0}
+
 services:
   llm-gateway:
     base-url: ${LLM_GATEWAY_BASE_URL:http://localhost:8090}

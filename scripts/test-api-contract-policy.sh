@@ -99,6 +99,21 @@ if "$repository_root/scripts/verify-api-contract.sh" "$temporary_dir/header" >/d
     exit 1
 fi
 
+copy_contract "$temporary_dir/prompt-metadata"
+jq 'del(.components.schemas.PromptGenerationMetadata.properties.bundleSha256)
+    | del(.components.schemas.PromptGenerationMetadata.required[]
+        | select(. == "bundleSha256"))' \
+    "$temporary_dir/prompt-metadata/openapi.json" \
+    > "$temporary_dir/prompt-metadata/changed.json"
+mv "$temporary_dir/prompt-metadata/changed.json" \
+   "$temporary_dir/prompt-metadata/openapi.json"
+(cd "$temporary_dir/prompt-metadata" && sha256sum openapi.json > SHA256SUMS)
+if "$repository_root/scripts/verify-api-contract.sh" \
+    "$temporary_dir/prompt-metadata" >/dev/null 2>&1; then
+    echo "API contract policy negative test accepted removal of prompt provenance" >&2
+    exit 1
+fi
+
 copy_contract "$temporary_dir/service-identity"
 jq 'del(
         .paths["/api/v1/cv-cover-letter/generate"].post.security,

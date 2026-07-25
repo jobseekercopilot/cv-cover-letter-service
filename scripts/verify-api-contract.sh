@@ -24,12 +24,13 @@ jq -e '
         "EmploymentInput",
         "GenerateRequest",
         "JobInputSnapshot",
+        "PromptGenerationMetadata",
         "ProfileInputSnapshot",
         "QualificationInput",
         "SnapshotProvenance"
     ] as $closed |
     (.openapi | type == "string" and startswith("3.")) and
-    (.info.version == "3.0.0") and
+    (.info.version == "3.1.0") and
     (.paths["/api/v1/cv-cover-letter/generate"].post.operationId == "generate") and
     (.paths["/api/v1/cv-cover-letter/generate"].post.parameters
         | any(.name == "X-Document-Owner" and .in == "header" and
@@ -80,8 +81,33 @@ jq -e '
     ($schemas.EmploymentInput.properties.startDate.maxLength == 10) and
     ($schemas.GenerateCvCoverLetterResponse.properties.inputSchemaVersion.type
         == "string") and
+    ($schemas.GenerateCvCoverLetterResponse.properties.generationMetadata["$ref"]
+        == "#/components/schemas/PromptGenerationMetadata") and
     ($schemas.GenerateCvCoverLetterResponse.properties.inputWarnings.items["$ref"]
         == "#/components/schemas/InputWarning") and
+    ($schemas.PromptGenerationMetadata.required
+        | index("releaseId") != null and
+          index("bundleId") != null and
+          index("bundleVersion") != null and
+          index("bundleSha256") != null and
+          index("templateVersion") != null and
+          index("templateSha256") != null and
+          index("rulesVersion") != null and
+          index("rulesSha256") != null and
+          index("schemaId") != null and
+          index("schemaVersion") != null and
+          index("schemaSha256") != null and
+          index("evaluationPolicyVersion") != null and
+          index("evaluationPolicySha256") != null) and
+    ([
+        $schemas.PromptGenerationMetadata.properties.bundleSha256.pattern,
+        $schemas.PromptGenerationMetadata.properties.templateSha256.pattern,
+        $schemas.PromptGenerationMetadata.properties.rulesSha256.pattern,
+        $schemas.PromptGenerationMetadata.properties.schemaSha256.pattern,
+        $schemas.PromptGenerationMetadata.properties.evaluationPolicySha256.pattern
+    ] | all(. == "^[a-f0-9]{64}$")) and
+    ($schemas.PromptGenerationMetadata.properties | has("prompt") | not) and
+    ($schemas.PromptGenerationMetadata.properties | has("payload") | not) and
     (all($closed[]; $schemas[.].additionalProperties == false)) and
     ($schemas | has("UserProfile") | not) and
     ($schemas | has("Job") | not) and

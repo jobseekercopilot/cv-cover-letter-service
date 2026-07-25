@@ -5,9 +5,9 @@ Domain service that builds the CV/cover-letter prompt, requests generation from
 creates an application record.
 
 This service is **not beta-ready**. Its build is reproducible from committed
-source, but generated claims are not traceable to source facts, the prompt is
-vulnerable to instructions in untrusted content, and documents are persisted
-before user approval. See
+source and its prompt releases are immutable and rollback-capable, but
+generated claims are not yet traceable to source facts and documents are
+persisted before user approval. See
 [`docs/BETA_READINESS_AUDIT.md`](docs/BETA_READINESS_AUDIT.md).
 
 ## Technology
@@ -30,6 +30,18 @@ snapshots documented in
 Unknown fields and invalid provenance fail closed; deterministic warnings
 report missing, normalised, duplicate, or conflicting evidence. Contact
 details remain render-only and are not sent to the model.
+
+## Prompt releases
+
+Prompt template, rules, output schema and evaluation-policy versions are
+selected as one reviewed bundle. Checksums, an approved-release index and
+negative policy tests reject unreviewed drift at startup and in CI. Generation
+responses and structured logs expose non-PII release metadata; prompt or source
+payloads are never placed in metadata.
+
+See [`docs/PROMPT_GOVERNANCE.md`](docs/PROMPT_GOVERNANCE.md) for the change,
+evaluation and rollback procedure. Durable attachment of the same provenance
+to an immutable stored document version remains a beta dependency on DOC-06.
 
 ## Gateway identity boundary
 
@@ -55,6 +67,8 @@ binaries are build outputs and are not committed. See
 ```bash
 ./scripts/test-contract-policy.sh
 ./scripts/verify-contracts.sh
+./scripts/test-prompt-bundle-policy.sh
+./scripts/verify-prompt-bundles.sh
 ./scripts/test-api-contract-policy.sh
 ./scripts/verify-api-contract.sh
 python3 scripts/verify_client_release.py
