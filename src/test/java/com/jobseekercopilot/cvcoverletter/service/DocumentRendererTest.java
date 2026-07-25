@@ -15,7 +15,31 @@ class DocumentRendererTest {
     @BeforeEach
     void setUp() throws Exception {
         documents = new ObjectMapper().readValue(
-                CvCoverLetterServiceTest.validJson(), GeneratedApplicationDocuments.class);
+                """
+                {
+                  "cv": {
+                    "title": "Tailored Developer CV",
+                    "targetRole": "Developer",
+                    "personalSummary": "A capable developer.",
+                    "coreSkills": [{"name":"Java","evidence":"Built services"}],
+                    "qualifications": [{"qualificationName":"BSc Computing","issuingBody":"Example University","status":"Completed","grade":"First","dateAchieved":"2024","expectedCompletion":""}],
+                    "workHistory": [{"jobTitle":"Engineer","employer":"Acme","startDate":"2022","endDate":"Present","responsibilities":["Built APIs"],"tailoredDescription":"Relevant delivery."}]
+                  },
+                  "coverLetter": {
+                    "title": "Developer Cover Letter",
+                    "jobTitle": "Developer",
+                    "companyName": "Example Ltd",
+                    "greeting": "Dear Hiring Manager",
+                    "openingParagraph": "I am applying for the role.",
+                    "bodyParagraphs": ["My experience is a strong match.", "I build useful services."],
+                    "closingParagraph": "Thank you for your consideration.",
+                    "signOff": "Yours sincerely"
+                  },
+                  "generationNotes": {"assumptionsMade":[],"missingInformation":[],"tailoringSummary":"Focused on Java."},
+                  "claims": []
+                }
+                """,
+                GeneratedApplicationDocuments.class);
     }
 
     @Test

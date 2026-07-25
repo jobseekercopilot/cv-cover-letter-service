@@ -8,10 +8,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jobseekercopilot.cvcoverletter.config.LlmProperties;
 import com.jobseekercopilot.cvcoverletter.dto.InputWarning;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidGenerationInputException;
+import com.jobseekercopilot.cvcoverletter.model.ClaimEvidenceCatalog;
 import com.jobseekercopilot.cvcoverletter.model.CvCoverLetterPrompt;
 import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput;
-import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput.PromptJob;
-import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput.PromptProfile;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +38,7 @@ public class PromptBuilderService {
     private final ObjectMapper objectMapper;
     private final PromptBundleRegistry promptBundleRegistry;
     private final LlmProperties llmProperties;
+    private final ClaimEvidenceCatalogFactory evidenceCatalogFactory;
 
     public CvCoverLetterPrompt buildPrompt(NormalizedGenerationInput input) {
         try {
@@ -46,6 +46,7 @@ public class PromptBuilderService {
             String template = bundle.template();
             String rules = bundle.rules();
             String outputSchemaJson = bundle.outputSchemaJson();
+            ClaimEvidenceCatalog evidenceCatalog = evidenceCatalogFactory.create(input);
 
             String trustedInstructions = template
                     .replace("{{LANGUAGE}}", llmProperties.getLanguage())
@@ -66,8 +67,7 @@ public class PromptBuilderService {
             }
             String untrustedInput = toPrettyJson(new UntrustedGenerationInput(
                     "UNTRUSTED_DATA_ONLY",
-                    input.profile(),
-                    input.job(),
+                    evidenceCatalog,
                     input.warnings()));
             JsonNode outputShape = objectMapper.readTree(outputSchemaJson);
             if (outputShape == null || !outputShape.isObject()) {
@@ -95,6 +95,7 @@ public class PromptBuilderService {
                     .untrustedInput(untrustedInput)
                     .outputSchema(outputSchema)
                     .generationMetadata(bundle.metadata())
+                    .evidenceCatalog(evidenceCatalog)
                     .build();
 
         } catch (JsonProcessingException e) {
@@ -165,8 +166,7 @@ public class PromptBuilderService {
 
     private record UntrustedGenerationInput(
             String classification,
-            PromptProfile profileEvidence,
-            PromptJob canonicalJobFacts,
+            ClaimEvidenceCatalog approvedEvidence,
             List<InputWarning> inputWarnings
     ) {
     }

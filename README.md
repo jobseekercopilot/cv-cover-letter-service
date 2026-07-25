@@ -5,9 +5,10 @@ Domain service that builds the CV/cover-letter prompt, requests generation from
 creates an application record.
 
 This service is **not beta-ready**. Its build is reproducible from committed
-source and its prompt releases are immutable and rollback-capable, but
-generated claims are not yet traceable to source facts and documents are
-persisted before user approval. See
+source, its prompt releases are immutable and rollback-capable, and generated
+claims now fail closed against approved source facts. Documents are still
+persisted before user approval, and the controlled audited path for user
+corrections remains dependent on DOCGEN-16. See
 [`docs/BETA_READINESS_AUDIT.md`](docs/BETA_READINESS_AUDIT.md).
 
 ## Technology
@@ -48,6 +49,8 @@ same bounded schema is enforced again before rendering or persistence; see
 [`docs/MODEL_OUTPUT_CONTRACT.md`](docs/MODEL_OUTPUT_CONTRACT.md). The threat
 model and incident procedure are in
 [`docs/PROMPT_INJECTION_THREAT_MODEL.md`](docs/PROMPT_INJECTION_THREAT_MODEL.md).
+The evidence catalogue, claim dispositions and hallucination checks are in
+[`docs/CLAIM_EVIDENCE_POLICY.md`](docs/CLAIM_EVIDENCE_POLICY.md).
 
 ## Gateway identity boundary
 

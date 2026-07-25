@@ -147,8 +147,14 @@ jq -e '
             (.maxItems | type == "number" and . >= 0 and floor == .) and
             (.maxItems >= .minItems)
         elif .type == "string" then
-            ((keys | sort) == ["pattern", "type"]) and
-            (.pattern | type == "string" and length > 0)
+            . as $schema |
+            ((((keys | sort) == ["pattern", "type"]) or
+              ((keys | sort) == ["enum", "pattern", "type"])) and
+             (.pattern | type == "string" and length > 0) and
+             ((has("enum") | not) or
+              (($schema.enum | type == "array" and length > 0) and
+               all($schema.enum[]; type == "string" and test($schema.pattern)) and
+               (($schema.enum | unique | length) == ($schema.enum | length)))))
         else
             false
         end;

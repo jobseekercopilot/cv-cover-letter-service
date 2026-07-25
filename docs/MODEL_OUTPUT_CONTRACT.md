@@ -2,10 +2,10 @@
 
 CV and Cover Letter Service treats model output as untrusted until it passes
 the exact reviewed schema and local safe-content policy. The active prompt
-release is `cv-cover-letter-1.2.0`; it owns output schema `2.0.0` at
-`src/main/resources/prompts/bundles/cv-cover-letter-1.2.0/output-schema.json`.
+release is `cv-cover-letter-1.3.0`; it owns output schema `3.0.0` at
+`src/main/resources/prompts/bundles/cv-cover-letter-1.3.0/output-schema.json`.
 Its reviewed SHA-256 is
-`ca1b5def221a8205a11bf6925c929fcc47b537dceff733a38f2df5fa9a14990f`.
+`e82f1f3ee30793c2bcc3e2828a3c395c35f6312f3448d3c77824ea1b833d4e56`.
 
 ## One contract at both boundaries
 
@@ -35,6 +35,7 @@ service's deliberately smaller subset.
 | Qualifications and work-history entries | 30 items each |
 | Responsibilities | 20 per work-history entry |
 | Generation-note lists | 20 items; 500 characters per item |
+| Claim ledger | 1–40 claims; 30 evidence IDs and final paths per claim |
 
 The local parser also caps every text node at 4,000 characters and every array
 at 40 items. These parser-wide limits are defence in depth and keep approved
@@ -53,7 +54,10 @@ billing commit:
    patterns against the exact requested schema;
 4. reject raw or HTML-encoded markup, active URI schemes, event-handler
    attributes and unsafe control characters from every text node;
-5. bind the validated tree to the domain DTO.
+5. bind the validated tree to the domain DTO;
+6. require every non-empty final claim-bearing path exactly once in the claim
+   ledger and validate its disposition, approved evidence IDs, atomic facts,
+   numeric claims and high-risk claim categories.
 
 Failure messages contain only a JSON path and policy reason. They do not retain
 parser exceptions that may contain model-output fragments. Any failure
@@ -64,16 +68,22 @@ application creation or charge commit after invalid output.
 
 Successful response metadata and structured logs record the prompt release,
 template, rules and schema versions and their hashes. Request/response logs
-also record LLM contract `2.0`, parser `2.0.0`, the actual model ID and the
+also record LLM contract `2.0`, parser `3.0.0`, the actual model ID and the
 gateway-owned deployment, admission and pricing-policy versions. The consumer
 accepts those fields only from the mandatory audit block in the reviewed
 gateway contract pinned at `c0a2eb1`; missing or malformed audit evidence fails
 before document storage, application creation or billing commit. The exact
 model ID is also written to the existing Payment commit record.
 
-Durable attachment of the complete generation provenance to an immutable
-stored document remains dependent on DOC-06 and is outside DOCGEN-07.
+Durable attachment of the complete claim and generation provenance to an
+immutable stored document remains dependent on DOC-06 and is outside
+DOCGEN-08.
 
 All repository tests use synthetic fixtures and mocked downstreams. They make
 no live or paid provider request and use no real job-seeker data or production
 credentials.
+
+See [`CLAIM_EVIDENCE_POLICY.md`](CLAIM_EVIDENCE_POLICY.md) for the catalogue,
+disposition and fail-closed rules. Schema `2.0.0` remains an approved emergency
+rollback contract; claim-ledger validation is applied only when the selected
+schema contains the governed `claims` property.

@@ -275,7 +275,8 @@ public class PromptBundleRegistry {
             }
             case "string" -> {
                 requireSchema(
-                        keys.equals(Set.of("type", "pattern")),
+                        keys.equals(Set.of("type", "pattern"))
+                                || keys.equals(Set.of("type", "pattern", "enum")),
                         path,
                         "string keywords are not in the approved provider subset");
                 requireSchema(schema.path("pattern").isTextual(), path, "string pattern is required");
@@ -285,6 +286,18 @@ public class PromptBundleRegistry {
                     throw new IllegalStateException(
                             "Active output schema is invalid at " + path + ": pattern is invalid",
                             exception);
+                }
+                if (schema.has("enum")) {
+                    JsonNode allowed = schema.path("enum");
+                    requireSchema(allowed.isArray() && !allowed.isEmpty(),
+                            path, "string enum is invalid");
+                    Set<String> unique = new HashSet<>();
+                    allowed.forEach(value -> requireSchema(
+                            value.isTextual()
+                                    && value.asText().matches(schema.path("pattern").asText())
+                                    && unique.add(value.asText()),
+                            path,
+                            "string enum values must be unique strings matching the pattern"));
                 }
             }
             default -> throw new IllegalStateException(

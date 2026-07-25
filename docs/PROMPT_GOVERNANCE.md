@@ -5,13 +5,15 @@ Each approved release under `src/main/resources/prompts/bundles` packages the
 template, generation rules, output schema and synthetic evaluation policy with
 immutable component checksums. `index.json` is the only runtime allowlist.
 
-The active `cv-cover-letter-1.2.0` release treats profile, canonical job and
-normalisation warnings as untrusted evidence. It places the safety rules before
-that evidence and forbids direct, indirect, encoded, nested, Unicode-obfuscated
-and schema-escape instructions in source content from changing the task. The
-release also owns the exact bounded JSON Schema `2.0.0` used at the provider
-boundary and by the local response parser. The domain bundle cannot name a
-model provider or transport API; provider mechanics belong behind LLM Gateway.
+The active `cv-cover-letter-1.3.0` release converts the normalised profile and
+canonical job into a stable approved-evidence catalogue and treats that
+catalogue and normalisation warnings as untrusted data. It places the safety
+rules before that evidence and forbids direct, indirect, encoded, nested,
+Unicode-obfuscated and schema-escape instructions in source content from
+changing the task. The release also owns exact bounded JSON Schema `3.0.0`
+used at the provider boundary and by the local response parser. The domain
+bundle cannot name a model provider or transport API; provider mechanics
+belong behind LLM Gateway.
 
 Runtime assembly preserves those domains as separate LLM Gateway v2 fields:
 reviewed bundle text becomes `trustedInstructions`, normalised evidence becomes
@@ -70,9 +72,10 @@ does not reverse documents already generated or stored, so operators must use
 the recorded release and component hashes when identifying affected outputs.
 The older approved releases contain output exemplars rather than the active
 bounded schema. They are compiled into closed structural schemas at runtime and
-remain subject to parser `2.0.0` response, text, array and active-content
-limits. Only release `1.2.0` has the more specific field-by-field bounds at
-both the provider and local validation boundaries.
+remain subject to parser `3.0.0` response, text, array and active-content
+limits. Releases `1.2.0` and `1.3.0` have specific field-by-field bounds at
+both the provider and local validation boundaries; only `1.3.0` enables the
+claim evidence ledger and deterministic claim validator.
 
 ## Verification
 

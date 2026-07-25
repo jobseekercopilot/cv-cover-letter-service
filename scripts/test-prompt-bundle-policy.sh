@@ -65,19 +65,19 @@ must_reject "$temporary_dir/provider" "provider-specific domain instructions"
 
 copy_bundles "$temporary_dir/schema-policy"
 jq '.additionalProperties = true' \
-    "$temporary_dir/schema-policy/cv-cover-letter-1.2.0/output-schema.json" \
-    > "$temporary_dir/schema-policy/cv-cover-letter-1.2.0/changed.json"
-mv "$temporary_dir/schema-policy/cv-cover-letter-1.2.0/changed.json" \
-    "$temporary_dir/schema-policy/cv-cover-letter-1.2.0/output-schema.json"
+    "$temporary_dir/schema-policy/cv-cover-letter-1.3.0/output-schema.json" \
+    > "$temporary_dir/schema-policy/cv-cover-letter-1.3.0/changed.json"
+mv "$temporary_dir/schema-policy/cv-cover-letter-1.3.0/changed.json" \
+    "$temporary_dir/schema-policy/cv-cover-letter-1.3.0/output-schema.json"
 schema_hash="$(
-    sha256sum "$temporary_dir/schema-policy/cv-cover-letter-1.2.0/output-schema.json" \
+    sha256sum "$temporary_dir/schema-policy/cv-cover-letter-1.3.0/output-schema.json" \
         | cut -d ' ' -f 1
 )"
 jq --arg schema_hash "$schema_hash" '.schemaSha256 = $schema_hash' \
-    "$temporary_dir/schema-policy/cv-cover-letter-1.2.0/manifest.json" \
-    > "$temporary_dir/schema-policy/cv-cover-letter-1.2.0/changed.json"
-mv "$temporary_dir/schema-policy/cv-cover-letter-1.2.0/changed.json" \
-    "$temporary_dir/schema-policy/cv-cover-letter-1.2.0/manifest.json"
+    "$temporary_dir/schema-policy/cv-cover-letter-1.3.0/manifest.json" \
+    > "$temporary_dir/schema-policy/cv-cover-letter-1.3.0/changed.json"
+mv "$temporary_dir/schema-policy/cv-cover-letter-1.3.0/changed.json" \
+    "$temporary_dir/schema-policy/cv-cover-letter-1.3.0/manifest.json"
 must_reject "$temporary_dir/schema-policy" "a non-strict active output schema"
 
 echo "Prompt bundle policy tests passed"

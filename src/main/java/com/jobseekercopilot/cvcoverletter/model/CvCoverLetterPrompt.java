@@ -15,6 +15,7 @@ public class CvCoverLetterPrompt {
     String trustedInstructions;
     String untrustedInput;
     JsonNode outputSchema;
+    ClaimEvidenceCatalog evidenceCatalog;
     @ToString.Include
     PromptGenerationMetadata generationMetadata;
 }
