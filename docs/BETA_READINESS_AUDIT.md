@@ -52,6 +52,13 @@ the underlying document database.
   reject unapproved drift, the previous release remains selectable for
   rollback, synthetic policy tests cover representative injection forms, and
   non-PII release metadata is returned and logged with each generation.
+- The DOCGEN-06 consumer slice uses LLM Gateway v2 instead of the deprecated
+  raw-prompt operation. Reviewed instructions, normalised untrusted evidence
+  and the compiled strict JSON Schema remain separate across the producer
+  boundary. Job-description and work-history tests cover direct, indirect,
+  encoded, nested, Unicode and schema-escape attacks; unsafe LLM completion
+  states fail before persistence; input/output sentinels prove payloads are not
+  logged.
 
 ## Confirmed blockers
 
@@ -62,9 +69,11 @@ the underlying document database.
 2. The bounded input allowlist and contact-data minimisation are enforced at
    this producer. The Gateway consumer must adopt OpenAPI `3.1.0`, and
    provider-retention/regional-processing decisions remain open.
-3. Job and profile content is now labelled as untrusted evidence behind
-   explicit injection rules and a synthetic attack corpus. DOCGEN-06 still
-   owns model-output injection evaluation and release thresholds.
+3. Job and profile content is physically separated as untrusted evidence
+   behind explicit rules and a synthetic attack corpus. A current official
+   provider-retention/regional-processing decision and controlled provider
+   evaluation remain program-level release evidence; no live or paid request
+   was made in DOCGEN-06.
 4. Prompt releases, comparison, change evaluation and operational rollback are
    governed. The release metadata is returned and logged, but durable
    attachment to immutable document versions remains blocked on DOC-06.
@@ -85,9 +94,11 @@ the underlying document database.
     per-user usage guard.
 12. Token estimation is approximate and pricing/model-version assumptions are
     not governed or surfaced as cost evidence.
-13. Current tests do not cover prompt-injection corpora, unsupported claims,
-    malformed/oversized structured output, duplicate requests, partial
-    downstream failure, user approval, or privacy minimisation.
+13. Current tests cover the prompt-injection corpus and basic malformed,
+    filtered and schema-mismatched output handling. They do not yet cover
+    unsupported claims, all malformed/oversized structured-output cases,
+    duplicate requests, every partial downstream failure, user approval or the
+    complete privacy evidence required for beta.
 14. Document Generation Gateway must consume the bounded authenticated `3.1.0`
     contract and provide its own dedicated credential under DOCGEN-03/GW-01.
 15. Current Spring, Tomcat, Jackson, logging, Swagger UI, and generated-client

@@ -42,6 +42,10 @@ payloads are never placed in metadata.
 See [`docs/PROMPT_GOVERNANCE.md`](docs/PROMPT_GOVERNANCE.md) for the change,
 evaluation and rollback procedure. Durable attachment of the same provenance
 to an immutable stored document version remains a beta dependency on DOC-06.
+The runtime uses LLM Gateway v2 to keep reviewed instructions, untrusted job
+and profile evidence, and the strict output schema in separate fields. The
+threat model and incident procedure are in
+[`docs/PROMPT_INJECTION_THREAT_MODEL.md`](docs/PROMPT_INJECTION_THREAT_MODEL.md).
 
 ## Gateway identity boundary
 
@@ -55,7 +59,7 @@ obsolete `X-User-Id` header never selects the owner.
 See [`docs/AUTHORIZATION_BOUNDARY.md`](docs/AUTHORIZATION_BOUNDARY.md) for the
 failure contract, rotation guidance and remaining downstream boundaries.
 
-The LLM Gateway, Document Store and Application Tracker clients are generated
+The LLM Gateway v2, Document Store and Application Tracker clients are generated
 during Maven `generate-sources` from reviewed, checksum-protected producer
 contracts under `src/main/openapi`. The raw Payment reserve/commit/release
 adapter is checked against its pinned producer contract. Generated sources and

@@ -12,6 +12,14 @@ and schema-escape instructions in source content from changing the task. The
 domain bundle cannot name a model provider or transport API; provider mechanics
 belong behind LLM Gateway.
 
+Runtime assembly preserves those domains as separate LLM Gateway v2 fields:
+reviewed bundle text becomes `trustedInstructions`, normalised evidence becomes
+`untrustedInput`, and the bundle's reviewed output shape is compiled into the
+independent strict JSON Schema output contract. Source data is never
+interpolated into the trusted field. See
+[`PROMPT_INJECTION_THREAT_MODEL.md`](PROMPT_INJECTION_THREAT_MODEL.md) for the
+trust zones, attack corpus, safe-failure and incident procedures.
+
 ## Release metadata
 
 Every successful generation response and its structured prompt-build log
@@ -37,7 +45,7 @@ operational evidence but not the final audit record.
    `ROLLBACK`, and update `index.json` atomically.
 5. Review the component diff and `PromptBundleComparison` result.
 6. Add or update synthetic factuality, quality and prompt-injection fixtures.
-7. Deliberately review and replace the golden synthetic prompt hash.
+7. Deliberately review and replace the golden synthetic LLM-boundary hash.
 8. Run the prompt policy, contract policy, Maven and source-only container
    checks before merge.
 9. Record material evaluation evidence in the issue and pull request. Never
@@ -55,9 +63,10 @@ unapproved, malformed, missing or checksum-invalid. Emergency rollback must
 not edit a released directory or bypass the index; a permanent default change
 uses the full reviewed change procedure.
 
-Rollback restores prompt construction only. It does not reverse documents
-already generated or stored, so operators must use the recorded release and
-component hashes when identifying affected outputs.
+Rollback restores prompt construction only. The LLM Gateway v2 physical
+trusted/untrusted separation remains enforced for every approved release. It
+does not reverse documents already generated or stored, so operators must use
+the recorded release and component hashes when identifying affected outputs.
 
 ## Verification
 
@@ -73,4 +82,4 @@ unapproved packaged directories, provider-specific instructions and invalid
 default/rollback state. Java startup repeats the allowlist, manifest,
 placeholder, checksum, schema and provider-boundary checks. Synthetic tests
 pin factuality and quality rules, the injection corpus and a reviewed golden
-prompt.
+LLM boundary.
