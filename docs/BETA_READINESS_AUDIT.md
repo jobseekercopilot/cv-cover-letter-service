@@ -39,8 +39,14 @@ the underlying document database.
   require reachability/false-positive triage; the report was not committed.
 - The CVCL-02 producer slice authenticates the Document Generation Gateway
   with a dedicated runtime credential, accepts exactly one trusted owner
-  context, overwrites caller-controlled body identity before domain work, and
-  publishes the breaking identity contract as OpenAPI `2.0.0`.
+  context, excludes caller-controlled body identity from domain work, and
+  published the breaking identity contract as OpenAPI `2.0.0`.
+- The DOCGEN-04 producer slice replaces broad duplicated profile/job DTOs with
+  the versioned bounded input contract in
+  `docs/GENERATION_INPUT_CONTRACT.md`. It validates source provenance, field
+  and aggregate limits, dates, unknown fields, active markup, duplicates and
+  conflicts before prompt construction. Contact identity is render-only, and
+  deterministic warnings represent missing or changed evidence.
 
 ## Confirmed blockers
 
@@ -48,8 +54,9 @@ the underlying document database.
    Beta still requires the Gateway consumer rollout, runtime secret wiring,
    outbound Payment/Document Store/Application Tracker identities, and
    fleet-level negative-path evidence.
-2. The entire enriched profile, including contact data, is serialised for the
-   model without a documented allowlist or minimisation decision.
+2. The bounded input allowlist and contact-data minimisation are enforced at
+   this producer. The Gateway consumer must adopt OpenAPI `3.0.0`, and
+   provider-retention/regional-processing decisions remain open.
 3. Job and profile content are concatenated with instructions, so untrusted
    text can attempt prompt injection.
 4. Prompt files are source controlled but have no explicit prompt version,
@@ -66,14 +73,15 @@ the underlying document database.
    approval.
 10. The save/export/application/credit sequence is non-atomic. Retries can
     leave partial records, duplicate documents/applications, or repeated cost.
-11. There is no request idempotency key, duplicate-click protection, prompt
-    size limit, or service-owned per-user usage guard.
+11. Normalised prompt input is capped at 40,000 characters. There is no
+    request idempotency key, duplicate-click protection, or service-owned
+    per-user usage guard.
 12. Token estimation is approximate and pricing/model-version assumptions are
     not governed or surfaced as cost evidence.
 13. Current tests do not cover prompt-injection corpora, unsupported claims,
     malformed/oversized structured output, duplicate requests, partial
     downstream failure, user approval, or privacy minimisation.
-14. Document Generation Gateway must consume this authenticated `2.0.0`
+14. Document Generation Gateway must consume the bounded authenticated `3.0.0`
     contract and provide its own dedicated credential under DOCGEN-03/GW-01.
 15. Current Spring, Tomcat, Jackson, logging, Swagger UI, and generated-client
     dependency findings include untriaged Critical/High advisories.

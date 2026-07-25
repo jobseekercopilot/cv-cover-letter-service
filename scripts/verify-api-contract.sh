@@ -18,8 +18,18 @@ done
 )
 
 jq -e '
+    .components.schemas as $schemas |
+    [
+        "ContactInputSnapshot",
+        "EmploymentInput",
+        "GenerateRequest",
+        "JobInputSnapshot",
+        "ProfileInputSnapshot",
+        "QualificationInput",
+        "SnapshotProvenance"
+    ] as $closed |
     (.openapi | type == "string" and startswith("3.")) and
-    (.info.version == "2.0.0") and
+    (.info.version == "3.0.0") and
     (.paths["/api/v1/cv-cover-letter/generate"].post.operationId == "generate") and
     (.paths["/api/v1/cv-cover-letter/generate"].post.parameters
         | any(.name == "X-Document-Owner" and .in == "header" and
@@ -36,15 +46,46 @@ jq -e '
         == "#/components/schemas/GenerateRequest") and
     (.paths["/api/v1/cv-cover-letter/generate"].post.responses["200"].content["*/*"].schema["$ref"]
         == "#/components/schemas/GenerateCvCoverLetterResponse") and
-    (.components.schemas.GenerateRequest.required
-        | index("job") != null and index("userProfile") != null) and
-    (.components.schemas.Job.required
-        | index("id") != null and index("title") != null and
+    ($schemas.GenerateRequest.required
+        | index("inputSchemaVersion") != null and
+          index("profile") != null and index("job") != null) and
+    ($schemas.GenerateRequest.properties.inputSchemaVersion.pattern == "1\\.0") and
+    ($schemas.ProfileInputSnapshot.required | index("provenance") != null) and
+    ($schemas.ProfileInputSnapshot.properties.skills.maxItems == 40) and
+    ($schemas.ProfileInputSnapshot.properties.skills.items.maxLength == 100) and
+    ($schemas.ProfileInputSnapshot.properties.targetRoles.maxItems == 20) and
+    ($schemas.ProfileInputSnapshot.properties.qualifications.maxItems == 30) and
+    ($schemas.ProfileInputSnapshot.properties.employmentHistory.maxItems == 30) and
+    ($schemas.ContactInputSnapshot.required | index("provenance") != null) and
+    ($schemas.ContactInputSnapshot.properties.fullName.maxLength == 120) and
+    ($schemas.ContactInputSnapshot.properties.email.maxLength == 254) and
+    ($schemas.JobInputSnapshot.required
+        | index("provenance") != null and index("title") != null and
           index("company") != null and index("description") != null) and
-    (.components.schemas.UserProfile.required | index("userId") != null) and
-    (.components.schemas.Aspirations.properties.targetWeeklyHours.enum
-        | index("FULL_TIME") != null and index("PART_TIME_16_30") != null and
-          index("PART_TIME_UNDER_16") != null and index("FLEXIBLE") != null)
+    ($schemas.JobInputSnapshot.properties.title.maxLength == 160) and
+    ($schemas.JobInputSnapshot.properties.company.maxLength == 160) and
+    ($schemas.JobInputSnapshot.properties.description.maxLength == 12000) and
+    ($schemas.SnapshotProvenance.required
+        | index("owner") != null and index("resourceId") != null and
+          index("version") != null and index("capturedAt") != null) and
+    ($schemas.SnapshotProvenance.properties.resourceId.maxLength == 128) and
+    ($schemas.SnapshotProvenance.properties.version.maxLength == 128) and
+    ($schemas.SnapshotProvenance.properties.owner.enum
+        | index("AUTHENTICATION_SERVICE") != null and
+          index("JOB_SERVICE") != null and
+          index("USER_PROFILE_SERVICE") != null) and
+    ($schemas.QualificationInput.properties.qualificationName.maxLength == 160) and
+    ($schemas.QualificationInput.properties.dateAchieved.maxLength == 10) and
+    ($schemas.EmploymentInput.properties.responsibilities.maxLength == 4000) and
+    ($schemas.EmploymentInput.properties.startDate.maxLength == 10) and
+    ($schemas.GenerateCvCoverLetterResponse.properties.inputSchemaVersion.type
+        == "string") and
+    ($schemas.GenerateCvCoverLetterResponse.properties.inputWarnings.items["$ref"]
+        == "#/components/schemas/InputWarning") and
+    (all($closed[]; $schemas[.].additionalProperties == false)) and
+    ($schemas | has("UserProfile") | not) and
+    ($schemas | has("Job") | not) and
+    ($schemas | has("Aspirations") | not)
 ' "$contract" >/dev/null
 
-echo "API contract policy: authenticated CV and Cover Letter OpenAPI source is present and intact"
+echo "API contract policy: authenticated bounded-input OpenAPI source is present and intact"

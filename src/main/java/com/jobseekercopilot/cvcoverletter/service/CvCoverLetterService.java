@@ -8,6 +8,7 @@ import com.jobseekercopilot.cvcoverletter.dto.GeneratedApplicationDocuments;
 import com.jobseekercopilot.cvcoverletter.exception.DownstreamServiceException;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidLlmResponseException;
 import com.jobseekercopilot.cvcoverletter.model.CvCoverLetterPrompt;
+import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput;
 import com.jobseekercopilot.generated.applicationtrackerservice.api.ApplicationRecordsApi;
 import com.jobseekercopilot.generated.applicationtrackerservice.model.ApplicationRecordResponse;
 import com.jobseekercopilot.generated.applicationtrackerservice.model.CreateApplicationRequest;
@@ -32,6 +33,7 @@ public class CvCoverLetterService {
     private static final long MINIMUM_GENERATION_RESERVATION_TOKENS = 5_000L;
 
     private final PromptBuilderService promptBuilderService;
+    private final GenerationInputNormalizer inputNormalizer;
     private final LlmGenerationApi llmGatewayApi;
     private final PaymentBillingClient paymentBillingClient;
     private final LlmProperties llmProperties;
@@ -41,17 +43,15 @@ public class CvCoverLetterService {
     private final GeneratedDocumentsApi documentStoreApi;
     private final ApplicationRecordsApi applicationTrackerApi;
 
-    public GenerateCvCoverLetterResponse generate(GenerateRequest request) {
+    public GenerateCvCoverLetterResponse generate(String ownerId, GenerateRequest request) {
         long generationStartedAt = System.nanoTime();
-        String userId = request.getUserProfile().getUserId();
-        String jobId = request.getJob().getId();
+        NormalizedGenerationInput input = inputNormalizer.normalize(ownerId, request);
+        String userId = input.ownerId();
+        String jobId = input.jobProvenance().getResourceId();
         log.info("CV/cover letter generation request received userId={} jobId={}", userId, jobId);
         long promptStartedAt = System.nanoTime();
         log.info("Prompt build started userId={} jobId={}", userId, jobId);
-        CvCoverLetterPrompt prompt = promptBuilderService.buildPrompt(
-                request.getUserProfile(),
-                request.getJob()
-        );
+        CvCoverLetterPrompt prompt = promptBuilderService.buildPrompt(input);
         log.info("Prompt build completed userId={} jobId={} estimatedTokens={} durationMs={}",
                 userId,
                 jobId,
@@ -76,7 +76,7 @@ public class CvCoverLetterService {
                         .feature(GENERATION_FEATURE)
                         .estimatedTokens(estimateTokens(prompt.getFinalPrompt()))
                         .referenceType(REFERENCE_TYPE)
-                        .referenceId(request.getJob().getId())
+                        .referenceId(jobId)
                         .build());
         if (reservation == null || reservation.reservationId() == null) {
             log.error("Billing reservation failed userId={} jobId={} error=MissingReservationId", userId, jobId);
@@ -123,19 +123,18 @@ public class CvCoverLetterService {
 
         try {
             GeneratedApplicationDocuments documents = responseParser.parse(llmResponse.getResponse());
-            ContactDetails contactDetails = ContactDetails.from(request.getUserProfile());
-            String cvContent = cvRenderer.render(documents.getCv(), contactDetails);
-            String coverLetterContent = coverLetterRenderer.render(documents.getCoverLetter(), contactDetails);
+            String cvContent = cvRenderer.render(documents.getCv(), input.contact());
+            String coverLetterContent = coverLetterRenderer.render(documents.getCoverLetter(), input.contact());
 
-            GeneratedDocumentResponse savedCv = saveDocument(request, DocumentTypeEnum.CV,
+            GeneratedDocumentResponse savedCv = saveDocument(input, DocumentTypeEnum.CV,
                     documents.getCv().getTitle(), cvContent);
-            GeneratedDocumentResponse savedCoverLetter = saveDocument(request, DocumentTypeEnum.COVER_LETTER,
+            GeneratedDocumentResponse savedCoverLetter = saveDocument(input, DocumentTypeEnum.COVER_LETTER,
                     documents.getCoverLetter().getTitle(), coverLetterContent);
             requireDocumentId(savedCv, "CV");
             requireDocumentId(savedCoverLetter, "cover letter");
 
             ApplicationRecordResponse application = createApplication(
-                    request, savedCv.getId().toString(), savedCoverLetter.getId().toString());
+                    input, savedCv.getId().toString(), savedCoverLetter.getId().toString());
             if (application == null || application.getId() == null) {
                 throw new DownstreamServiceException("Application tracker returned no application ID", null);
             }
@@ -158,6 +157,8 @@ public class CvCoverLetterService {
                     .cvContent(cvContent)
                     .coverLetterContent(coverLetterContent)
                     .generationNotes(documents.getGenerationNotes())
+                    .inputSchemaVersion(input.inputSchemaVersion())
+                    .inputWarnings(input.warnings())
                     .build();
         } catch (RuntimeException exception) {
             releaseReservationAfterFailure(userId, reservation.reservationId(), "Document generation failed");
@@ -205,36 +206,36 @@ public class CvCoverLetterService {
         }
     }
 
-    private GeneratedDocumentResponse saveDocument(GenerateRequest request, DocumentTypeEnum type,
+    private GeneratedDocumentResponse saveDocument(NormalizedGenerationInput input, DocumentTypeEnum type,
                                                     String title, String content) {
         com.jobseekercopilot.generated.documentstoreservice.model.CreateDocumentRequest documentRequest =
                 new com.jobseekercopilot.generated.documentstoreservice.model.CreateDocumentRequest()
-                        .userId(request.getUserProfile().getUserId())
-                        .jobId(request.getJob().getId())
+                        .userId(input.ownerId())
+                        .jobId(input.jobProvenance().getResourceId())
                         .documentType(type)
                         .title(title)
                         .content(content);
         try {
             long startedAt = System.nanoTime();
             log.info("Document save started userId={} jobId={} documentType={}",
-                    request.getUserProfile().getUserId(),
-                    request.getJob().getId(),
+                    input.ownerId(),
+                    input.jobProvenance().getResourceId(),
                     type);
             GeneratedDocumentResponse response = documentStoreApi.createDocument(documentRequest);
             if (response == null) {
                 throw new DownstreamServiceException("Document store failed to save " + type, null);
             }
             log.info("Document save succeeded userId={} jobId={} documentType={} documentId={} durationMs={}",
-                    request.getUserProfile().getUserId(),
-                    request.getJob().getId(),
+                    input.ownerId(),
+                    input.jobProvenance().getResourceId(),
                     type,
                     response.getId(),
                     (System.nanoTime() - startedAt) / 1_000_000);
             return response;
         } catch (RestClientException exception) {
             log.warn("Document save failed userId={} jobId={} documentType={} error={}",
-                    request.getUserProfile().getUserId(),
-                    request.getJob().getId(),
+                    input.ownerId(),
+                    input.jobProvenance().getResourceId(),
                     type,
                     exception.getClass().getSimpleName(),
                     exception);
@@ -248,32 +249,35 @@ public class CvCoverLetterService {
         }
     }
 
-    private ApplicationRecordResponse createApplication(GenerateRequest request, String cvId, String coverLetterId) {
+    private ApplicationRecordResponse createApplication(
+            NormalizedGenerationInput input, String cvId, String coverLetterId) {
         CreateApplicationRequest applicationRequest = new CreateApplicationRequest()
-                .userId(request.getUserProfile().getUserId())
-                .jobId(request.getJob().getId())
-                .jobTitle(request.getJob().getTitle())
-                .companyName(request.getJob().getCompany())
+                .userId(input.ownerId())
+                .jobId(input.jobProvenance().getResourceId())
+                .canonicalJobId(input.jobProvenance().getResourceId())
+                .jobTitle(input.job().title())
+                .companyName(input.job().company())
+                .location(input.job().location())
                 .cvDocumentId(cvId)
                 .coverLetterDocumentId(coverLetterId);
         try {
             long startedAt = System.nanoTime();
             log.info("Application tracker create started userId={} jobId={} cvDocumentId={} coverLetterDocumentId={}",
-                    request.getUserProfile().getUserId(),
-                    request.getJob().getId(),
+                    input.ownerId(),
+                    input.jobProvenance().getResourceId(),
                     cvId,
                     coverLetterId);
             ApplicationRecordResponse response = applicationTrackerApi.createApplication(applicationRequest);
             log.info("Application tracker create succeeded userId={} jobId={} applicationId={} durationMs={}",
-                    request.getUserProfile().getUserId(),
-                    request.getJob().getId(),
+                    input.ownerId(),
+                    input.jobProvenance().getResourceId(),
                     response == null ? null : response.getId(),
                     (System.nanoTime() - startedAt) / 1_000_000);
             return response;
         } catch (RestClientException exception) {
             log.warn("Application tracker create failed userId={} jobId={} error={}",
-                    request.getUserProfile().getUserId(),
-                    request.getJob().getId(),
+                    input.ownerId(),
+                    input.jobProvenance().getResourceId(),
                     exception.getClass().getSimpleName(),
                     exception);
             throw new DownstreamServiceException("Application tracker is unavailable", exception);

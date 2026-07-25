@@ -44,13 +44,47 @@ if "$repository_root/scripts/verify-api-contract.sh" "$temporary_dir/operation" 
 fi
 
 copy_contract "$temporary_dir/request"
-jq 'del(.components.schemas.GenerateRequest.required[] | select(. == "job"))' \
+jq 'del(.components.schemas.GenerateRequest.required[] | select(. == "profile"))' \
     "$temporary_dir/request/openapi.json" \
     > "$temporary_dir/request/changed.json"
 mv "$temporary_dir/request/changed.json" "$temporary_dir/request/openapi.json"
 (cd "$temporary_dir/request" && sha256sum openapi.json > SHA256SUMS)
 if "$repository_root/scripts/verify-api-contract.sh" "$temporary_dir/request" >/dev/null 2>&1; then
-    echo "API contract policy negative test accepted removal of required job input" >&2
+    echo "API contract policy negative test accepted removal of required profile input" >&2
+    exit 1
+fi
+
+copy_contract "$temporary_dir/provenance"
+jq 'del(.components.schemas.SnapshotProvenance.properties.owner.enum[]
+        | select(. == "JOB_SERVICE"))' \
+    "$temporary_dir/provenance/openapi.json" \
+    > "$temporary_dir/provenance/changed.json"
+mv "$temporary_dir/provenance/changed.json" "$temporary_dir/provenance/openapi.json"
+(cd "$temporary_dir/provenance" && sha256sum openapi.json > SHA256SUMS)
+if "$repository_root/scripts/verify-api-contract.sh" "$temporary_dir/provenance" >/dev/null 2>&1; then
+    echo "API contract policy negative test accepted removal of Job Service provenance" >&2
+    exit 1
+fi
+
+copy_contract "$temporary_dir/limit"
+jq '.components.schemas.JobInputSnapshot.properties.description.maxLength = 12001' \
+    "$temporary_dir/limit/openapi.json" \
+    > "$temporary_dir/limit/changed.json"
+mv "$temporary_dir/limit/changed.json" "$temporary_dir/limit/openapi.json"
+(cd "$temporary_dir/limit" && sha256sum openapi.json > SHA256SUMS)
+if "$repository_root/scripts/verify-api-contract.sh" "$temporary_dir/limit" >/dev/null 2>&1; then
+    echo "API contract policy negative test accepted generation-input limit drift" >&2
+    exit 1
+fi
+
+copy_contract "$temporary_dir/open-schema"
+jq '.components.schemas.GenerateRequest.additionalProperties = true' \
+    "$temporary_dir/open-schema/openapi.json" \
+    > "$temporary_dir/open-schema/changed.json"
+mv "$temporary_dir/open-schema/changed.json" "$temporary_dir/open-schema/openapi.json"
+(cd "$temporary_dir/open-schema" && sha256sum openapi.json > SHA256SUMS)
+if "$repository_root/scripts/verify-api-contract.sh" "$temporary_dir/open-schema" >/dev/null 2>&1; then
+    echo "API contract policy negative test accepted unknown generation fields" >&2
     exit 1
 fi
 

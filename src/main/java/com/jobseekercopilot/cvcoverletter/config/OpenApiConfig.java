@@ -4,11 +4,22 @@ import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.security.SecurityScheme;
+import java.util.Set;
+import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class OpenApiConfig {
+
+    private static final Set<String> CLOSED_INPUT_SCHEMAS = Set.of(
+            "ContactInputSnapshot",
+            "EmploymentInput",
+            "GenerateRequest",
+            "JobInputSnapshot",
+            "ProfileInputSnapshot",
+            "QualificationInput",
+            "SnapshotProvenance");
 
     @Bean
     OpenAPI cvCoverLetterOpenApi() {
@@ -21,7 +32,17 @@ public class OpenApiConfig {
                                 .name("X-Service-Token")))
                 .info(new Info()
                         .title("Jobseeker Copilot - CV Cover Letter Service API")
-                        .version("2.0.0")
-                        .description("Generates, renders, and stores tailored CV and cover-letter content, then records the application."));
+                        .version("3.0.0")
+                        .description("Accepts bounded provenance-aware snapshots, then generates, renders, and stores tailored CV and cover-letter content."));
+    }
+
+    @Bean
+    OpenApiCustomizer closeGenerationInputSchemas() {
+        return openApi -> CLOSED_INPUT_SCHEMAS.forEach(schemaName -> {
+            var schema = openApi.getComponents().getSchemas().get(schemaName);
+            if (schema != null) {
+                schema.setAdditionalProperties(false);
+            }
+        });
     }
 }

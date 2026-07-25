@@ -15,13 +15,19 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class})
+    @ExceptionHandler({
+            MethodArgumentNotValidException.class,
+            HttpMessageNotReadableException.class,
+            InvalidGenerationInputException.class
+    })
     ResponseEntity<ApiError> badRequest(Exception exception, HttpServletRequest request) {
         String message = exception instanceof MethodArgumentNotValidException validation
                 ? validation.getBindingResult().getFieldErrors().stream()
                     .findFirst().map(error -> error.getField() + ": " + error.getDefaultMessage())
                     .orElse("Invalid request")
-                : "Request body is not valid JSON";
+                : exception instanceof InvalidGenerationInputException
+                    ? exception.getMessage()
+                    : "Request body is not valid JSON";
         return response(HttpStatus.BAD_REQUEST, message, request);
     }
 

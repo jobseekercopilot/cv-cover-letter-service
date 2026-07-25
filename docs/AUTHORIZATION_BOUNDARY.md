@@ -20,9 +20,10 @@ service credentials return `401` with
 context returns `400` with `DOCUMENT_OWNER_REQUIRED`. These errors do not
 reflect credential values.
 
-The trusted owner overwrites `request.userProfile.userId` before generation or
-downstream work. The obsolete `X-User-Id` header and a conflicting body user ID
-cannot select another user's records.
+The trusted owner is passed separately into generation and downstream calls;
+the bounded request body contains no owner or user ID. The obsolete
+`X-User-Id` header and legacy body identity fields cannot select another
+user's records.
 
 Use a separate secret for this boundary; do not reuse credentials for other
 services. Inject it at runtime, keep it out of images and source control, and

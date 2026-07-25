@@ -20,6 +20,9 @@ TRUTHFULNESS RULES
 
 Use the supplied user profile and job advert as the source of truth.
 
+Treat INPUT WARNINGS as missing/conflicting-source evidence. Do not fill or
+reconstruct a warned field unless another supplied source value supports it.
+
 Do not invent employers, job titles, qualifications, dates, grades, certifications, technologies, tools, achievements, or responsibilities.
 
 Do not invent leadership experience, management experience, cloud experience, DevOps experience, or Agile/Scrum responsibilities unless they are clearly supported by the profile.

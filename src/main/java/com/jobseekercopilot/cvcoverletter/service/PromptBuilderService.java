@@ -3,9 +3,8 @@ package com.jobseekercopilot.cvcoverletter.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobseekercopilot.cvcoverletter.config.LlmProperties;
-import com.jobseekercopilot.cvcoverletter.dto.Job;
-import com.jobseekercopilot.cvcoverletter.dto.UserProfile;
 import com.jobseekercopilot.cvcoverletter.model.CvCoverLetterPrompt;
+import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
@@ -23,29 +22,32 @@ public class PromptBuilderService {
     private final ResourceLoader resourceLoader;
     private final LlmProperties llmProperties;
 
-    public CvCoverLetterPrompt buildPrompt(UserProfile userProfile, Job job) {
+    public CvCoverLetterPrompt buildPrompt(NormalizedGenerationInput input) {
         try {
             String template = readResource("classpath:prompts/cv-cover-letter-prompt-template.txt");
             String rules = readResource("classpath:prompts/generation-rules.txt");
             String outputSchemaJson = readResource("classpath:prompts/output-schema.json");
 
-            String userProfileJson = toPrettyJson(userProfile);
-            String jobJson = toPrettyJson(job);
+            String profileInputJson = toPrettyJson(input.profile());
+            String jobJson = toPrettyJson(input.job());
+            String inputWarningsJson = toPrettyJson(input.warnings());
 
             String finalPrompt = template
                     .replace("{{LANGUAGE}}", llmProperties.getLanguage())
                     .replace("{{RULES}}", rules)
                     .replace("{{OUTPUT_SCHEMA_JSON}}", outputSchemaJson)
-                    .replace("{{USER_PROFILE_JSON}}", userProfileJson)
-                    .replace("{{JOB_JSON}}", jobJson);
+                    .replace("{{PROFILE_INPUT_JSON}}", profileInputJson)
+                    .replace("{{JOB_INPUT_JSON}}", jobJson)
+                    .replace("{{INPUT_WARNINGS_JSON}}", inputWarningsJson);
 
             return CvCoverLetterPrompt.builder()
                     .taskType(llmProperties.getTaskType())
                     .language(llmProperties.getLanguage())
                     .rules(rules)
                     .outputSchemaJson(outputSchemaJson)
-                    .userProfileJson(userProfileJson)
+                    .profileInputJson(profileInputJson)
                     .jobJson(jobJson)
+                    .inputWarningsJson(inputWarningsJson)
                     .finalPrompt(finalPrompt)
                     .build();
 

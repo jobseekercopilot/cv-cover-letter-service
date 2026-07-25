@@ -1,14 +1,15 @@
 package com.jobseekercopilot.cvcoverletter.service;
 
+import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validRequest;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobseekercopilot.cvcoverletter.config.LlmProperties;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateCvCoverLetterResponse;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateRequest;
-import com.jobseekercopilot.cvcoverletter.dto.Job;
-import com.jobseekercopilot.cvcoverletter.dto.UserProfile;
 import com.jobseekercopilot.cvcoverletter.exception.DownstreamServiceException;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidLlmResponseException;
 import com.jobseekercopilot.cvcoverletter.model.CvCoverLetterPrompt;
+import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput;
 import com.jobseekercopilot.generated.applicationtrackerservice.api.ApplicationRecordsApi;
 import com.jobseekercopilot.generated.applicationtrackerservice.model.ApplicationRecordResponse;
 import com.jobseekercopilot.generated.applicationtrackerservice.model.CreateApplicationRequest;
@@ -39,6 +40,7 @@ import static org.mockito.Mockito.when;
 class CvCoverLetterServiceTest {
 
     @Mock private PromptBuilderService promptBuilderService;
+    @Mock private GenerationInputNormalizer inputNormalizer;
     @Mock private LlmGenerationApi llmGatewayApi;
     @Mock private PaymentBillingClient paymentBillingClient;
     @Mock private GeneratedDocumentsApi documentStoreApi;
@@ -46,6 +48,7 @@ class CvCoverLetterServiceTest {
 
     private CvCoverLetterService service;
     private GenerateRequest request;
+    private NormalizedGenerationInput normalizedInput;
 
     @BeforeEach
     void setUp() {
@@ -53,19 +56,14 @@ class CvCoverLetterServiceTest {
         properties.setTaskType("CV_COVER_LETTER_GENERATION");
         properties.setTemperature(0.25);
         properties.setMaxTokens(2500);
-        service = new CvCoverLetterService(promptBuilderService, llmGatewayApi, paymentBillingClient, properties,
+        service = new CvCoverLetterService(promptBuilderService, inputNormalizer, llmGatewayApi, paymentBillingClient, properties,
                 new LlmResponseParser(new ObjectMapper()), new CvDocumentRenderer(),
                 new CoverLetterDocumentRenderer(), documentStoreApi, applicationTrackerApi);
 
-        UserProfile profile = new UserProfile();
-        profile.setUserId("user-123");
-        Job job = new Job();
-        job.setId("job-456");
-        job.setTitle("Developer");
-        job.setCompany("Example Ltd");
-        job.setDescription("Build services");
-        request = new GenerateRequest(profile, job);
-        when(promptBuilderService.buildPrompt(profile, job))
+        request = validRequest();
+        normalizedInput = new GenerationInputNormalizer().normalize("user-123", request);
+        when(inputNormalizer.normalize("user-123", request)).thenReturn(normalizedInput);
+        when(promptBuilderService.buildPrompt(normalizedInput))
                 .thenReturn(CvCoverLetterPrompt.builder().finalPrompt("assembled prompt").build());
         when(paymentBillingClient.reserve(any(), any())).thenReturn(
                 new PaymentBillingClient.ReservationResponse(UUID.randomUUID(), "user-123", 5000, 40000, "RESERVED"));
@@ -83,7 +81,7 @@ class CvCoverLetterServiceTest {
         when(applicationTrackerApi.createApplication(any()))
                 .thenReturn(new ApplicationRecordResponse().id(applicationId));
 
-        GenerateCvCoverLetterResponse actual = service.generate(request);
+        GenerateCvCoverLetterResponse actual = service.generate("user-123", request);
 
         ArgumentCaptor<com.jobseekercopilot.generated.llmgateway.model.GenerateRequest> llmCaptor =
                 ArgumentCaptor.forClass(com.jobseekercopilot.generated.llmgateway.model.GenerateRequest.class);
@@ -107,7 +105,10 @@ class CvCoverLetterServiceTest {
         assertEquals(cvId.toString(), actual.getCvDocumentId());
         assertEquals("Tailored Developer CV", actual.getCvTitle());
         assertEquals("Tailored Developer CV", actual.getCvContent().lines().findFirst().orElseThrow());
-        assertEquals("Dear Hiring Manager,", actual.getCoverLetterContent().lines().skip(2).findFirst().orElseThrow());
+        assertEquals("1.0", actual.getInputSchemaVersion());
+        assertEquals(normalizedInput.warnings(), actual.getInputWarnings());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                actual.getCoverLetterContent().contains("Dear Hiring Manager,"));
 
         ArgumentCaptor<PaymentBillingClient.ReservationRequest> reservationCaptor =
                 ArgumentCaptor.forClass(PaymentBillingClient.ReservationRequest.class);
@@ -132,7 +133,7 @@ class CvCoverLetterServiceTest {
                 .thenReturn(new GeneratedDocumentResponse().id(UUID.randomUUID()))
                 .thenThrow(new RestClientException("down"));
 
-        assertThrows(DownstreamServiceException.class, () -> service.generate(request));
+        assertThrows(DownstreamServiceException.class, () -> service.generate("user-123", request));
 
         verify(documentStoreApi, org.mockito.Mockito.times(2)).createDocument(any());
         verifyNoInteractions(applicationTrackerApi);
@@ -147,7 +148,7 @@ class CvCoverLetterServiceTest {
                 new PaymentBillingClient.ReservationResponse(reservationId, "user-123", 5000, 40000, "RESERVED"));
         when(llmGatewayApi.generate(any())).thenReturn(new GenerateResponse().response("not json").usage(usage()));
 
-        assertThrows(InvalidLlmResponseException.class, () -> service.generate(request));
+        assertThrows(InvalidLlmResponseException.class, () -> service.generate("user-123", request));
 
         verify(paymentBillingClient, never()).commit(any(), any(), any());
         verify(paymentBillingClient).release("user-123", reservationId, "Document generation failed");
@@ -161,7 +162,7 @@ class CvCoverLetterServiceTest {
                 new PaymentBillingClient.ReservationResponse(reservationId, "user-123", 5000, 40000, "RESERVED"));
         when(llmGatewayApi.generate(any())).thenThrow(new RestClientException("down"));
 
-        assertThrows(DownstreamServiceException.class, () -> service.generate(request));
+        assertThrows(DownstreamServiceException.class, () -> service.generate("user-123", request));
 
         verify(paymentBillingClient).release("user-123", reservationId, "LLM generation failed");
         verifyNoInteractions(documentStoreApi, applicationTrackerApi);

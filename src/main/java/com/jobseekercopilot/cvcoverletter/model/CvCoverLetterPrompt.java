@@ -10,7 +10,8 @@ public class CvCoverLetterPrompt {
     String language;
     String rules;
     String outputSchemaJson;
-    String userProfileJson;
+    String profileInputJson;
     String jobJson;
+    String inputWarningsJson;
     String finalPrompt;
 }

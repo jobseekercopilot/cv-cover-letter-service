@@ -8,8 +8,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -30,7 +35,7 @@ class OpenApiExportTest {
         JsonNode contract = objectMapper.readTree(spec);
         JsonNode generation =
                 contract.path("paths").path("/api/v1/cv-cover-letter/generate").path("post");
-        assertEquals("2.0.0", contract.path("info").path("version").asText());
+        assertEquals("3.0.0", contract.path("info").path("version").asText());
         assertEquals(
                 "X-Service-Token",
                 contract.path("components")
@@ -41,7 +46,65 @@ class OpenApiExportTest {
         assertTrue(generation.path("security").toString().contains("serviceToken"));
         assertTrue(generation.path("parameters").toString().contains("X-Document-Owner"));
         assertFalse(spec.contains("X-User-Id"));
+        JsonNode schemas = contract.path("components").path("schemas");
+        for (String name : List.of(
+                "ContactInputSnapshot",
+                "EmploymentInput",
+                "GenerateRequest",
+                "JobInputSnapshot",
+                "ProfileInputSnapshot",
+                "QualificationInput",
+                "SnapshotProvenance")) {
+            assertFalse(schemas.path(name).path("additionalProperties").asBoolean(true));
+        }
+        assertTrue(schemas.path("GenerateRequest").path("required").toString()
+                .contains("inputSchemaVersion"));
+        assertTrue(schemas.path("GenerateRequest").path("required").toString()
+                .contains("profile"));
+        assertTrue(schemas.path("GenerateRequest").path("required").toString()
+                .contains("job"));
+        assertEquals(
+                12000,
+                schemas.path("JobInputSnapshot")
+                        .path("properties")
+                        .path("description")
+                        .path("maxLength")
+                        .asInt());
+        assertEquals(
+                40,
+                schemas.path("ProfileInputSnapshot")
+                        .path("properties")
+                        .path("skills")
+                        .path("maxItems")
+                        .asInt());
+        assertTrue(schemas.path("SnapshotProvenance")
+                .path("properties")
+                .path("owner")
+                .path("enum")
+                .toString()
+                .contains("JOB_SERVICE"));
+        assertFalse(schemas.has("UserProfile"));
+        assertFalse(schemas.has("Job"));
         Files.createDirectories(Path.of("target"));
-        Files.writeString(Path.of("target/openapi.json"), spec);
+        Files.writeString(
+                Path.of("target/openapi.json"),
+                objectMapper.writeValueAsString(canonicalize(contract)));
+    }
+
+    private JsonNode canonicalize(JsonNode source) {
+        if (source.isObject()) {
+            ObjectNode canonical = objectMapper.createObjectNode();
+            List<String> names = new ArrayList<>();
+            source.fieldNames().forEachRemaining(names::add);
+            Collections.sort(names);
+            names.forEach(name -> canonical.set(name, canonicalize(source.get(name))));
+            return canonical;
+        }
+        if (source.isArray()) {
+            ArrayNode canonical = objectMapper.createArrayNode();
+            source.forEach(value -> canonical.add(canonicalize(value)));
+            return canonical;
+        }
+        return source;
     }
 }
