@@ -143,6 +143,31 @@ if "$repository_root/scripts/verify-contracts.sh" "$temporary_dir/payment-operat
     exit 1
 fi
 
+copy_contracts "$temporary_dir/payment-security"
+jq 'del(.paths["/api/v1/payments/reservations"].post.security)' \
+    "$temporary_dir/payment-security/payment-service.json" \
+    > "$temporary_dir/payment-security/changed.json"
+mv "$temporary_dir/payment-security/changed.json" \
+   "$temporary_dir/payment-security/payment-service.json"
+refresh_manifest "$temporary_dir/payment-security"
+if "$repository_root/scripts/verify-contracts.sh" "$temporary_dir/payment-security" >/dev/null 2>&1; then
+    echo "contract policy negative test accepted removal of payment service identity" >&2
+    exit 1
+fi
+
+copy_contracts "$temporary_dir/payment-owner"
+jq '.paths["/api/v1/payments/reservations"].post.parameters
+        |= map(select(.name != "X-Payment-Owner"))' \
+    "$temporary_dir/payment-owner/payment-service.json" \
+    > "$temporary_dir/payment-owner/changed.json"
+mv "$temporary_dir/payment-owner/changed.json" \
+   "$temporary_dir/payment-owner/payment-service.json"
+refresh_manifest "$temporary_dir/payment-owner"
+if "$repository_root/scripts/verify-contracts.sh" "$temporary_dir/payment-owner" >/dev/null 2>&1; then
+    echo "contract policy negative test accepted removal of payment ownership" >&2
+    exit 1
+fi
+
 copy_contracts "$temporary_dir/source-revision"
 sed 's/revision=d9e6bc9/revision=0000000/' \
     "$temporary_dir/source-revision/application-tracker-service.SOURCE" \

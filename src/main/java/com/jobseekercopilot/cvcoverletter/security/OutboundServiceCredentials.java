@@ -1,6 +1,7 @@
 package com.jobseekercopilot.cvcoverletter.security;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -13,22 +14,32 @@ public class OutboundServiceCredentials {
 
     private final String documentStoreProducerToken;
     private final String applicationTrackerProducerToken;
+    private final String paymentServiceToken;
 
     public OutboundServiceCredentials(
             @Value("${cv-cover-letter.security.document-store-producer-token}")
             String documentStoreProducerToken,
             @Value("${cv-cover-letter.security.application-tracker-producer-token}")
             String applicationTrackerProducerToken,
+            @Value("${cv-cover-letter.security.payment-service-token}")
+            String paymentServiceToken,
             CvCoverLetterGatewayCredentials gatewayCredentials) {
         requireStrong(documentStoreProducerToken);
         requireStrong(applicationTrackerProducerToken);
-        if (documentStoreProducerToken.equals(applicationTrackerProducerToken)
-                || documentStoreProducerToken.equals(gatewayCredentials.gatewayToken())
-                || applicationTrackerProducerToken.equals(gatewayCredentials.gatewayToken())) {
+        requireStrong(paymentServiceToken);
+        if (List.of(
+                        documentStoreProducerToken,
+                        applicationTrackerProducerToken,
+                        paymentServiceToken,
+                        gatewayCredentials.gatewayToken())
+                .stream()
+                .distinct()
+                .count() != 4) {
             throw new IllegalStateException(CONFIGURATION_ERROR);
         }
         this.documentStoreProducerToken = documentStoreProducerToken;
         this.applicationTrackerProducerToken = applicationTrackerProducerToken;
+        this.paymentServiceToken = paymentServiceToken;
     }
 
     private void requireStrong(String token) {
@@ -45,5 +56,9 @@ public class OutboundServiceCredentials {
 
     public String applicationTrackerProducerToken() {
         return applicationTrackerProducerToken;
+    }
+
+    public String paymentServiceToken() {
+        return paymentServiceToken;
     }
 }

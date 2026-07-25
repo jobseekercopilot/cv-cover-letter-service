@@ -2,6 +2,7 @@ package com.jobseekercopilot.cvcoverletter.service;
 
 import com.jobseekercopilot.cvcoverletter.exception.DownstreamServiceException;
 import com.jobseekercopilot.cvcoverletter.exception.PaymentRequiredException;
+import com.jobseekercopilot.cvcoverletter.security.OutboundServiceCredentials;
 import java.util.UUID;
 import lombok.Builder;
 import org.slf4j.Logger;
@@ -15,14 +16,18 @@ import org.springframework.web.client.RestClientException;
 @Component
 public class PaymentBillingClient {
     private static final Logger log = LoggerFactory.getLogger(PaymentBillingClient.class);
-    private static final String USER_ID_HEADER = "X-User-Id";
+    private static final String SERVICE_TOKEN_HEADER = "X-Service-Token";
+    private static final String OWNER_HEADER = "X-Payment-Owner";
 
     private final RestClient restClient;
+    private final OutboundServiceCredentials credentials;
 
     public PaymentBillingClient(
             RestClient.Builder restClientBuilder,
-            @Value("${services.payment-service.base-url:http://localhost:8099}") String paymentServiceBaseUrl) {
+            @Value("${services.payment-service.base-url:http://localhost:8099}") String paymentServiceBaseUrl,
+            OutboundServiceCredentials credentials) {
         this.restClient = restClientBuilder.baseUrl(paymentServiceBaseUrl).build();
+        this.credentials = credentials;
     }
 
     public ReservationResponse reserve(String userId, ReservationRequest request) {
@@ -34,7 +39,8 @@ public class PaymentBillingClient {
         try {
             ReservationResponse response = restClient.post()
                     .uri("/api/v1/payments/reservations")
-                    .header(USER_ID_HEADER, userId)
+                    .header(SERVICE_TOKEN_HEADER, credentials.paymentServiceToken())
+                    .header(OWNER_HEADER, userId)
                     .body(request)
                     .retrieve()
                     .onStatus(status -> status.value() == 402,
@@ -71,7 +77,8 @@ public class PaymentBillingClient {
         try {
             restClient.post()
                     .uri("/api/v1/payments/reservations/{reservationId}/commit", reservationId)
-                    .header(USER_ID_HEADER, userId)
+                    .header(SERVICE_TOKEN_HEADER, credentials.paymentServiceToken())
+                    .header(OWNER_HEADER, userId)
                     .body(request)
                     .retrieve()
                     .onStatus(HttpStatusCode::isError,
@@ -106,7 +113,8 @@ public class PaymentBillingClient {
         try {
             restClient.post()
                     .uri("/api/v1/payments/reservations/{reservationId}/release", reservationId)
-                    .header(USER_ID_HEADER, userId)
+                    .header(SERVICE_TOKEN_HEADER, credentials.paymentServiceToken())
+                    .header(OWNER_HEADER, userId)
                     .body(new ReleaseReservationRequest(reason))
                     .retrieve()
                     .toBodilessEntity();

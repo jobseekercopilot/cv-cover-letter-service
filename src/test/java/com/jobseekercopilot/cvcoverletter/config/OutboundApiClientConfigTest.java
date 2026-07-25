@@ -17,6 +17,7 @@ class OutboundApiClientConfigTest {
     private final OutboundServiceCredentials credentials = new OutboundServiceCredentials(
             STORE_TOKEN,
             TRACKER_TOKEN,
+            "test-only-cv-payment-service-token-32-bytes",
             new CvCoverLetterGatewayCredentials(
                     "test-only-cv-gateway-service-token-32-bytes"));
 
