@@ -14,6 +14,8 @@ class OutboundServiceCredentialsTest {
             "test-only-document-store-producer-token-32-bytes";
     private static final String TRACKER_TOKEN =
             "test-only-application-tracker-producer-token-32-bytes";
+    private static final String PAYMENT_TOKEN =
+            "test-only-cv-payment-service-token-32-bytes";
 
     @Test
     void acceptsStrongPairwiseDistinctRuntimeCredentials() {
@@ -21,6 +23,7 @@ class OutboundServiceCredentialsTest {
 
         assertEquals(STORE_TOKEN, credentials.documentStoreProducerToken());
         assertEquals(TRACKER_TOKEN, credentials.applicationTrackerProducerToken());
+        assertEquals(PAYMENT_TOKEN, credentials.paymentServiceToken());
     }
 
     @Test
@@ -37,10 +40,18 @@ class OutboundServiceCredentialsTest {
         IllegalStateException gatewayReuse = assertThrows(
                 IllegalStateException.class,
                 () -> credentials(GATEWAY_TOKEN, TRACKER_TOKEN));
+        IllegalStateException paymentReuse = assertThrows(
+                IllegalStateException.class,
+                () -> new OutboundServiceCredentials(
+                        STORE_TOKEN,
+                        TRACKER_TOKEN,
+                        TRACKER_TOKEN,
+                        new CvCoverLetterGatewayCredentials(GATEWAY_TOKEN)));
 
         assertEquals(missing.getMessage(), shortToken.getMessage());
         assertEquals(missing.getMessage(), outboundReuse.getMessage());
         assertEquals(missing.getMessage(), gatewayReuse.getMessage());
+        assertEquals(missing.getMessage(), paymentReuse.getMessage());
         assertFalse(missing.getMessage().contains("short"));
         assertFalse(missing.getMessage().contains(STORE_TOKEN));
         assertFalse(missing.getMessage().contains(GATEWAY_TOKEN));
@@ -50,6 +61,7 @@ class OutboundServiceCredentialsTest {
         return new OutboundServiceCredentials(
                 storeToken,
                 trackerToken,
+                PAYMENT_TOKEN,
                 new CvCoverLetterGatewayCredentials(GATEWAY_TOKEN));
     }
 }

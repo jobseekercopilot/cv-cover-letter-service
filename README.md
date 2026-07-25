@@ -63,10 +63,10 @@ obsolete `X-User-Id` header never selects the owner.
 
 See [`docs/AUTHORIZATION_BOUNDARY.md`](docs/AUTHORIZATION_BOUNDARY.md) for the
 failure contract and rotation guidance. Configure distinct
-`DOCUMENT_STORE_PRODUCER_TOKEN` and `APPLICATION_TRACKER_PRODUCER_TOKEN`
-runtime secrets (at least 32 bytes each) for authenticated owner-bound
-downstream writes. Payment and fleet runtime/E2E evidence remain open CVCL-02
-dependencies.
+`DOCUMENT_STORE_PRODUCER_TOKEN`, `APPLICATION_TRACKER_PRODUCER_TOKEN`, and
+`CV_COVER_LETTER_TO_PAYMENT_SERVICE_TOKEN` runtime secrets (at least 32 bytes
+each) for authenticated owner-bound downstream writes. Fleet runtime/E2E
+evidence remains an open CVCL-02 dependency.
 
 The LLM Gateway v2, Document Store and Application Tracker clients are generated
 during Maven `generate-sources` from reviewed, checksum-protected producer

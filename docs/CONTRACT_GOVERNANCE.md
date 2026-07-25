@@ -31,7 +31,7 @@ source revision are recorded in `api/client-release.json`:
 | `jobseekercopilot/llm-gateway` | `c0a2eb1fa7adb437cf5cda10a491112108619f66` | `contracts/openapi.json` | `2.0.0` | `d45bf93cdadf181b9de387aa6358690fc1c83b4543e47934a2d1380e48dd16ec` | Generated Java client |
 | `jobseekercopilot/document-store-service` | `b696fe81e9b900e0749e185f595ff4c98c24119d` | `contracts/openapi.json` | `1.1.0` | `3d0595c83cc66d9037e08af6a4b087c115c9a5d99ec71491f1aa5fc3afffd6ba` | Generated Java client |
 | `jobseekercopilot/application-tracker-service` | `d9e6bc9fcbe4ef665334c58672c8062b1e4796aa` | `contracts/openapi.json` | `1.1.0` | `549cebba300c2caf3403b9de01d3c34de84464a280a02183751e8a9583ad982a` | Generated Java client |
-| `jobseekercopilot/payment-service` | `3175e5730cd0743e15455a0acc8e2bc35b56a78f` | `contracts/openapi.json` | `1.0.0` | `2b1bfef95e1ba4c1f191627dfc4972b3ed7a931dead8fbb7aecbf5b793acae7a` | Handwritten adapter compatibility |
+| `jobseekercopilot/payment-service` | `0243471685ef128f84d7011950f2baa2f1450acf` | `contracts/openapi.json` | `2.0.0` | `446dc9a1450bf876c3bd477e6120fe1b3b40ff3326334cb985a28e31828b22a0` | Authenticated owner-bound handwritten adapter |
 
 OpenAPI Generator `7.5.0` with the Java `resttemplate` library generates into
 `target/generated-sources`. The `.SOURCE` files record provenance and
@@ -49,14 +49,15 @@ The policy checks the exact operations and fields currently consumed:
   document ID;
 - Application Tracker create request, returned application ID and required
   service-token security scheme;
-- Payment reservation, commit and release paths, owner header and payloads.
+- Payment reservation, commit and release paths, service identity, trusted
+  owner header and payloads.
 
 The Document Store and Application Tracker adapters supply distinct runtime
 producer credentials. Store creates include the trusted inbound owner once in
 `X-Document-Owner`; Tracker creates bind that same owner in the producer-only
-request body. The pinned Payment contract does not approve its current
-caller-controlled identity, atomicity or idempotency semantics. Those remain
-owned by CVCL-02 and the Payment beta workstream.
+request body. Payment calls use their own runtime service token and the same
+trusted inbound owner. Atomicity and idempotency semantics remain owned by the
+Payment beta workstream.
 
 ## Updating a pin
 

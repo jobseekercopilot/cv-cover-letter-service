@@ -31,7 +31,7 @@ rotate the Gateway and this service together.
 
 ## Outbound identities
 
-The service uses two further runtime credentials:
+The service uses three further runtime credentials:
 
 - `DOCUMENT_STORE_PRODUCER_TOKEN` authenticates only Document Store producer
   calls. Each create also sends the trusted inbound subject exactly once as
@@ -39,16 +39,18 @@ The service uses two further runtime credentials:
 - `APPLICATION_TRACKER_PRODUCER_TOKEN` authenticates only Application Tracker
   producer calls. Application creation binds the trusted inbound subject to
   the request owner. This role cannot change status, withdraw or delete.
+- `CV_COVER_LETTER_TO_PAYMENT_SERVICE_TOKEN` authenticates only Payment
+  Service reservation, commit and release calls. Each call sends the trusted
+  inbound subject as `X-Payment-Owner`; `X-User-Id` is never sent.
 
-Both credentials must contain at least 32 UTF-8 bytes and must be distinct
+All credentials must contain at least 32 UTF-8 bytes and must be distinct
 from each other and from `CV_COVER_LETTER_GATEWAY_TOKEN`. Missing, weak or
 reused values prevent startup. Credentials are never accepted from a request,
 written to logs or embedded in a generated client.
 
 ## Remaining CVCL-02 work
 
-Payment still uses its legacy caller-controlled owner header and its
-reserve/commit/release idempotency semantics are not approved. Infrastructure
-runtime secret wiring/rotation and fleet-level negative tests are also required
-before beta. User approval, prompt safety, output quality, idempotency, and
-transaction recovery remain in their existing workstreams.
+Infrastructure runtime secret wiring/rotation and fleet-level negative tests
+are still required before beta. Reservation idempotency and transaction
+recovery remain in the Payment workstream. User approval, prompt safety and
+output quality remain in their existing workstreams.

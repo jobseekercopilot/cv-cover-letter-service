@@ -27,7 +27,9 @@ import org.springframework.test.web.servlet.MockMvc;
         "cv-cover-letter.security.document-store-producer-token="
                 + "test-only-document-store-producer-token-32-bytes",
         "cv-cover-letter.security.application-tracker-producer-token="
-                + "test-only-application-tracker-producer-token-32-bytes"
+                + "test-only-application-tracker-producer-token-32-bytes",
+        "cv-cover-letter.security.payment-service-token="
+                + "test-only-cv-payment-service-token-32-bytes"
 })
 @AutoConfigureMockMvc
 class OpenApiExportTest {
