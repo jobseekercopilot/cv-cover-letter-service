@@ -35,7 +35,7 @@ class OpenApiExportTest {
         JsonNode contract = objectMapper.readTree(spec);
         JsonNode generation =
                 contract.path("paths").path("/api/v1/cv-cover-letter/generate").path("post");
-        assertEquals("3.0.0", contract.path("info").path("version").asText());
+        assertEquals("3.1.0", contract.path("info").path("version").asText());
         assertEquals(
                 "X-Service-Token",
                 contract.path("components")
@@ -52,6 +52,7 @@ class OpenApiExportTest {
                 "EmploymentInput",
                 "GenerateRequest",
                 "JobInputSnapshot",
+                "PromptGenerationMetadata",
                 "ProfileInputSnapshot",
                 "QualificationInput",
                 "SnapshotProvenance")) {
@@ -83,6 +84,20 @@ class OpenApiExportTest {
                 .path("enum")
                 .toString()
                 .contains("JOB_SERVICE"));
+        assertEquals(
+                "#/components/schemas/PromptGenerationMetadata",
+                schemas.path("GenerateCvCoverLetterResponse")
+                        .path("properties")
+                        .path("generationMetadata")
+                        .path("$ref")
+                        .asText());
+        JsonNode promptMetadata = schemas.path("PromptGenerationMetadata");
+        assertTrue(promptMetadata.path("required").toString().contains("releaseId"));
+        assertTrue(promptMetadata.path("required").toString().contains("bundleSha256"));
+        assertTrue(promptMetadata.path("required").toString().contains("evaluationPolicyVersion"));
+        assertTrue(promptMetadata.path("required").toString().contains("evaluationPolicySha256"));
+        assertFalse(promptMetadata.path("properties").has("prompt"));
+        assertFalse(promptMetadata.path("properties").has("payload"));
         assertFalse(schemas.has("UserProfile"));
         assertFalse(schemas.has("Job"));
         Files.createDirectories(Path.of("target"));

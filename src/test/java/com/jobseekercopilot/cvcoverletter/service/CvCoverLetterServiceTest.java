@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobseekercopilot.cvcoverletter.config.LlmProperties;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateCvCoverLetterResponse;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateRequest;
+import com.jobseekercopilot.cvcoverletter.dto.PromptGenerationMetadata;
 import com.jobseekercopilot.cvcoverletter.exception.DownstreamServiceException;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidLlmResponseException;
 import com.jobseekercopilot.cvcoverletter.model.CvCoverLetterPrompt;
@@ -64,7 +65,10 @@ class CvCoverLetterServiceTest {
         normalizedInput = new GenerationInputNormalizer().normalize("user-123", request);
         when(inputNormalizer.normalize("user-123", request)).thenReturn(normalizedInput);
         when(promptBuilderService.buildPrompt(normalizedInput))
-                .thenReturn(CvCoverLetterPrompt.builder().finalPrompt("assembled prompt").build());
+                .thenReturn(CvCoverLetterPrompt.builder()
+                        .finalPrompt("assembled prompt")
+                        .generationMetadata(promptMetadata())
+                        .build());
         when(paymentBillingClient.reserve(any(), any())).thenReturn(
                 new PaymentBillingClient.ReservationResponse(UUID.randomUUID(), "user-123", 5000, 40000, "RESERVED"));
     }
@@ -106,6 +110,8 @@ class CvCoverLetterServiceTest {
         assertEquals("Tailored Developer CV", actual.getCvTitle());
         assertEquals("Tailored Developer CV", actual.getCvContent().lines().findFirst().orElseThrow());
         assertEquals("1.0", actual.getInputSchemaVersion());
+        assertEquals("cv-cover-letter-1.1.0", actual.getGenerationMetadata().releaseId());
+        assertEquals("1.1.0", actual.getGenerationMetadata().rulesVersion());
         assertEquals(normalizedInput.warnings(), actual.getInputWarnings());
         org.junit.jupiter.api.Assertions.assertTrue(
                 actual.getCoverLetterContent().contains("Dear Hiring Manager,"));
@@ -175,6 +181,24 @@ class CvCoverLetterServiceTest {
                 .inputTokens(4200L)
                 .outputTokens(3100L)
                 .totalTokens(7300L);
+    }
+
+    private PromptGenerationMetadata promptMetadata() {
+        return new PromptGenerationMetadata(
+                "cv-cover-letter-1.1.0",
+                "cv-cover-letter",
+                "1.1.0",
+                "a".repeat(64),
+                "1.1.0",
+                "b".repeat(64),
+                "1.1.0",
+                "c".repeat(64),
+                "cv-cover-letter-output",
+                "1.0.0",
+                "d".repeat(64),
+                "1.0.0",
+                "e".repeat(64)
+        );
     }
 
     static String validJson() {

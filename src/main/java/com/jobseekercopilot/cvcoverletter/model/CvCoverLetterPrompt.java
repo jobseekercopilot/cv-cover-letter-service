@@ -1,5 +1,6 @@
 package com.jobseekercopilot.cvcoverletter.model;
 
+import com.jobseekercopilot.cvcoverletter.dto.PromptGenerationMetadata;
 import lombok.Builder;
 import lombok.Value;
 
@@ -14,4 +15,5 @@ public class CvCoverLetterPrompt {
     String jobJson;
     String inputWarningsJson;
     String finalPrompt;
+    PromptGenerationMetadata generationMetadata;
 }

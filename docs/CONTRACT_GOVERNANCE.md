@@ -14,15 +14,15 @@ generation/package checks, a conservative breaking-change gate and a fresh
 authenticated smoke consumer. Publication is restricted to `develop` and
 refuses to overwrite an existing coordinate.
 
-The public producer contract is now `3.0.0`. Generation requires the
-`serviceToken` API-key scheme in `X-Service-Token` and one required
-`X-Document-Owner` header. This deliberate major-version change replaces the
-broad duplicated profile/job body with bounded provenance-aware input
-snapshots. Consumers must authenticate the user, bind the resulting stable
-subject to the owner header, and assemble only the documented version `1.0`
-snapshot. The immutable Java coordinate and source revision are recorded in
-`api/client-release.json`:
-`com.jobseekercopilot.clients:cv-cover-letter-service-client:3.0.0-rev.3fed226ad104`.
+The public producer contract is now `3.1.0`. Generation requires the
+`serviceToken` API-key scheme in `X-Service-Token`, one required
+`X-Document-Owner` header and bounded provenance-aware input snapshot `1.0`.
+The additive `generationMetadata` response identifies the immutable prompt
+bundle, template, rules, output schema and evaluation policy without exposing
+prompt or source payloads. Consumers must authenticate the user and bind the
+resulting stable subject to the owner header. The immutable Java coordinate and
+source revision are recorded in `api/client-release.json`:
+`com.jobseekercopilot.clients:cv-cover-letter-service-client:3.1.0-rev.f2c5916fa0da`.
 
 ## Current pins
 

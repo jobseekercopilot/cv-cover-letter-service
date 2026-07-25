@@ -47,6 +47,11 @@ the underlying document database.
   and aggregate limits, dates, unknown fields, active markup, duplicates and
   conflicts before prompt construction. Contact identity is render-only, and
   deterministic warnings represent missing or changed evidence.
+- The DOCGEN-05 foundation packages template, rules, output schema and
+  evaluation policy into checksum-protected semantic releases. Startup and CI
+  reject unapproved drift, the previous release remains selectable for
+  rollback, synthetic policy tests cover representative injection forms, and
+  non-PII release metadata is returned and logged with each generation.
 
 ## Confirmed blockers
 
@@ -55,12 +60,14 @@ the underlying document database.
    outbound Payment/Document Store/Application Tracker identities, and
    fleet-level negative-path evidence.
 2. The bounded input allowlist and contact-data minimisation are enforced at
-   this producer. The Gateway consumer must adopt OpenAPI `3.0.0`, and
+   this producer. The Gateway consumer must adopt OpenAPI `3.1.0`, and
    provider-retention/regional-processing decisions remain open.
-3. Job and profile content are concatenated with instructions, so untrusted
-   text can attempt prompt injection.
-4. Prompt files are source controlled but have no explicit prompt version,
-   change-evaluation process, or rollback identifier stored with results.
+3. Job and profile content is now labelled as untrusted evidence behind
+   explicit injection rules and a synthetic attack corpus. DOCGEN-06 still
+   owns model-output injection evaluation and release thresholds.
+4. Prompt releases, comparison, change evaluation and operational rollback are
+   governed. The release metadata is returned and logged, but durable
+   attachment to immutable document versions remains blocked on DOC-06.
 5. CV and cover-letter generation are coupled into one prompt and request.
 6. The parser checks JSON shape only. It does not enforce the supplied JSON
    schema, reject unknown/oversized fields, sanitise active content, or record
@@ -81,7 +88,7 @@ the underlying document database.
 13. Current tests do not cover prompt-injection corpora, unsupported claims,
     malformed/oversized structured output, duplicate requests, partial
     downstream failure, user approval, or privacy minimisation.
-14. Document Generation Gateway must consume the bounded authenticated `3.0.0`
+14. Document Generation Gateway must consume the bounded authenticated `3.1.0`
     contract and provide its own dedicated credential under DOCGEN-03/GW-01.
 15. Current Spring, Tomcat, Jackson, logging, Swagger UI, and generated-client
     dependency findings include untriaged Critical/High advisories.

@@ -6,27 +6,25 @@ import com.jobseekercopilot.cvcoverletter.config.LlmProperties;
 import com.jobseekercopilot.cvcoverletter.model.CvCoverLetterPrompt;
 import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StreamUtils;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
 public class PromptBuilderService {
+    private static final Pattern UNRESOLVED_PLACEHOLDER = Pattern.compile("\\{\\{[A-Z0-9_]+}}");
 
     private final ObjectMapper objectMapper;
-    private final ResourceLoader resourceLoader;
+    private final PromptBundleRegistry promptBundleRegistry;
     private final LlmProperties llmProperties;
 
     public CvCoverLetterPrompt buildPrompt(NormalizedGenerationInput input) {
         try {
-            String template = readResource("classpath:prompts/cv-cover-letter-prompt-template.txt");
-            String rules = readResource("classpath:prompts/generation-rules.txt");
-            String outputSchemaJson = readResource("classpath:prompts/output-schema.json");
+            PromptBundle bundle = promptBundleRegistry.selected();
+            String template = bundle.template();
+            String rules = bundle.rules();
+            String outputSchemaJson = bundle.outputSchemaJson();
 
             String profileInputJson = toPrettyJson(input.profile());
             String jobJson = toPrettyJson(input.job());
@@ -34,11 +32,21 @@ public class PromptBuilderService {
 
             String finalPrompt = template
                     .replace("{{LANGUAGE}}", llmProperties.getLanguage())
+                    .replace("{{PROMPT_BUNDLE_ID}}", bundle.metadata().bundleId())
+                    .replace("{{PROMPT_BUNDLE_VERSION}}", bundle.metadata().bundleVersion())
+                    .replace("{{TEMPLATE_VERSION}}", bundle.metadata().templateVersion())
+                    .replace("{{RULES_VERSION}}", bundle.metadata().rulesVersion())
+                    .replace("{{SCHEMA_ID}}", bundle.metadata().schemaId())
+                    .replace("{{SCHEMA_VERSION}}", bundle.metadata().schemaVersion())
                     .replace("{{RULES}}", rules)
                     .replace("{{OUTPUT_SCHEMA_JSON}}", outputSchemaJson)
                     .replace("{{PROFILE_INPUT_JSON}}", profileInputJson)
                     .replace("{{JOB_INPUT_JSON}}", jobJson)
                     .replace("{{INPUT_WARNINGS_JSON}}", inputWarningsJson);
+            if (UNRESOLVED_PLACEHOLDER.matcher(finalPrompt).find()) {
+                throw new IllegalStateException(
+                        "Selected prompt bundle contains an unresolved contract placeholder.");
+            }
 
             return CvCoverLetterPrompt.builder()
                     .taskType(llmProperties.getTaskType())
@@ -49,19 +57,12 @@ public class PromptBuilderService {
                     .jobJson(jobJson)
                     .inputWarningsJson(inputWarningsJson)
                     .finalPrompt(finalPrompt)
+                    .generationMetadata(bundle.metadata())
                     .build();
 
-        } catch (IOException e) {
+        } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to build CV and cover letter prompt", e);
         }
-    }
-
-    private String readResource(String location) throws IOException {
-        Resource resource = resourceLoader.getResource(location);
-        return StreamUtils.copyToString(
-                resource.getInputStream(),
-                StandardCharsets.UTF_8
-        );
     }
 
     private String toPrettyJson(Object value) throws JsonProcessingException {

@@ -52,9 +52,17 @@ public class CvCoverLetterService {
         long promptStartedAt = System.nanoTime();
         log.info("Prompt build started userId={} jobId={}", userId, jobId);
         CvCoverLetterPrompt prompt = promptBuilderService.buildPrompt(input);
-        log.info("Prompt build completed userId={} jobId={} estimatedTokens={} durationMs={}",
+        log.info("Prompt build completed userId={} jobId={} promptRelease={} bundleVersion={} templateVersion={} rulesVersion={} schemaId={} schemaVersion={} evaluationPolicyVersion={} bundleSha256={} estimatedTokens={} durationMs={}",
                 userId,
                 jobId,
+                prompt.getGenerationMetadata().releaseId(),
+                prompt.getGenerationMetadata().bundleVersion(),
+                prompt.getGenerationMetadata().templateVersion(),
+                prompt.getGenerationMetadata().rulesVersion(),
+                prompt.getGenerationMetadata().schemaId(),
+                prompt.getGenerationMetadata().schemaVersion(),
+                prompt.getGenerationMetadata().evaluationPolicyVersion(),
+                prompt.getGenerationMetadata().bundleSha256(),
                 estimateTokens(prompt.getFinalPrompt()),
                 (System.nanoTime() - promptStartedAt) / 1_000_000);
 
@@ -157,6 +165,7 @@ public class CvCoverLetterService {
                     .cvContent(cvContent)
                     .coverLetterContent(coverLetterContent)
                     .generationNotes(documents.getGenerationNotes())
+                    .generationMetadata(prompt.getGenerationMetadata())
                     .inputSchemaVersion(input.inputSchemaVersion())
                     .inputWarnings(input.warnings())
                     .build();

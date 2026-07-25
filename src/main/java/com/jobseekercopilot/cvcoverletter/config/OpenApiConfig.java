@@ -17,6 +17,7 @@ public class OpenApiConfig {
             "EmploymentInput",
             "GenerateRequest",
             "JobInputSnapshot",
+            "PromptGenerationMetadata",
             "ProfileInputSnapshot",
             "QualificationInput",
             "SnapshotProvenance");
@@ -32,12 +33,12 @@ public class OpenApiConfig {
                                 .name("X-Service-Token")))
                 .info(new Info()
                         .title("Jobseeker Copilot - CV Cover Letter Service API")
-                        .version("3.0.0")
+                        .version("3.1.0")
                         .description("Accepts bounded provenance-aware snapshots, then generates, renders, and stores tailored CV and cover-letter content."));
     }
 
     @Bean
-    OpenApiCustomizer closeGenerationInputSchemas() {
+    OpenApiCustomizer closeApiSchemas() {
         return openApi -> CLOSED_INPUT_SCHEMAS.forEach(schemaName -> {
             var schema = openApi.getComponents().getSchemas().get(schemaName);
             if (schema != null) {
