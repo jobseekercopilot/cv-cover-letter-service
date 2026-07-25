@@ -1,21 +1,43 @@
 package com.jobseekercopilot.cvcoverletter.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.jobseekercopilot.cvcoverletter.dto.GeneratedApplicationDocuments;
-import com.jobseekercopilot.cvcoverletter.exception.InvalidLlmResponseException;
-import org.junit.jupiter.api.Test;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.jobseekercopilot.cvcoverletter.dto.GeneratedApplicationDocuments;
+import com.jobseekercopilot.cvcoverletter.exception.InvalidLlmResponseException;
+import java.io.InputStream;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
 class LlmResponseParserTest {
 
-    private final LlmResponseParser parser = new LlmResponseParser(new ObjectMapper());
+    private ObjectMapper objectMapper;
+    private LlmResponseParser parser;
+    private JsonNode schema;
+
+    @BeforeEach
+    void setUp() throws Exception {
+        objectMapper = new ObjectMapper();
+        parser = new LlmResponseParser(objectMapper);
+        try (InputStream input = getClass().getResourceAsStream(
+                "/prompts/bundles/cv-cover-letter-1.2.0/output-schema.json")) {
+            if (input == null) {
+                throw new IllegalStateException("Active output schema fixture is missing.");
+            }
+            schema = objectMapper.readTree(input);
+        }
+    }
 
     @Test
-    void parsesValidJson() {
-        GeneratedApplicationDocuments result = parser.parse(CvCoverLetterServiceTest.validJson());
+    void parsesJsonThatMatchesTheExactProviderSchema() {
+        GeneratedApplicationDocuments result =
+                parser.parse(CvCoverLetterServiceTest.validJson(), schema);
 
         assertEquals("Tailored Developer CV", result.getCv().getTitle());
         assertEquals("Developer Cover Letter", result.getCoverLetter().getTitle());
@@ -23,56 +45,141 @@ class LlmResponseParserTest {
     }
 
     @Test
-    void rejectsInvalidJson() {
+    void rejectsMalformedTruncatedFencedTrailingAndDuplicateJsonWithoutEchoingPayload() {
+        for (String response : new String[] {
+                "response-secret-sentinel",
+                CvCoverLetterServiceTest.validJson().substring(0, 80),
+                "```json\n" + CvCoverLetterServiceTest.validJson() + "\n```",
+                CvCoverLetterServiceTest.validJson() + "{}",
+                CvCoverLetterServiceTest.validJson().replace(
+                        "\"title\": \"Tailored Developer CV\"",
+                        "\"title\": \"Tailored Developer CV\","
+                                + "\"title\": \"response-secret-sentinel\"")
+        }) {
+            InvalidLlmResponseException error = assertThrows(
+                    InvalidLlmResponseException.class,
+                    () -> parser.parse(response, schema));
+            assertFalse(error.getMessage().contains("response-secret-sentinel"));
+        }
+    }
+
+    @Test
+    void rejectsMissingNullUnknownAndWrongTypeFields() throws Exception {
+        JsonNode missing = objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+        ((ObjectNode) missing.path("cv")).remove("title");
+        assertRejectedAt(missing, "$.cv.title");
+
+        JsonNode nullList = objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+        ((ObjectNode) nullList.path("cv"))
+                .putNull("coreSkills");
+        assertRejectedAt(nullList, "$.cv.coreSkills");
+
+        JsonNode unknown = objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+        ((ObjectNode) unknown.path("coverLetter"))
+                .put("secretField", "response-secret-sentinel");
+        InvalidLlmResponseException unknownError = assertRejectedAt(unknown, "$.coverLetter.secretField");
+        assertFalse(unknownError.getMessage().contains("response-secret-sentinel"));
+
+        JsonNode wrongType = objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+        ((ObjectNode) wrongType.path("cv"))
+                .put("personalSummary", 42);
+        assertRejectedAt(wrongType, "$.cv.personalSummary");
+    }
+
+    @Test
+    void rejectsOversizedTextArraysAndWholeResponses() throws Exception {
+        JsonNode oversizedTitle = objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+        ((ObjectNode) oversizedTitle.path("cv"))
+                .put("title", "x".repeat(201));
+        assertRejectedAt(oversizedTitle, "$.cv.title");
+
+        JsonNode oversizedArray = objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+        ArrayNode paragraphs = (ArrayNode) oversizedArray.path("coverLetter").path("bodyParagraphs");
+        while (paragraphs.size() <= 7) {
+            paragraphs.add("Bounded paragraph");
+        }
+        assertRejectedAt(oversizedArray, "$.coverLetter.bodyParagraphs");
+
+        InvalidLlmResponseException rawLimit = assertThrows(
+                InvalidLlmResponseException.class,
+                () -> parser.parse(
+                        "{\"value\":\"" + "x".repeat(LlmResponseParser.MAX_RAW_RESPONSE_CHARACTERS) + "\"}",
+                        schema));
+        assertTrue(rawLimit.getMessage().contains("maximum size"));
+    }
+
+    @Test
+    void keepsApprovedLegacyRollbackSchemasBoundedByParserPolicy() throws Exception {
+        JsonNode legacySchema = schema.deepCopy();
+        removeProviderBounds(legacySchema);
+
+        JsonNode oversizedText = objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+        ((ObjectNode) oversizedText.path("cv"))
+                .put("title", "x".repeat(LlmResponseParser.MAX_FALLBACK_TEXT_CHARACTERS + 1));
+        assertRejectedAt(oversizedText, legacySchema, "$.cv.title");
+
+        JsonNode oversizedArray = objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+        ArrayNode assumptions = (ArrayNode) oversizedArray.path("generationNotes").path("assumptionsMade");
+        while (assumptions.size() <= LlmResponseParser.MAX_FALLBACK_ARRAY_ITEMS) {
+            assumptions.add("Bounded assumption");
+        }
+        assertRejectedAt(oversizedArray, legacySchema, "$.generationNotes.assumptionsMade");
+    }
+
+    @Test
+    void rejectsHtmlScriptEncodedMarkupActiveUrisHandlersAndControls() throws Exception {
+        for (String payload : new String[] {
+                "<script>alert(1)</script>",
+                "&lt;iframe src=x&gt;&lt;/iframe&gt;",
+                "&amp;lt;iframe src=x&amp;gt;&amp;lt;/iframe&amp;gt;",
+                "javascript:alert(1)",
+                "data:text/html;base64,PHNjcmlwdD4=",
+                "onclick=alert(1)"
+        }) {
+            String response = CvCoverLetterServiceTest.validJson()
+                    .replace("A capable developer.", payload);
+            InvalidLlmResponseException error = assertThrows(
+                    InvalidLlmResponseException.class,
+                    () -> parser.parse(response, schema));
+            assertTrue(
+                    error.getMessage().contains("$.cv.personalSummary"),
+                    payload + " => " + error.getMessage());
+            assertFalse(error.getMessage().contains(payload));
+        }
+
+        JsonNode control = objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+        ((ObjectNode) control.path("cv"))
+                .put("personalSummary", "unsafe\u0000control");
+        assertRejectedAt(control, "$.cv.personalSummary");
+    }
+
+    private InvalidLlmResponseException assertRejectedAt(JsonNode output, String path)
+            throws Exception {
+        return assertRejectedAt(output, schema, path);
+    }
+
+    private InvalidLlmResponseException assertRejectedAt(
+            JsonNode output,
+            JsonNode validationSchema,
+            String path
+    ) throws Exception {
         InvalidLlmResponseException error = assertThrows(
-                InvalidLlmResponseException.class, () -> parser.parse("not JSON"));
-        assertTrue(error.getMessage().contains("not valid JSON"));
+                InvalidLlmResponseException.class,
+                () -> parser.parse(objectMapper.writeValueAsString(output), validationSchema));
+        assertTrue(error.getMessage().contains(path), error.getMessage());
+        return error;
     }
 
-    @Test
-    void normalizesMissingListsToEmptyLists() {
-        GeneratedApplicationDocuments result = parser.parse("""
-                {
-                  "cv": {
-                    "title": "Tailored CV",
-                    "targetRole": "Developer",
-                    "personalSummary": "A capable developer.",
-                    "coreSkills": null,
-                    "qualifications": null,
-                    "workHistory": null
-                  },
-                  "coverLetter": {
-                    "title": "Cover Letter",
-                    "jobTitle": "Developer",
-                    "companyName": "Example Ltd",
-                    "greeting": "Dear Hiring Manager",
-                    "openingParagraph": "I am applying for the role.",
-                    "bodyParagraphs": null,
-                    "closingParagraph": "Thank you for your consideration.",
-                    "signOff": "Yours faithfully"
-                  },
-                  "generationNotes": {
-                    "assumptionsMade": null,
-                    "missingInformation": null,
-                    "tailoringSummary": "Focused on the advert."
-                  }
-                }
-                """);
-
-        assertTrue(result.getCv().getCoreSkills().isEmpty());
-        assertTrue(result.getCv().getQualifications().isEmpty());
-        assertTrue(result.getCv().getWorkHistory().isEmpty());
-        assertTrue(result.getCoverLetter().getBodyParagraphs().isEmpty());
-        assertTrue(result.getGenerationNotes().getAssumptionsMade().isEmpty());
-        assertTrue(result.getGenerationNotes().getMissingInformation().isEmpty());
-    }
-
-    @Test
-    void rejectsMissingRequiredFields() {
-        InvalidLlmResponseException error = assertThrows(InvalidLlmResponseException.class,
-                () -> parser.parse("{\"cv\":{},\"coverLetter\":{}}"));
-
-        assertTrue(error.getMessage().contains("cv.title"));
-        assertTrue(error.getMessage().contains("coverLetter.signOff"));
+    private void removeProviderBounds(JsonNode node) {
+        if (node instanceof ObjectNode objectNode) {
+            objectNode.remove("pattern");
+            objectNode.remove("minItems");
+            objectNode.remove("maxItems");
+            objectNode.fields().forEachRemaining(field -> removeProviderBounds(field.getValue()));
+            return;
+        }
+        if (node.isArray()) {
+            node.forEach(this::removeProviderBounds);
+        }
     }
 }

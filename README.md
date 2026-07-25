@@ -44,7 +44,9 @@ evaluation and rollback procedure. Durable attachment of the same provenance
 to an immutable stored document version remains a beta dependency on DOC-06.
 The runtime uses LLM Gateway v2 to keep reviewed instructions, untrusted job
 and profile evidence, and the strict output schema in separate fields. The
-threat model and incident procedure are in
+same bounded schema is enforced again before rendering or persistence; see
+[`docs/MODEL_OUTPUT_CONTRACT.md`](docs/MODEL_OUTPUT_CONTRACT.md). The threat
+model and incident procedure are in
 [`docs/PROMPT_INJECTION_THREAT_MODEL.md`](docs/PROMPT_INJECTION_THREAT_MODEL.md).
 
 ## Gateway identity boundary

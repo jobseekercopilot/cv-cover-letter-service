@@ -5,18 +5,19 @@ Each approved release under `src/main/resources/prompts/bundles` packages the
 template, generation rules, output schema and synthetic evaluation policy with
 immutable component checksums. `index.json` is the only runtime allowlist.
 
-The active `cv-cover-letter-1.1.0` release treats profile, canonical job and
+The active `cv-cover-letter-1.2.0` release treats profile, canonical job and
 normalisation warnings as untrusted evidence. It places the safety rules before
 that evidence and forbids direct, indirect, encoded, nested, Unicode-obfuscated
 and schema-escape instructions in source content from changing the task. The
-domain bundle cannot name a model provider or transport API; provider mechanics
-belong behind LLM Gateway.
+release also owns the exact bounded JSON Schema `2.0.0` used at the provider
+boundary and by the local response parser. The domain bundle cannot name a
+model provider or transport API; provider mechanics belong behind LLM Gateway.
 
 Runtime assembly preserves those domains as separate LLM Gateway v2 fields:
 reviewed bundle text becomes `trustedInstructions`, normalised evidence becomes
-`untrustedInput`, and the bundle's reviewed output shape is compiled into the
-independent strict JSON Schema output contract. Source data is never
-interpolated into the trusted field. See
+`untrustedInput`, and the bundle's reviewed schema becomes the independent
+strict JSON Schema output contract. Source data is never interpolated into the
+trusted field. See
 [`PROMPT_INJECTION_THREAT_MODEL.md`](PROMPT_INJECTION_THREAT_MODEL.md) for the
 trust zones, attack corpus, safe-failure and incident procedures.
 
@@ -67,6 +68,11 @@ Rollback restores prompt construction only. The LLM Gateway v2 physical
 trusted/untrusted separation remains enforced for every approved release. It
 does not reverse documents already generated or stored, so operators must use
 the recorded release and component hashes when identifying affected outputs.
+The older approved releases contain output exemplars rather than the active
+bounded schema. They are compiled into closed structural schemas at runtime and
+remain subject to parser `2.0.0` response, text, array and active-content
+limits. Only release `1.2.0` has the more specific field-by-field bounds at
+both the provider and local validation boundaries.
 
 ## Verification
 
@@ -78,8 +84,8 @@ docker build --tag local/cv-cover-letter-service .
 ```
 
 The shell policy rejects checksum drift, missing or extra release files,
-unapproved packaged directories, provider-specific instructions and invalid
-default/rollback state. Java startup repeats the allowlist, manifest,
-placeholder, checksum, schema and provider-boundary checks. Synthetic tests
-pin factuality and quality rules, the injection corpus and a reviewed golden
-LLM boundary.
+unapproved packaged directories, provider-specific instructions, invalid
+default/rollback state and a malformed active strict schema. Java startup
+repeats the allowlist, manifest, placeholder, checksum, schema and
+provider-boundary checks. Synthetic tests pin factuality and quality rules,
+the injection corpus and a reviewed golden LLM boundary.

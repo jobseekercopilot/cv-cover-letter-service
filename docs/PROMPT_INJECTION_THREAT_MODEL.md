@@ -21,7 +21,7 @@ cover it before release.
 | Versioned prompt template and generation rules | Trusted after allowlist and checksum verification | Immutable prompt-bundle registry |
 | Task, release and output-schema metadata | Trusted service configuration | Service-owned values; caller cannot supply them |
 | Profile, job and warning values | Untrusted | Bounded DTOs, normalisation and a dedicated untrusted JSON envelope |
-| Model output | Untrusted until validated | LLM Gateway strict JSON Schema plus local response checks |
+| Model output | Untrusted until validated | LLM Gateway strict JSON Schema plus exact local schema and active-content checks |
 | Contact identity | Sensitive, render-only | Removed before model input and added only by local renderers |
 | Provider transport and credentials | Outside this service | LLM Gateway adapter boundary |
 
@@ -30,10 +30,11 @@ are sent as `trustedInstructions`; the JSON evidence envelope is sent as
 `untrustedInput`. LLM Gateway maps those fields to separate provider roles.
 The service never concatenates source content into the trusted field.
 
-The immutable bundle's reviewed output shape is compiled locally into a strict
-JSON Schema: every named property is required, nested objects reject additional
-properties, and array item shapes are explicit. That schema is sent through
-the v2 output contract rather than included in either text channel.
+The active immutable bundle contains a reviewed, bounded JSON Schema: every
+named property is required, nested objects reject additional properties,
+strings have explicit patterns, and arrays have item-count limits and explicit
+item shapes. The same schema object is sent through the v2 output contract and
+enforced locally on the response rather than included in either text channel.
 
 ## Attack classes and expected handling
 
@@ -49,9 +50,10 @@ For every case:
 3. The strict output schema is independently supplied and unchanged.
 4. Prompt-object string representations and structured logs omit both input
    and output payloads.
-5. A filtered, incomplete, version-mismatched, schema-mismatched, blank or
-   malformed response fails before document or application persistence and
-   releases the billing reservation.
+5. A filtered, incomplete, version-mismatched, schema-mismatched, blank,
+   malformed, fenced, duplicated, oversized or active-content response fails
+   before document or application persistence and releases the billing
+   reservation.
 
 No test in this repository makes a live or paid provider request or uses real
 job-seeker data.
@@ -91,7 +93,9 @@ If injection or data disclosure is suspected:
 5. Release changed rules as a new immutable bundle and repeat all policy,
    contract, unit, integration and container checks.
 
-Physical trusted/untrusted separation remains active when selecting the
-approved `1.0.0` rollback bundle. That older bundle has fewer explicit safety
-instructions, so rollback is an emergency containment action, not evidence
-that the newer evaluation policy passed.
+Physical trusted/untrusted separation remains active when selecting an approved
+rollback bundle. Older bundles have fewer explicit safety instructions and
+their exemplar output is compiled into a closed structural schema, but local
+parser `2.0.0` response, text, array and active-content limits still apply.
+Rollback is an emergency containment action, not evidence that the newer
+evaluation policy passed.

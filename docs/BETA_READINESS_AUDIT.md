@@ -1,6 +1,6 @@
 # Beta-readiness audit
 
-Audit date: 2026-07-23
+Audit date: 2026-07-25
 
 Status: **Not ready for private beta**
 
@@ -59,6 +59,13 @@ the underlying document database.
   encoded, nested, Unicode and schema-escape attacks; unsafe LLM completion
   states fail before persistence; input/output sentinels prove payloads are not
   logged.
+- The DOCGEN-07 foundation releases strict bounded output schema `2.0.0` in
+  prompt bundle `1.2.0`. The same schema is sent to LLM Gateway and enforced
+  locally. The parser rejects malformed, truncated, fenced, trailing,
+  duplicate, incomplete, unknown, wrong-type, oversized, active-markup and
+  control-character output before any document or application write and
+  releases the billing reservation. Prompt/schema, LLM-contract and parser
+  versions are logged without output payloads.
 
 ## Confirmed blockers
 
@@ -78,9 +85,11 @@ the underlying document database.
    governed. The release metadata is returned and logged, but durable
    attachment to immutable document versions remains blocked on DOC-06.
 5. CV and cover-letter generation are coupled into one prompt and request.
-6. The parser checks JSON shape only. It does not enforce the supplied JSON
-   schema, reject unknown/oversized fields, sanitise active content, or record
-   model/prompt/schema versions.
+6. Strict schema enforcement, bounds, active-content rejection and
+   prompt/schema/parser contract metadata are implemented. LLM Gateway v2 does
+   not expose provider/model/deployment identity, so complete model-version
+   audit evidence remains blocked on DOCGEN-10. Durable prompt/schema
+   provenance also remains dependent on DOC-06.
 7. Generated claims have no evidence references or disposition such as
    supported, reworded, confirmation required, or rejected.
 8. Prompt rules allow reasonable professional inferences, which can become
@@ -94,11 +103,11 @@ the underlying document database.
     per-user usage guard.
 12. Token estimation is approximate and pricing/model-version assumptions are
     not governed or surfaced as cost evidence.
-13. Current tests cover the prompt-injection corpus and basic malformed,
-    filtered and schema-mismatched output handling. They do not yet cover
-    unsupported claims, all malformed/oversized structured-output cases,
-    duplicate requests, every partial downstream failure, user approval or the
-    complete privacy evidence required for beta.
+13. Current tests cover the prompt-injection corpus and malformed, truncated,
+    fenced, trailing, duplicate, missing, null, unknown, wrong-type, oversized,
+    active-content, filtered and schema-mismatched output handling. They do not
+    yet cover unsupported claims, duplicate requests, every partial downstream
+    failure, user approval or the complete privacy evidence required for beta.
 14. Document Generation Gateway must consume the bounded authenticated `3.1.0`
     contract and provide its own dedicated credential under DOCGEN-03/GW-01.
 15. Current Spring, Tomcat, Jackson, logging, Swagger UI, and generated-client

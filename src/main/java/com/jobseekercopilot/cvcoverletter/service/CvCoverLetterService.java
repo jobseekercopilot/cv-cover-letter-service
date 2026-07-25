@@ -119,13 +119,14 @@ public class CvCoverLetterService {
                     llmProperties.getTemperature());
             llmResponse = llmGatewayApi.generateV2(llmRequest);
             GenerationUsage usage = llmResponse == null ? null : llmResponse.getUsage();
-            log.info("LLM request completed userId={} jobId={} llmContractVersion={} finishReason={} schemaId={} schemaVersion={} inputTokens={} outputTokens={} totalTokens={} durationMs={}",
+            log.info("LLM request completed userId={} jobId={} llmContractVersion={} finishReason={} schemaId={} schemaVersion={} parserVersion={} inputTokens={} outputTokens={} totalTokens={} durationMs={}",
                     userId,
                     jobId,
                     llmResponse == null ? null : llmResponse.getContractVersion(),
                     llmResponse == null ? null : llmResponse.getFinishReason(),
                     llmResponse == null ? null : llmResponse.getSchemaId(),
                     llmResponse == null ? null : llmResponse.getSchemaVersion(),
+                    LlmResponseParser.PARSER_VERSION,
                     usage == null ? null : usage.getInputTokens(),
                     usage == null ? null : usage.getOutputTokens(),
                     usage == null ? null : usage.getTotalTokens(),
@@ -147,7 +148,8 @@ public class CvCoverLetterService {
 
         try {
             validateGenerationResponse(llmResponse, prompt);
-            GeneratedApplicationDocuments documents = responseParser.parse(llmResponse.getOutput());
+            GeneratedApplicationDocuments documents =
+                    responseParser.parse(llmResponse.getOutput(), prompt.getOutputSchema());
             String cvContent = cvRenderer.render(documents.getCv(), input.contact());
             String coverLetterContent = coverLetterRenderer.render(documents.getCoverLetter(), input.contact());
 

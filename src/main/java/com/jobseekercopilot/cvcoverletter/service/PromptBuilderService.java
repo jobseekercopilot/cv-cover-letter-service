@@ -73,7 +73,9 @@ public class PromptBuilderService {
             if (outputShape == null || !outputShape.isObject()) {
                 throw new IllegalStateException("Selected prompt bundle output schema is not an object.");
             }
-            JsonNode outputSchema = compileStrictJsonSchema(outputShape);
+            JsonNode outputSchema = isStrictJsonSchema(outputShape)
+                    ? outputShape.deepCopy()
+                    : compileStrictJsonSchema(outputShape);
             requireWithinBoundary(
                     "trusted instructions",
                     trustedInstructions,
@@ -152,6 +154,13 @@ public class PromptBuilderService {
         }
         throw new IllegalStateException(
                 "Prompt bundle output shape contains an unsupported value type: " + shape.getNodeType());
+    }
+
+    private boolean isStrictJsonSchema(JsonNode schema) {
+        return "object".equals(schema.path("type").asText())
+                && schema.path("properties").isObject()
+                && schema.path("required").isArray()
+                && schema.path("additionalProperties").isBoolean();
     }
 
     private record UntrustedGenerationInput(
