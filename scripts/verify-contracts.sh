@@ -68,7 +68,7 @@ verify_source \
 
 jq -e '
     (.openapi | type == "string" and startswith("3.")) and
-    (.info.version == "3.0.0") and
+    (.info.version == "2.0.0") and
     (.paths["/api/v2/generations"].post.operationId == "generateV2") and
     (.paths["/api/v2/generations"].post.requestBody.content["application/json"].schema["$ref"]
         == "#/components/schemas/GenerationRequest") and
@@ -149,7 +149,7 @@ jq -e '
 
 jq -e '
     (.openapi | type == "string" and startswith("3.")) and
-    (.info.version == "2.0.0") and
+    (.info.version == "3.0.0") and
     (.components.securitySchemes.serviceToken
         | .type == "apiKey" and .in == "header" and .name == "X-Service-Token") and
     (.paths["/api/v1/payments/reservations"].post.operationId == "createReservation") and
