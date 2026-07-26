@@ -147,6 +147,9 @@ class CvCoverLetterServiceTest {
         verify(paymentBillingClient).reserve(org.mockito.Mockito.eq("user-123"), reservationCaptor.capture());
         assertEquals("CV_AND_COVER_LETTER_GENERATION", reservationCaptor.getValue().feature());
         assertEquals(5000L, reservationCaptor.getValue().estimatedTokens());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                reservationCaptor.getValue().operationKey().matches(
+                        "cv-generation:[0-9a-f-]{36}"));
 
         ArgumentCaptor<PaymentBillingClient.CommitReservationRequest> commitCaptor =
                 ArgumentCaptor.forClass(PaymentBillingClient.CommitReservationRequest.class);
@@ -263,6 +266,32 @@ class CvCoverLetterServiceTest {
         assertThrows(DownstreamServiceException.class, () -> service.generate("user-123", request));
 
         verify(paymentBillingClient).release("user-123", reservationId, "LLM generation failed");
+        verifyNoInteractions(documentStoreApi, applicationTrackerApi);
+    }
+
+    @Test
+    void unresolvedBillingCompensationIsSurfacedInsteadOfSwallowed() {
+        UUID reservationId = UUID.randomUUID();
+        when(paymentBillingClient.reserve(any(), any())).thenReturn(
+                new PaymentBillingClient.ReservationResponse(
+                        reservationId, "user-123", 5000, 40000, "RESERVED"));
+        when(llmGatewayApi.generateV2(any())).thenThrow(new RestClientException("llm down"));
+        DownstreamServiceException compensationFailure =
+                new DownstreamServiceException("Payment service release failed", null);
+        org.mockito.Mockito.doThrow(compensationFailure)
+                .when(paymentBillingClient)
+                .release("user-123", reservationId, "LLM generation failed");
+
+        DownstreamServiceException failure = assertThrows(
+                DownstreamServiceException.class,
+                () -> service.generate("user-123", request));
+
+        assertEquals(
+                "Document generation failed and billing compensation is unresolved",
+                failure.getMessage());
+        assertEquals(compensationFailure, failure.getCause());
+        assertEquals(1, failure.getSuppressed().length);
+        assertEquals("LLM gateway is unavailable", failure.getSuppressed()[0].getMessage());
         verifyNoInteractions(documentStoreApi, applicationTrackerApi);
     }
 

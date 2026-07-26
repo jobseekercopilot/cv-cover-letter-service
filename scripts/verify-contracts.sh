@@ -63,8 +63,8 @@ verify_source \
 verify_source \
     payment-service \
     jobseekercopilot/payment-service \
-    0243471685ef128f84d7011950f2baa2f1450acf \
-    446dc9a1450bf876c3bd477e6120fe1b3b40ff3326334cb985a28e31828b22a0
+    2fc961c8facc89a334b051e155836423912a2498 \
+    08312957171b34df832b5b3e62ffba93d68007981ac7c284e8b0bff7de22295a
 
 jq -e '
     (.openapi | type == "string" and startswith("3.")) and
@@ -149,15 +149,18 @@ jq -e '
 
 jq -e '
     (.openapi | type == "string" and startswith("3.")) and
-    (.info.version == "2.0.0") and
+    (.info.version == "3.0.0") and
     (.components.securitySchemes.serviceToken
         | .type == "apiKey" and .in == "header" and .name == "X-Service-Token") and
     (.paths["/api/v1/payments/reservations"].post.operationId == "createReservation") and
+    (.paths["/api/v1/payments/reservations/{reservationId}"].get.operationId
+        == "reservationStatus") and
     (.paths["/api/v1/payments/reservations/{reservationId}/commit"].post.operationId
         == "commitReservation") and
     (.paths["/api/v1/payments/reservations/{reservationId}/release"].post.operationId
         == "releaseReservation") and
     ([.paths["/api/v1/payments/reservations"].post,
+      .paths["/api/v1/payments/reservations/{reservationId}"].get,
       .paths["/api/v1/payments/reservations/{reservationId}/commit"].post,
       .paths["/api/v1/payments/reservations/{reservationId}/release"].post]
         | all(
@@ -165,12 +168,19 @@ jq -e '
             (.parameters
                 | any(.name == "X-Payment-Owner" and .in == "header" and .required == true)) and
             (.parameters | all(.name != "X-User-Id")))) and
-    (.components.schemas.CreateReservationRequest.required | index("feature") != null) and
+    (.components.schemas.CreateReservationRequest.required
+        | index("feature") != null and index("operationKey") != null) and
     (.components.schemas.CreateReservationRequest.properties
-        | has("estimatedTokens") and has("referenceType") and has("referenceId")) and
+        | has("estimatedTokens") and has("operationKey") and
+          has("referenceType") and has("referenceId")) and
     (.components.schemas.ReservationResponse.properties
         | has("reservationId") and has("reservedTokens") and
-          has("balanceAfterReservation") and has("status")) and
+          has("balanceAfterReservation") and has("status") and has("expiresAt")) and
+    (.components.schemas.ReservationStatusResponse.properties
+        | has("reservationId") and has("operationKey") and has("status") and
+          has("expiresAt") and has("lastTransitionAt") and
+          has("lastTransitionReason") and has("reconciliationAttempts") and
+          has("reconciliationErrorCode")) and
     (.components.schemas.CommitReservationRequest.required | index("actualTokens") != null) and
     (.components.schemas.CommitReservationRequest.properties
         | has("provider") and has("model") and has("inputTokens") and

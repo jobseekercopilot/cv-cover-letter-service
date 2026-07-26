@@ -40,8 +40,10 @@ The service uses three further runtime credentials:
   producer calls. Application creation binds the trusted inbound subject to
   the request owner. This role cannot change status, withdraw or delete.
 - `CV_COVER_LETTER_TO_PAYMENT_SERVICE_TOKEN` authenticates only Payment
-  Service reservation, commit and release calls. Each call sends the trusted
-  inbound subject as `X-Payment-Owner`; `X-User-Id` is never sent.
+  Service reservation, commit, release and lifecycle lookup calls. Each call
+  sends the trusted inbound subject as `X-Payment-Owner`; `X-User-Id` is never
+  sent. One service-created operation key is reused for bounded reservation
+  retries and is not accepted from the caller.
 
 All credentials must contain at least 32 UTF-8 bytes and must be distinct
 from each other and from `CV_COVER_LETTER_GATEWAY_TOKEN`. Missing, weak or
@@ -51,6 +53,7 @@ written to logs or embedded in a generated client.
 ## Remaining CVCL-02 work
 
 Infrastructure runtime secret wiring/rotation and fleet-level negative tests
-are still required before beta. Reservation idempotency and transaction
-recovery remain in the Payment workstream. User approval, prompt safety and
+are still required before beta. Whole-generation duplicate suppression remains
+in the orchestration workstream; Payment operation retry and compensation
+recovery are now implemented at this boundary. User approval, prompt safety and
 output quality remain in their existing workstreams.

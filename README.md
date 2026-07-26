@@ -70,9 +70,11 @@ evidence remains an open CVCL-02 dependency.
 
 The LLM Gateway v2, Document Store and Application Tracker clients are generated
 during Maven `generate-sources` from reviewed, checksum-protected producer
-contracts under `src/main/openapi`. The raw Payment reserve/commit/release
-adapter is checked against its pinned producer contract. Generated sources and
-binaries are build outputs and are not committed. See
+contracts under `src/main/openapi`. The raw Payment
+reserve/commit/release/lifecycle adapter is checked against its pinned 3.0.0
+producer contract. It retries one stable operation key per invocation, resolves
+ambiguous terminal responses and surfaces unresolved compensation. Generated
+sources and binaries are build outputs and are not committed. See
 [`docs/CONTRACT_GOVERNANCE.md`](docs/CONTRACT_GOVERNANCE.md).
 
 ## Build

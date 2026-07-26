@@ -168,6 +168,32 @@ if "$repository_root/scripts/verify-contracts.sh" "$temporary_dir/payment-owner"
     exit 1
 fi
 
+copy_contracts "$temporary_dir/payment-operation-key"
+jq '.components.schemas.CreateReservationRequest.required -= ["operationKey"]' \
+    "$temporary_dir/payment-operation-key/payment-service.json" \
+    > "$temporary_dir/payment-operation-key/changed.json"
+mv "$temporary_dir/payment-operation-key/changed.json" \
+   "$temporary_dir/payment-operation-key/payment-service.json"
+refresh_manifest "$temporary_dir/payment-operation-key"
+if "$repository_root/scripts/verify-contracts.sh" \
+        "$temporary_dir/payment-operation-key" >/dev/null 2>&1; then
+    echo "contract policy negative test accepted removal of payment operation key" >&2
+    exit 1
+fi
+
+copy_contracts "$temporary_dir/payment-recovery"
+jq 'del(.paths["/api/v1/payments/reservations/{reservationId}"])' \
+    "$temporary_dir/payment-recovery/payment-service.json" \
+    > "$temporary_dir/payment-recovery/changed.json"
+mv "$temporary_dir/payment-recovery/changed.json" \
+   "$temporary_dir/payment-recovery/payment-service.json"
+refresh_manifest "$temporary_dir/payment-recovery"
+if "$repository_root/scripts/verify-contracts.sh" \
+        "$temporary_dir/payment-recovery" >/dev/null 2>&1; then
+    echo "contract policy negative test accepted removal of payment recovery lookup" >&2
+    exit 1
+fi
+
 copy_contracts "$temporary_dir/source-revision"
 sed 's/revision=d9e6bc9/revision=0000000/' \
     "$temporary_dir/source-revision/application-tracker-service.SOURCE" \
