@@ -33,6 +33,11 @@ the underlying document database.
   Payment producer contract. Contract policy tests, Maven verification and the
   source-only container build run in CI without sibling repositories, local
   `libs/` or preinstalled Job Seeker Copilot artifacts.
+- The PAY-10 consumer slice pins Payment Service `3.0.0` at merged revision
+  `2fc961c8facc89a334b051e155836423912a2498`. Each invocation creates one
+  stable operation key for bounded reserve retries, ambiguous commit/release
+  responses are checked against owner-scoped lifecycle state, and unresolved
+  compensation is returned as a distinct failure rather than swallowed.
 - OWASP Dependency-Check 12.1.8 completed against the cached 2026-07-18
   advisory database: 46 dependencies, 10 vulnerable dependencies, 142
   vulnerability matches, including 18 Critical and 39 High matches. Results
@@ -112,8 +117,10 @@ the underlying document database.
    paths remain open.
 10. Documents and an application are persisted before any user review or
    approval.
-11. The save/export/application/credit sequence is non-atomic. Retries can
-    leave partial records, duplicate documents/applications, or repeated cost.
+11. The save/export/application/credit sequence is non-atomic. Payment holds
+    and terminal calls are retry-safe and abandoned holds expire, but whole
+    request retries can still leave duplicate documents/applications or repeat
+    model cost.
 12. Normalised prompt input is capped at 40,000 characters. There is no
     request idempotency key, duplicate-click protection, or service-owned
     per-user usage guard.

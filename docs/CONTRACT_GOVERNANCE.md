@@ -31,7 +31,7 @@ source revision are recorded in `api/client-release.json`:
 | `jobseekercopilot/llm-gateway` | `c0a2eb1fa7adb437cf5cda10a491112108619f66` | `contracts/openapi.json` | `2.0.0` | `d45bf93cdadf181b9de387aa6358690fc1c83b4543e47934a2d1380e48dd16ec` | Generated Java client |
 | `jobseekercopilot/document-store-service` | `b696fe81e9b900e0749e185f595ff4c98c24119d` | `contracts/openapi.json` | `1.1.0` | `3d0595c83cc66d9037e08af6a4b087c115c9a5d99ec71491f1aa5fc3afffd6ba` | Generated Java client |
 | `jobseekercopilot/application-tracker-service` | `d9e6bc9fcbe4ef665334c58672c8062b1e4796aa` | `contracts/openapi.json` | `1.1.0` | `549cebba300c2caf3403b9de01d3c34de84464a280a02183751e8a9583ad982a` | Generated Java client |
-| `jobseekercopilot/payment-service` | `0243471685ef128f84d7011950f2baa2f1450acf` | `contracts/openapi.json` | `2.0.0` | `446dc9a1450bf876c3bd477e6120fe1b3b40ff3326334cb985a28e31828b22a0` | Authenticated owner-bound handwritten adapter |
+| `jobseekercopilot/payment-service` | `2fc961c8facc89a334b051e155836423912a2498` | `contracts/openapi.json` | `3.0.0` | `08312957171b34df832b5b3e62ffba93d68007981ac7c284e8b0bff7de22295a` | Authenticated owner-bound adapter with operation-key retries and lifecycle recovery |
 
 OpenAPI Generator `7.5.0` with the Java `resttemplate` library generates into
 `target/generated-sources`. The `.SOURCE` files record provenance and
@@ -49,15 +49,18 @@ The policy checks the exact operations and fields currently consumed:
   document ID;
 - Application Tracker create request, returned application ID and required
   service-token security scheme;
-- Payment reservation, commit and release paths, service identity, trusted
-  owner header and payloads.
+- Payment reservation, commit, release and owner-scoped lifecycle paths,
+  service identity, trusted owner, operation key, expiry and recovery evidence.
 
 The Document Store and Application Tracker adapters supply distinct runtime
 producer credentials. Store creates include the trusted inbound owner once in
 `X-Document-Owner`; Tracker creates bind that same owner in the producer-only
 request body. Payment calls use their own runtime service token and the same
-trusted inbound owner. Atomicity and idempotency semantics remain owned by the
-Payment beta workstream.
+trusted inbound owner. Each generation invocation creates one operation key and
+reuses it across bounded reservation retries. Ambiguous terminal responses are
+resolved through Payment lifecycle state; unresolved compensation is surfaced
+as a distinct failure. Whole-generation duplicate suppression remains an
+orchestration concern rather than a Payment operation-key guarantee.
 
 ## Updating a pin
 

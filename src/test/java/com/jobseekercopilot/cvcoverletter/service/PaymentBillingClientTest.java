@@ -12,9 +12,12 @@ import org.springframework.web.client.RestClient;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 
 class PaymentBillingClientTest {
     private static final String PAYMENT_TOKEN =
@@ -45,6 +48,15 @@ class PaymentBillingClientTest {
                 .andExpect(header("X-Service-Token", PAYMENT_TOKEN))
                 .andExpect(header("X-Payment-Owner", "owner-123"))
                 .andExpect(noHeader("X-User-Id"))
+                .andExpect(content().json("""
+                        {
+                          "feature": "CV_COVER_LETTER",
+                          "estimatedTokens": 5000,
+                          "operationKey": "cv-generation:operation-1",
+                          "referenceType": "APPLICATION",
+                          "referenceId": "job-123"
+                        }
+                        """))
                 .andRespond(withSuccess(
                         "{\"reservationId\":\"00000000-0000-0000-0000-000000000001\","
                                 + "\"userId\":\"owner-123\",\"reservedTokens\":5000,"
@@ -54,9 +66,52 @@ class PaymentBillingClientTest {
         PaymentBillingClient.ReservationResponse response = client.reserve(
                 "owner-123",
                 new PaymentBillingClient.ReservationRequest(
-                        "CV_COVER_LETTER", 5000, "APPLICATION", "job-123"));
+                        "CV_COVER_LETTER",
+                        5000,
+                        "cv-generation:operation-1",
+                        "APPLICATION",
+                        "job-123"));
 
         assertEquals("owner-123", response.userId());
+        server.verify();
+    }
+
+    @Test
+    void lostReservationResponseRetriesTheSameOperationKey() {
+        String reservationUrl =
+                "https://payment.example.test/api/v1/payments/reservations";
+        RequestMatcher operationKey = content().json("""
+                {
+                  "feature": "CV_COVER_LETTER",
+                  "estimatedTokens": 5000,
+                  "operationKey": "cv-generation:lost-response",
+                  "referenceType": "APPLICATION",
+                  "referenceId": "job-123"
+                }
+                """);
+        server.expect(requestTo(reservationUrl))
+                .andExpect(operationKey)
+                .andRespond(withServerError());
+        server.expect(requestTo(reservationUrl))
+                .andExpect(operationKey)
+                .andRespond(withSuccess(
+                        "{\"reservationId\":\"00000000-0000-0000-0000-000000000001\","
+                                + "\"userId\":\"owner-123\",\"reservedTokens\":5000,"
+                                + "\"balanceAfterReservation\":40000,\"status\":\"RESERVED\"}",
+                        MediaType.APPLICATION_JSON));
+
+        PaymentBillingClient.ReservationResponse response = client.reserve(
+                "owner-123",
+                new PaymentBillingClient.ReservationRequest(
+                        "CV_COVER_LETTER",
+                        5000,
+                        "cv-generation:lost-response",
+                        "APPLICATION",
+                        "job-123"));
+
+        assertEquals(
+                UUID.fromString("00000000-0000-0000-0000-000000000001"),
+                response.reservationId());
         server.verify();
     }
 
@@ -86,6 +141,91 @@ class PaymentBillingClientTest {
                         .description("CV generation")
                         .build());
         client.release("owner-123", reservationId, "test release");
+
+        server.verify();
+    }
+
+    @Test
+    void ambiguousCommitIsResolvedFromOwnerScopedLifecycle() {
+        UUID reservationId =
+                UUID.fromString("00000000-0000-0000-0000-000000000001");
+        String commitUrl = "https://payment.example.test/api/v1/payments/reservations/"
+                + reservationId + "/commit";
+        for (int attempt = 0; attempt < 3; attempt++) {
+            server.expect(requestTo(commitUrl))
+                    .andExpect(header("X-Service-Token", PAYMENT_TOKEN))
+                    .andExpect(header("X-Payment-Owner", "owner-123"))
+                    .andRespond(withServerError());
+        }
+        server.expect(requestTo(
+                        "https://payment.example.test/api/v1/payments/reservations/"
+                                + reservationId))
+                .andExpect(header("X-Service-Token", PAYMENT_TOKEN))
+                .andExpect(header("X-Payment-Owner", "owner-123"))
+                .andRespond(withSuccess(
+                        "{\"reservationId\":\"" + reservationId
+                                + "\",\"userId\":\"owner-123\",\"status\":\"COMMITTED\"}",
+                        MediaType.APPLICATION_JSON));
+
+        client.commit(
+                "owner-123",
+                reservationId,
+                PaymentBillingClient.CommitReservationRequest.builder()
+                        .actualTokens(4200)
+                        .build());
+
+        server.verify();
+    }
+
+    @Test
+    void ambiguousReleaseIsResolvedFromOwnerScopedLifecycle() {
+        UUID reservationId =
+                UUID.fromString("00000000-0000-0000-0000-000000000001");
+        String releaseUrl = "https://payment.example.test/api/v1/payments/reservations/"
+                + reservationId + "/release";
+        for (int attempt = 0; attempt < 3; attempt++) {
+            server.expect(requestTo(releaseUrl))
+                    .andExpect(header("X-Service-Token", PAYMENT_TOKEN))
+                    .andExpect(header("X-Payment-Owner", "owner-123"))
+                    .andRespond(withServerError());
+        }
+        server.expect(requestTo(
+                        "https://payment.example.test/api/v1/payments/reservations/"
+                                + reservationId))
+                .andExpect(header("X-Service-Token", PAYMENT_TOKEN))
+                .andExpect(header("X-Payment-Owner", "owner-123"))
+                .andRespond(withSuccess(
+                        "{\"reservationId\":\"" + reservationId
+                                + "\",\"userId\":\"owner-123\",\"status\":\"RELEASED\"}",
+                        MediaType.APPLICATION_JSON));
+
+        client.release("owner-123", reservationId, "generation failed");
+
+        server.verify();
+    }
+
+    @Test
+    void unresolvedReleaseRemainsAFirstClassFailure() {
+        UUID reservationId =
+                UUID.fromString("00000000-0000-0000-0000-000000000001");
+        String releaseUrl = "https://payment.example.test/api/v1/payments/reservations/"
+                + reservationId + "/release";
+        for (int attempt = 0; attempt < 3; attempt++) {
+            server.expect(requestTo(releaseUrl))
+                    .andRespond(withServerError());
+        }
+        server.expect(requestTo(
+                        "https://payment.example.test/api/v1/payments/reservations/"
+                                + reservationId))
+                .andRespond(withSuccess(
+                        "{\"reservationId\":\"" + reservationId
+                                + "\",\"userId\":\"owner-123\",\"status\":\"RESERVED\"}",
+                        MediaType.APPLICATION_JSON));
+
+        assertThrows(
+                com.jobseekercopilot.cvcoverletter.exception.DownstreamServiceException.class,
+                () -> client.release(
+                        "owner-123", reservationId, "generation failed"));
 
         server.verify();
     }

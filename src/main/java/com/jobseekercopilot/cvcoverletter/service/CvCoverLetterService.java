@@ -100,6 +100,7 @@ public class CvCoverLetterService {
                 PaymentBillingClient.ReservationRequest.builder()
                         .feature(GENERATION_FEATURE)
                         .estimatedTokens(estimateTokens(prompt))
+                        .operationKey("cv-generation:" + UUID.randomUUID())
                         .referenceType(REFERENCE_TYPE)
                         .referenceId(jobId)
                         .build());
@@ -142,13 +143,25 @@ public class CvCoverLetterService {
                     jobId,
                     exception.getClass().getSimpleName(),
                     exception);
-            releaseReservationAfterFailure(userId, reservation.reservationId(), "LLM generation failed");
-            throw new DownstreamServiceException("LLM gateway is unavailable", exception);
+            DownstreamServiceException generationFailure =
+                    new DownstreamServiceException("LLM gateway is unavailable", exception);
+            releaseReservationAfterFailure(
+                    userId,
+                    reservation.reservationId(),
+                    "LLM generation failed",
+                    generationFailure);
+            throw generationFailure;
         }
         if (llmResponse == null) {
             log.warn("LLM gateway returned no response userId={} jobId={}", userId, jobId);
-            releaseReservationAfterFailure(userId, reservation.reservationId(), "LLM gateway returned no response");
-            throw new InvalidLlmResponseException("LLM gateway returned no response");
+            InvalidLlmResponseException generationFailure =
+                    new InvalidLlmResponseException("LLM gateway returned no response");
+            releaseReservationAfterFailure(
+                    userId,
+                    reservation.reservationId(),
+                    "LLM gateway returned no response",
+                    generationFailure);
+            throw generationFailure;
         }
 
         try {
@@ -230,7 +243,11 @@ public class CvCoverLetterService {
                     .inputWarnings(input.warnings())
                     .build();
         } catch (RuntimeException exception) {
-            releaseReservationAfterFailure(userId, reservation.reservationId(), "Document generation failed");
+            releaseReservationAfterFailure(
+                    userId,
+                    reservation.reservationId(),
+                    "Document generation failed",
+                    exception);
             throw exception;
         }
     }
@@ -314,13 +331,25 @@ public class CvCoverLetterService {
         log.info("Billing commit succeeded userId={} reservationId={}", userId, reservationId);
     }
 
-    private void releaseReservationAfterFailure(String userId, UUID reservationId, String reason) {
+    private void releaseReservationAfterFailure(
+            String userId,
+            UUID reservationId,
+            String reason,
+            RuntimeException generationFailure) {
         try {
             log.info("Billing release started userId={} reservationId={} reason={}", userId, reservationId, reason);
             paymentBillingClient.release(userId, reservationId, reason);
             log.info("Billing release succeeded userId={} reservationId={}", userId, reservationId);
         } catch (DownstreamServiceException exception) {
-            log.error("Failed to release AI token reservation {} after generation failure", reservationId, exception);
+            log.error(
+                    "Billing compensation unresolved after generation failure reservationId={}",
+                    reservationId,
+                    exception);
+            DownstreamServiceException unresolved = new DownstreamServiceException(
+                    "Document generation failed and billing compensation is unresolved",
+                    exception);
+            unresolved.addSuppressed(generationFailure);
+            throw unresolved;
         }
     }
 
