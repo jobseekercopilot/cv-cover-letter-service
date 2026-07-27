@@ -1,5 +1,6 @@
 package com.jobseekercopilot.cvcoverletter.controller;
 
+import com.jobseekercopilot.cvcoverletter.dto.DraftGenerationResponse;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateCvCoverLetterResponse;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateRequest;
 import com.jobseekercopilot.cvcoverletter.security.CvCoverLetterGatewayCredentials;
@@ -13,6 +14,8 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import java.util.List;
+import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -36,6 +39,51 @@ class CvCoverLetterControllerIntegrationTest {
 
     @Autowired private MockMvc mockMvc;
     @MockBean private CvCoverLetterService cvCoverLetterService;
+
+    @Test
+    void draftGenerationBindsTrustedOwnerAndDurableOperation() throws Exception {
+        UUID operationId =
+                UUID.fromString("00000000-0000-0000-0000-000000000123");
+        when(cvCoverLetterService.generateDraft(
+                anyString(), any(), any())).thenReturn(
+                new DraftGenerationResponse(
+                        operationId,
+                        "Tailored CV",
+                        "Tailored letter",
+                        "CV content",
+                        "Letter content",
+                        null,
+                        null,
+                        "1.0",
+                        List.of(),
+                        new DraftGenerationResponse.DraftGenerationUsage(
+                                100L, 200L, 300L),
+                        new DraftGenerationResponse.DraftGenerationAudit(
+                                "fixture-model",
+                                "deployment-1",
+                                "admission-1",
+                                "pricing-1",
+                                100L,
+                                10L,
+                                "USD")));
+
+        mockMvc.perform(post("/api/v1/cv-cover-letter/drafts")
+                        .header("X-Service-Token", SERVICE_TOKEN)
+                        .header("X-Document-Owner", "owner-123")
+                        .header(
+                                "X-Generation-Operation-Id",
+                                operationId.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validRequest()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.operationId")
+                        .value(operationId.toString()))
+                .andExpect(jsonPath("$.applicationId").doesNotExist())
+                .andExpect(jsonPath("$.usage.totalTokens").value(300));
+
+        verify(cvCoverLetterService).generateDraft(
+                eq("owner-123"), eq(operationId), any());
+    }
 
     @Test
     void validRequestReturnsGeneratedResponse() throws Exception {

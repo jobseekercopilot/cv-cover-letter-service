@@ -1,0 +1,43 @@
+# Draft generation boundary
+
+OpenAPI `3.2.0` separates model-domain work from workflow ownership.
+
+## Operations
+
+`POST /api/v1/cv-cover-letter/drafts/estimate` validates the exact bounded
+profile/job snapshot and builds the reviewed prompt in memory. It returns the
+conservative token reservation and does not call the model, Payment, Document
+Store, or Application Tracker.
+
+`POST /api/v1/cv-cover-letter/drafts` requires:
+
+- the approved Gateway service credential in `X-Service-Token`;
+- the authenticated owner bound once in `X-Document-Owner`;
+- the Gateway's durable UUID in `X-Generation-Operation-Id`;
+- bounded profile/job snapshot schema `1.0`.
+
+It calls LLM Gateway once and returns rendered draft content, prompt-release
+provenance, token usage, and non-payload provider audit evidence. It does not
+reserve or commit credit, save or approve a document, export a file, or create
+an application.
+
+## Ownership and recovery
+
+Document Generation Gateway is the durable coordinator and owns idempotency,
+reservation, operation state, retry decisions, persistence, approval, export,
+and application linkage. CV and Cover Letter Service owns prompt construction,
+output validation, evidence enforcement, and deterministic rendering only.
+
+The operation ID is logged as non-PII correlation evidence and echoed in the
+response. It is not a licence to retry an ambiguous provider call: until the
+Gateway's durable coordinator records a completed draft response, an ambiguous
+model outcome must remain visible for explicit recovery rather than silently
+invoking the provider twice.
+
+## Transitional endpoint
+
+`POST /api/v1/cv-cover-letter/generate` retains the pre-`3.2.0` combined
+payment/store/application behaviour only while the Gateway consumer migrates.
+It must not be used by the new workflow. Remove the legacy endpoint and its
+Payment, Store, and Tracker credentials after the Gateway operation and
+rollback path are verified.

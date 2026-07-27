@@ -1,14 +1,16 @@
 # CV and Cover Letter Service
 
 Domain service that builds the CV/cover-letter prompt, requests generation from
-`llm-gateway`, validates and renders the response, stores both documents, and
-creates an application record.
+`llm-gateway`, validates the response, and returns bounded rendered drafts plus
+model-usage evidence. The additive draft API has no payment, document, export,
+approval, or application side effects. The legacy generate-and-commit endpoint
+remains temporarily available for a coordinated Gateway migration.
 
 This service is **not beta-ready**. Its build is reproducible from committed
 source, its prompt releases are immutable and rollback-capable, and generated
-claims now fail closed against approved source facts. Documents are still
-persisted before user approval, and the controlled audited path for user
-corrections remains dependent on DOCGEN-16. See
+claims now fail closed against approved source facts. The Gateway must adopt
+the pure draft boundary and complete its durable approval workflow before the
+legacy endpoint and downstream credentials can be removed. See
 [`docs/BETA_READINESS_AUDIT.md`](docs/BETA_READINESS_AUDIT.md).
 
 ## Technology
@@ -31,6 +33,13 @@ snapshots documented in
 Unknown fields and invalid provenance fail closed; deterministic warnings
 report missing, normalised, duplicate, or conflicting evidence. Contact
 details remain render-only and are not sent to the model.
+
+`POST /api/v1/cv-cover-letter/drafts/estimate` performs validation and returns
+the conservative reservation size without calling a provider.
+`POST /api/v1/cv-cover-letter/drafts` requires the Gateway's durable
+`X-Generation-Operation-Id` and returns draft content, usage, and model audit
+evidence. See
+[`docs/DRAFT_GENERATION_BOUNDARY.md`](docs/DRAFT_GENERATION_BOUNDARY.md).
 
 ## Prompt releases
 
