@@ -43,7 +43,11 @@ class OpenApiExportTest {
         JsonNode contract = objectMapper.readTree(spec);
         JsonNode generation =
                 contract.path("paths").path("/api/v1/cv-cover-letter/generate").path("post");
-        assertEquals("3.1.0", contract.path("info").path("version").asText());
+        JsonNode draft =
+                contract.path("paths").path("/api/v1/cv-cover-letter/drafts").path("post");
+        JsonNode estimate =
+                contract.path("paths").path("/api/v1/cv-cover-letter/drafts/estimate").path("post");
+        assertEquals("3.2.0", contract.path("info").path("version").asText());
         assertEquals(
                 "X-Service-Token",
                 contract.path("components")
@@ -53,6 +57,22 @@ class OpenApiExportTest {
                         .asText());
         assertTrue(generation.path("security").toString().contains("serviceToken"));
         assertTrue(generation.path("parameters").toString().contains("X-Document-Owner"));
+        assertTrue(draft.path("security").toString().contains("serviceToken"));
+        assertTrue(draft.path("parameters").toString().contains("X-Document-Owner"));
+        assertTrue(draft.path("parameters").toString().contains("X-Generation-Operation-Id"));
+        assertTrue(estimate.path("parameters").toString().contains("X-Document-Owner"));
+        assertEquals(
+                "#/components/schemas/DraftGenerationResponse",
+                draft.path("responses")
+                        .path("200")
+                        .path("content")
+                        .elements()
+                        .next()
+                        .path("schema")
+                        .path("$ref")
+                        .asText());
+        assertFalse(draft.path("responses").path("200").toString()
+                .contains("applicationId"));
         assertFalse(spec.contains("X-User-Id"));
         JsonNode schemas = contract.path("components").path("schemas");
         for (String name : List.of(

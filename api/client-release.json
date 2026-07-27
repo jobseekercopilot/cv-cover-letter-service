@@ -2,16 +2,16 @@
   "schemaVersion": 1,
   "contract": {
     "path": "contracts/openapi.json",
-    "version": "3.1.0",
-    "sourceRevision": "f2c5916fa0da66bb11690439c34c104147508f41",
-    "sha256": "811cba22ff50bc1b8e89e7cab8d29fdaa56f440ea81fd9fa0e9a0806f2bbe0c3",
+    "version": "3.2.0",
+    "sourceRevision": "47d7c3cfb4c6d10b026c01b9fdc02e177e3f4983",
+    "sha256": "cb8e6f194fac88c45a875c47d1e0616f9df157c2d9df8c815ccfe3ec931e1654",
     "initialRelease": false,
-    "compatibilityBaseRevision": "3fed226ad104a0c81b7ff154a772988133aa4be3"
+    "compatibilityBaseRevision": "f2c5916fa0da66bb11690439c34c104147508f41"
   },
   "javaPackage": {
     "groupId": "com.jobseekercopilot.clients",
     "artifactId": "cv-cover-letter-service-client",
-    "version": "3.1.0-rev.f2c5916fa0da",
+    "version": "3.2.0-rev.47d7c3cfb4c6",
     "registry": "https://maven.pkg.github.com/jobseekercopilot/cv-cover-letter-service"
   },
   "generator": {

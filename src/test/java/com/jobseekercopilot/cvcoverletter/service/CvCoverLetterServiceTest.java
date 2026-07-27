@@ -4,6 +4,7 @@ import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validRe
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobseekercopilot.cvcoverletter.config.LlmProperties;
+import com.jobseekercopilot.cvcoverletter.dto.DraftGenerationResponse;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateCvCoverLetterResponse;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateRequest;
 import com.jobseekercopilot.cvcoverletter.dto.PromptGenerationMetadata;
@@ -45,6 +46,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith({MockitoExtension.class, OutputCaptureExtension.class})
 class CvCoverLetterServiceTest {
@@ -83,8 +85,46 @@ class CvCoverLetterServiceTest {
                         .generationMetadata(promptMetadata())
                         .evidenceCatalog(new ClaimEvidenceCatalogFactory().create(normalizedInput))
                         .build());
-        when(paymentBillingClient.reserve(any(), any())).thenReturn(
+        lenient().when(paymentBillingClient.reserve(any(), any())).thenReturn(
                 new PaymentBillingClient.ReservationResponse(UUID.randomUUID(), "user-123", 5000, 40000, "RESERVED"));
+    }
+
+    @Test
+    void estimatesWithoutCallingModelOrOwningSideEffects() {
+        var estimate = service.estimateDraft("user-123", request);
+
+        assertEquals(5000L, estimate.estimatedTokens());
+        verifyNoInteractions(
+                llmGatewayApi,
+                paymentBillingClient,
+                documentStoreApi,
+                applicationTrackerApi);
+    }
+
+    @Test
+    void returnsBoundedDraftAndUsageWithoutPaymentStorageOrApplicationSideEffects() {
+        UUID operationId = UUID.randomUUID();
+        when(llmGatewayApi.generateV2(any())).thenReturn(
+                successfulResponse(validJson()));
+
+        DraftGenerationResponse actual =
+                service.generateDraft("user-123", operationId, request);
+
+        assertEquals(operationId, actual.operationId());
+        assertEquals("Tailored Developer CV", actual.cvTitle());
+        assertEquals(
+                "Tailored Developer CV",
+                actual.cvContent().lines().findFirst().orElseThrow());
+        assertEquals(7300L, actual.usage().totalTokens());
+        assertEquals(
+                "gpt-4.1-mini-2025-04-14",
+                actual.audit().modelId());
+        assertEquals("1.0", actual.inputSchemaVersion());
+        verify(llmGatewayApi).generateV2(any());
+        verifyNoInteractions(
+                paymentBillingClient,
+                documentStoreApi,
+                applicationTrackerApi);
     }
 
     @Test

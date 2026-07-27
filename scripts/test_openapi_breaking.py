@@ -57,7 +57,7 @@ class OpenApiBreakingTests(unittest.TestCase):
 
     def test_breaking_change_requires_new_major_version(self) -> None:
         same_major = copy.deepcopy(self.contract)
-        same_major["info"]["version"] = "3.1.0"
+        same_major["info"]["version"] = "3.2.0"
         new_major = copy.deepcopy(self.contract)
         new_major["info"]["version"] = "4.0.0"
 

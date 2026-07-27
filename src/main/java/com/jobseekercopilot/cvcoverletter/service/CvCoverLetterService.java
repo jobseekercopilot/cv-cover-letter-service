@@ -2,6 +2,8 @@ package com.jobseekercopilot.cvcoverletter.service;
 
 import com.jobseekercopilot.cvcoverletter.config.LlmProperties;
 import com.jobseekercopilot.cvcoverletter.dto.ContactDetails;
+import com.jobseekercopilot.cvcoverletter.dto.DraftGenerationEstimateResponse;
+import com.jobseekercopilot.cvcoverletter.dto.DraftGenerationResponse;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateRequest;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateCvCoverLetterResponse;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedApplicationDocuments;
@@ -50,6 +52,157 @@ public class CvCoverLetterService {
     private final CoverLetterDocumentRenderer coverLetterRenderer;
     private final GeneratedDocumentsApi documentStoreApi;
     private final ApplicationRecordsApi applicationTrackerApi;
+
+    public DraftGenerationEstimateResponse estimateDraft(
+            String ownerId, GenerateRequest request) {
+        PreparedGeneration prepared = prepareGeneration(ownerId, request);
+        return new DraftGenerationEstimateResponse(
+                estimateTokens(prepared.prompt()));
+    }
+
+    public DraftGenerationResponse generateDraft(
+            String ownerId,
+            UUID operationId,
+            GenerateRequest request) {
+        if (operationId == null) {
+            throw new IllegalArgumentException(
+                    "Generation operation ID is required.");
+        }
+        long startedAt = System.nanoTime();
+        PreparedGeneration prepared = prepareGeneration(ownerId, request);
+        GenerationResponse llmResponse;
+        try {
+            llmResponse = invokeModel(prepared, operationId);
+        } catch (RestClientException exception) {
+            log.warn(
+                    "Draft model request failed operationId={} jobId={} error={}",
+                    operationId,
+                    prepared.jobId(),
+                    exception.getClass().getSimpleName(),
+                    exception);
+            throw new DownstreamServiceException(
+                    "LLM gateway is unavailable", exception);
+        }
+        if (llmResponse == null) {
+            throw new InvalidLlmResponseException(
+                    "LLM gateway returned no response");
+        }
+
+        DraftContent draft = materializeDraft(prepared, llmResponse);
+        GenerationUsage usage = llmResponse.getUsage();
+        GenerationAudit audit = llmResponse.getAudit();
+        log.info(
+                "Bounded draft generation completed operationId={} jobId={} durationMs={}",
+                operationId,
+                prepared.jobId(),
+                (System.nanoTime() - startedAt) / 1_000_000);
+        return new DraftGenerationResponse(
+                operationId,
+                draft.documents().getCv().getTitle(),
+                draft.documents().getCoverLetter().getTitle(),
+                draft.cvContent(),
+                draft.coverLetterContent(),
+                draft.documents().getGenerationNotes(),
+                prepared.prompt().getGenerationMetadata(),
+                prepared.input().inputSchemaVersion(),
+                prepared.input().warnings(),
+                new DraftGenerationResponse.DraftGenerationUsage(
+                        usage == null ? null : usage.getInputTokens(),
+                        usage == null ? null : usage.getOutputTokens(),
+                        usage == null ? null : usage.getTotalTokens()),
+                new DraftGenerationResponse.DraftGenerationAudit(
+                        audit.getModelId(),
+                        audit.getModelDeploymentVersion(),
+                        audit.getAdmissionPolicyVersion(),
+                        audit.getPricingVersion(),
+                        audit.getEstimatedInputTokensAtAdmission(),
+                        audit.getEstimatedCostMicroUsd(),
+                        audit.getCurrency()));
+    }
+
+    private PreparedGeneration prepareGeneration(
+            String ownerId, GenerateRequest request) {
+        NormalizedGenerationInput input =
+                inputNormalizer.normalize(ownerId, request);
+        String jobId = input.jobProvenance().getResourceId();
+        long startedAt = System.nanoTime();
+        CvCoverLetterPrompt prompt = promptBuilderService.buildPrompt(input);
+        log.info(
+                "Bounded prompt prepared jobId={} promptRelease={} bundleVersion={} schemaId={} schemaVersion={} estimatedTokens={} durationMs={}",
+                jobId,
+                prompt.getGenerationMetadata().releaseId(),
+                prompt.getGenerationMetadata().bundleVersion(),
+                prompt.getGenerationMetadata().schemaId(),
+                prompt.getGenerationMetadata().schemaVersion(),
+                estimateTokens(prompt),
+                (System.nanoTime() - startedAt) / 1_000_000);
+        GenerationRequest llmRequest = new GenerationRequest()
+                .contractVersion(GenerationRequest.ContractVersionEnum._2_0)
+                .task(prompt.getTaskType())
+                .trustedInstructions(prompt.getTrustedInstructions())
+                .untrustedInput(prompt.getUntrustedInput())
+                .output(new GenerationOutputContract()
+                        .format(GenerationOutputContract.FormatEnum.JSON_SCHEMA)
+                        .schemaId(prompt.getGenerationMetadata().schemaId())
+                        .schemaVersion(
+                                prompt.getGenerationMetadata().schemaVersion())
+                        .jsonSchema(prompt.getOutputSchema()))
+                .limits(new GenerationLimits()
+                        .temperature(llmProperties.getTemperature())
+                        .maxOutputTokens(llmProperties.getMaxTokens()));
+        return new PreparedGeneration(input, prompt, llmRequest, jobId);
+    }
+
+    private GenerationResponse invokeModel(
+            PreparedGeneration prepared, UUID operationId) {
+        long startedAt = System.nanoTime();
+        log.info(
+                "Bounded model request started operationId={} jobId={} taskType={}",
+                operationId,
+                prepared.jobId(),
+                prepared.prompt().getTaskType());
+        GenerationResponse response =
+                llmGatewayApi.generateV2(prepared.llmRequest());
+        GenerationUsage usage = response == null ? null : response.getUsage();
+        log.info(
+                "Bounded model response received operationId={} jobId={} finishReason={} inputTokens={} outputTokens={} totalTokens={} durationMs={}",
+                operationId,
+                prepared.jobId(),
+                response == null ? null : response.getFinishReason(),
+                usage == null ? null : usage.getInputTokens(),
+                usage == null ? null : usage.getOutputTokens(),
+                usage == null ? null : usage.getTotalTokens(),
+                (System.nanoTime() - startedAt) / 1_000_000);
+        return response;
+    }
+
+    private DraftContent materializeDraft(
+            PreparedGeneration prepared, GenerationResponse llmResponse) {
+        validateGenerationResponse(llmResponse, prepared.prompt());
+        GeneratedApplicationDocuments documents = responseParser.parse(
+                llmResponse.getOutput(),
+                prepared.prompt().getOutputSchema(),
+                prepared.prompt().getEvidenceCatalog());
+        String cvContent = cvRenderer.render(
+                documents.getCv(), prepared.input().contact());
+        String coverLetterContent = coverLetterRenderer.render(
+                documents.getCoverLetter(), prepared.input().contact());
+        return new DraftContent(
+                documents, cvContent, coverLetterContent);
+    }
+
+    private record PreparedGeneration(
+            NormalizedGenerationInput input,
+            CvCoverLetterPrompt prompt,
+            GenerationRequest llmRequest,
+            String jobId) {
+    }
+
+    private record DraftContent(
+            GeneratedApplicationDocuments documents,
+            String cvContent,
+            String coverLetterContent) {
+    }
 
     public GenerateCvCoverLetterResponse generate(String ownerId, GenerateRequest request) {
         long generationStartedAt = System.nanoTime();

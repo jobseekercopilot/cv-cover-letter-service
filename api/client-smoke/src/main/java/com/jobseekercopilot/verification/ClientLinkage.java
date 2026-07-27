@@ -2,9 +2,9 @@ package com.jobseekercopilot.verification;
 
 import com.jobseekercopilot.generated.cvcoverletterservice.api.CvCoverLetterControllerApi;
 import com.jobseekercopilot.generated.cvcoverletterservice.client.ApiClient;
-import com.jobseekercopilot.generated.cvcoverletterservice.model.GenerateCvCoverLetterResponse;
+import com.jobseekercopilot.generated.cvcoverletterservice.model.DraftGenerationResponse;
 import com.jobseekercopilot.generated.cvcoverletterservice.model.GenerateRequest;
-import java.util.function.BiFunction;
+import java.util.UUID;
 
 final class ClientLinkage {
 
@@ -15,11 +15,18 @@ final class ClientLinkage {
         ApiClient client = new ApiClient();
         client.setApiKey("compile-time-smoke-value");
         CvCoverLetterControllerApi api = new CvCoverLetterControllerApi(client);
-        BiFunction<String, GenerateRequest, GenerateCvCoverLetterResponse> authenticatedGenerate =
-                api::generate;
-        if (authenticatedGenerate == null) {
-            throw new IllegalStateException("Authenticated generation linkage is unavailable");
+        DraftCall authenticatedDraft = api::generateDraft;
+        if (authenticatedDraft == null) {
+            throw new IllegalStateException("Authenticated draft linkage is unavailable");
         }
         return api;
+    }
+
+    @FunctionalInterface
+    private interface DraftCall {
+        DraftGenerationResponse generate(
+                String owner,
+                UUID operationId,
+                GenerateRequest request);
     }
 }

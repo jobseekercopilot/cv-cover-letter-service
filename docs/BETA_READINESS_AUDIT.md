@@ -8,10 +8,11 @@ Status: **Not ready for private beta**
 
 `CvCoverLetterController` accepts a combined profile and job request.
 `PromptBuilderService` serialises both objects into one prompt using the files
-under `src/main/resources/prompts`. `CvCoverLetterService` reserves payment
-credits, calls `llm-gateway`, parses the response, renders two plain-text
-documents, saves the CV and cover letter, creates an application, and commits
-the credit reservation.
+under `src/main/resources/prompts`. The new `3.2.0` draft boundary estimates
+usage or calls `llm-gateway`, parses the response, renders two bounded
+plain-text drafts, and returns usage/audit evidence without payment, document,
+export, approval, or application side effects. The legacy endpoint still
+performs those side effects until the Gateway migration is complete.
 
 The service therefore owns domain prompt construction and first-pass response
 validation. It does not own provider transport, exported binary rendering, or
@@ -26,6 +27,11 @@ the underlying document database.
 - The migration-time contract is `contracts/openapi.json`.
 - Gitleaks and targeted personal-data checks passed on the source snapshot.
 - No live model request was made.
+- The CVCL-01 migration slice adds side-effect-free estimate and draft
+  operations. The Gateway supplies one durable operation ID; unit and
+  controller tests prove the draft route calls the model but does not call
+  Payment, Document Store, or Application Tracker. The legacy operation
+  remains during the coordinated consumer rollout and is not beta-enabled.
 - The DOCGEN-02 CV/Cover Letter slice replaces three imported `systemPath`
   clients with deterministic source generation from exact
   revision/checksum-pinned producer contracts. It removes an unused Payment
@@ -90,7 +96,7 @@ the underlying document database.
    outbound Payment/Document Store/Application Tracker identities, and
    fleet-level negative-path evidence.
 2. The bounded input allowlist and contact-data minimisation are enforced at
-   this producer. The Gateway consumer must adopt OpenAPI `3.1.0`, and
+   this producer. The Gateway consumer must adopt OpenAPI `3.2.0`, and
    provider-retention/regional-processing decisions remain open.
 3. Job and profile content is physically separated as untrusted evidence
    behind explicit rules and a synthetic attack corpus. A current official
@@ -115,8 +121,9 @@ the underlying document database.
    Gateway owner as explicit owner context, and Tracker creates use that same
    trusted owner. Infrastructure injection/rotation and integrated negative
    paths remain open.
-10. Documents and an application are persisted before any user review or
-   approval.
+10. The new draft operation persists no documents or application before user
+    review. The legacy operation still does, so deployment must keep the draft
+    route disabled for users until the Gateway coordinator is adopted.
 11. The save/export/application/credit sequence is non-atomic. Payment holds
     and terminal calls are retry-safe and abandoned holds expire, but whole
     request retries can still leave duplicate documents/applications or repeat
@@ -134,7 +141,7 @@ the underlying document database.
     active-content, filtered and schema-mismatched output handling. They do not
     yet cover duplicate requests, every partial downstream failure, user
     approval or the complete privacy evidence required for beta.
-15. Document Generation Gateway must consume the bounded authenticated `3.1.0`
+15. Document Generation Gateway must consume the bounded authenticated `3.2.0`
     contract and provide its own dedicated credential under DOCGEN-03/GW-01.
 16. Current Spring, Tomcat, Jackson, logging, Swagger UI, and generated-client
     dependency findings include untriaged Critical/High advisories.

@@ -33,13 +33,13 @@ if "$repository_root/scripts/verify-api-contract.sh" "$temporary_dir/drift" >/de
 fi
 
 copy_contract "$temporary_dir/operation"
-jq 'del(.paths["/api/v1/cv-cover-letter/generate"].post)' \
+jq 'del(.paths["/api/v1/cv-cover-letter/drafts"].post)' \
     "$temporary_dir/operation/openapi.json" \
     > "$temporary_dir/operation/changed.json"
 mv "$temporary_dir/operation/changed.json" "$temporary_dir/operation/openapi.json"
 (cd "$temporary_dir/operation" && sha256sum openapi.json > SHA256SUMS)
 if "$repository_root/scripts/verify-api-contract.sh" "$temporary_dir/operation" >/dev/null 2>&1; then
-    echo "API contract policy negative test accepted removal of generation" >&2
+    echo "API contract policy negative test accepted removal of draft generation" >&2
     exit 1
 fi
 
@@ -89,13 +89,13 @@ if "$repository_root/scripts/verify-api-contract.sh" "$temporary_dir/open-schema
 fi
 
 copy_contract "$temporary_dir/header"
-jq 'del(.paths["/api/v1/cv-cover-letter/generate"].post.parameters)' \
+jq 'del(.paths["/api/v1/cv-cover-letter/drafts"].post.parameters)' \
     "$temporary_dir/header/openapi.json" \
     > "$temporary_dir/header/changed.json"
 mv "$temporary_dir/header/changed.json" "$temporary_dir/header/openapi.json"
 (cd "$temporary_dir/header" && sha256sum openapi.json > SHA256SUMS)
 if "$repository_root/scripts/verify-api-contract.sh" "$temporary_dir/header" >/dev/null 2>&1; then
-    echo "API contract policy negative test accepted removal of the trusted owner header" >&2
+    echo "API contract policy negative test accepted removal of draft workflow headers" >&2
     exit 1
 fi
 
@@ -116,7 +116,7 @@ fi
 
 copy_contract "$temporary_dir/service-identity"
 jq 'del(
-        .paths["/api/v1/cv-cover-letter/generate"].post.security,
+        .paths["/api/v1/cv-cover-letter/drafts"].post.security,
         .components.securitySchemes.serviceToken
     )' \
     "$temporary_dir/service-identity/openapi.json" \

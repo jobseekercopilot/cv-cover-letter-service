@@ -14,15 +14,23 @@ generation/package checks, a conservative breaking-change gate and a fresh
 authenticated smoke consumer. Publication is restricted to `develop` and
 refuses to overwrite an existing coordinate.
 
-The public producer contract is now `3.1.0`. Generation requires the
+The public producer contract is now `3.2.0`. Generation requires the
 `serviceToken` API-key scheme in `X-Service-Token`, one required
 `X-Document-Owner` header and bounded provenance-aware input snapshot `1.0`.
+The additive draft endpoint also requires the Gateway-owned
+`X-Generation-Operation-Id`; its response deliberately has no document or
+application ID and exposes only bounded content, prompt provenance, model
+usage, and provider audit evidence. The estimate endpoint has no provider or
+domain side effects. The `3.1.0` generate-and-commit operation is retained only
+for the coordinated consumer migration.
 The additive `generationMetadata` response identifies the immutable prompt
 bundle, template, rules, output schema and evaluation policy without exposing
 prompt or source payloads. Consumers must authenticate the user and bind the
 resulting stable subject to the owner header. The immutable Java coordinate and
 source revision are recorded in `api/client-release.json`:
-`com.jobseekercopilot.clients:cv-cover-letter-service-client:3.1.0-rev.f2c5916fa0da`.
+`com.jobseekercopilot.clients:cv-cover-letter-service-client:3.2.0-rev.47d7c3cfb4c6`.
+It may be published only from merged `develop`; the existing `3.1.0`
+coordinate remains immutable.
 
 ## Current pins
 
@@ -52,7 +60,7 @@ The policy checks the exact operations and fields currently consumed:
 - Payment reservation, commit, release and owner-scoped lifecycle paths,
   service identity, trusted owner, operation key, expiry and recovery evidence.
 
-The Document Store and Application Tracker adapters supply distinct runtime
+The legacy Document Store and Application Tracker adapters supply distinct runtime
 producer credentials. Store creates include the trusted inbound owner once in
 `X-Document-Owner`; Tracker creates bind that same owner in the producer-only
 request body. Payment calls use their own runtime service token and the same
@@ -60,7 +68,9 @@ trusted inbound owner. Each generation invocation creates one operation key and
 reuses it across bounded reservation retries. Ambiguous terminal responses are
 resolved through Payment lifecycle state; unresolved compensation is surfaced
 as a distinct failure. Whole-generation duplicate suppression remains an
-orchestration concern rather than a Payment operation-key guarantee.
+orchestration concern rather than a Payment operation-key guarantee. The new
+draft operations do not use any of those three adapters; Gateway-owned
+coordination will make them removable after consumer migration.
 
 ## Updating a pin
 

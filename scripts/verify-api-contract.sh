@@ -21,6 +21,10 @@ jq -e '
     .components.schemas as $schemas |
     [
         "ContactInputSnapshot",
+        "DraftGenerationAudit",
+        "DraftGenerationEstimateResponse",
+        "DraftGenerationResponse",
+        "DraftGenerationUsage",
         "EmploymentInput",
         "GenerateRequest",
         "JobInputSnapshot",
@@ -30,7 +34,44 @@ jq -e '
         "SnapshotProvenance"
     ] as $closed |
     (.openapi | type == "string" and startswith("3.")) and
-    (.info.version == "3.1.0") and
+    (.info.version == "3.2.0") and
+    (.paths["/api/v1/cv-cover-letter/drafts/estimate"].post.operationId
+        == "estimateDraft") and
+    (.paths["/api/v1/cv-cover-letter/drafts"].post.operationId
+        == "generateDraft") and
+    (.paths["/api/v1/cv-cover-letter/drafts"].post.parameters
+        | any(.name == "X-Document-Owner" and .in == "header" and
+              .required == true and .schema.type == "string")) and
+    (.paths["/api/v1/cv-cover-letter/drafts"].post.parameters
+        | any(.name == "X-Generation-Operation-Id" and .in == "header" and
+              .required == true and .schema.type == "string" and
+              .schema.format == "uuid")) and
+    (.paths["/api/v1/cv-cover-letter/drafts"].post.security
+        | any(has("serviceToken"))) and
+    (.paths["/api/v1/cv-cover-letter/drafts"].post.responses["200"].content["*/*"].schema["$ref"]
+        == "#/components/schemas/DraftGenerationResponse") and
+    (.paths["/api/v1/cv-cover-letter/drafts/estimate"].post.responses["200"].content["*/*"].schema["$ref"]
+        == "#/components/schemas/DraftGenerationEstimateResponse") and
+    ($schemas.DraftGenerationEstimateResponse.required
+        | index("estimatedTokens") != null) and
+    ($schemas.DraftGenerationResponse.required
+        | index("operationId") != null and index("cvTitle") != null and
+          index("coverLetterTitle") != null and index("cvContent") != null and
+          index("coverLetterContent") != null and index("usage") != null and
+          index("audit") != null) and
+    ($schemas.DraftGenerationResponse.properties
+        | has("applicationId") | not) and
+    ($schemas.DraftGenerationResponse.properties
+        | has("cvDocumentId") | not) and
+    ($schemas.DraftGenerationResponse.properties
+        | has("coverLetterDocumentId") | not) and
+    ($schemas.DraftGenerationUsage.properties
+        | has("inputTokens") and has("outputTokens") and has("totalTokens")) and
+    ($schemas.DraftGenerationAudit.properties
+        | has("modelId") and has("modelDeploymentVersion") and
+          has("admissionPolicyVersion") and has("pricingVersion") and
+          has("estimatedInputTokensAtAdmission") and
+          has("estimatedCostMicroUsd") and has("currency")) and
     (.paths["/api/v1/cv-cover-letter/generate"].post.operationId == "generate") and
     (.paths["/api/v1/cv-cover-letter/generate"].post.parameters
         | any(.name == "X-Document-Owner" and .in == "header" and
@@ -114,4 +155,4 @@ jq -e '
     ($schemas | has("Aspirations") | not)
 ' "$contract" >/dev/null
 
-echo "API contract policy: authenticated bounded-input OpenAPI source is present and intact"
+echo "API contract policy: side-effect-free draft and legacy migration contracts are present and intact"

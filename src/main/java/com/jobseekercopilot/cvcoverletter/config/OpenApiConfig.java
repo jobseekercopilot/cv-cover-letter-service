@@ -14,6 +14,10 @@ public class OpenApiConfig {
 
     private static final Set<String> CLOSED_INPUT_SCHEMAS = Set.of(
             "ContactInputSnapshot",
+            "DraftGenerationAudit",
+            "DraftGenerationEstimateResponse",
+            "DraftGenerationResponse",
+            "DraftGenerationUsage",
             "EmploymentInput",
             "GenerateRequest",
             "JobInputSnapshot",
@@ -33,8 +37,13 @@ public class OpenApiConfig {
                                 .name("X-Service-Token")))
                 .info(new Info()
                         .title("Jobseeker Copilot - CV Cover Letter Service API")
-                        .version("3.1.0")
-                        .description("Accepts bounded provenance-aware snapshots, then generates, renders, and stores tailored CV and cover-letter content."));
+                        .version("3.2.0")
+                        .description("""
+                                Produces bounded provenance-aware CV and cover-letter
+                                drafts for a Gateway-owned durable workflow. The
+                                legacy generate-and-commit endpoint remains during
+                                the coordinated consumer migration.
+                                """));
     }
 
     @Bean
