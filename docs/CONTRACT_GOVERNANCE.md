@@ -27,10 +27,10 @@ The additive `generationMetadata` response identifies the immutable prompt
 bundle, template, rules, output schema and evaluation policy without exposing
 prompt or source payloads. Consumers must authenticate the user and bind the
 resulting stable subject to the owner header. The immutable Java coordinate and
-source revision of the last published client are recorded in
-`api/client-release.json`. A `3.2.0` client must be published only after this
-producer contract is merged; the existing `3.1.0` coordinate remains
-immutable.
+source revision are recorded in `api/client-release.json`:
+`com.jobseekercopilot.clients:cv-cover-letter-service-client:3.2.0-rev.47d7c3cfb4c6`.
+It may be published only from merged `develop`; the existing `3.1.0`
+coordinate remains immutable.
 
 ## Current pins
 
