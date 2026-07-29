@@ -26,6 +26,10 @@ jq -e '
         "DraftGenerationResponse",
         "DraftGenerationUsage",
         "EmploymentInput",
+        "EvidenceSnapshotFactInput",
+        "EvidenceSnapshotInput",
+        "EvidenceSnapshotSelectionInput",
+        "EvidenceSnapshotsInput",
         "GenerateRequest",
         "JobInputSnapshot",
         "PromptGenerationMetadata",
@@ -34,7 +38,7 @@ jq -e '
         "SnapshotProvenance"
     ] as $closed |
     (.openapi | type == "string" and startswith("3.")) and
-    (.info.version == "3.2.0") and
+    (.info.version == "3.3.0") and
     (.paths["/api/v1/cv-cover-letter/drafts/estimate"].post.operationId
         == "estimateDraft") and
     (.paths["/api/v1/cv-cover-letter/drafts"].post.operationId
@@ -91,7 +95,25 @@ jq -e '
     ($schemas.GenerateRequest.required
         | index("inputSchemaVersion") != null and
           index("profile") != null and index("job") != null) and
-    ($schemas.GenerateRequest.properties.inputSchemaVersion.pattern == "1\\.0") and
+    ($schemas.GenerateRequest.properties.inputSchemaVersion.pattern
+        == "(?:1|2)\\.0") and
+    ($schemas.GenerateRequest.properties.evidenceSnapshots["$ref"]
+        == "#/components/schemas/EvidenceSnapshotsInput") and
+    ($schemas.EvidenceSnapshotInput.required
+        | index("snapshotId") != null and index("purpose") != null and
+          index("profileRevisionId") != null and
+          index("profileContentDigest") != null and
+          index("snapshotDigest") != null and index("sectionOrder") != null and
+          index("selections") != null and index("createdAt") != null) and
+    ($schemas.EvidenceSnapshotInput.properties.selections.maxItems == 50) and
+    ($schemas.EvidenceSnapshotSelectionInput.required
+        | index("entryId") != null and index("revisionId") != null and
+          index("revisionNumber") != null and index("category") != null and
+          index("contentDigest") != null and index("facts") != null) and
+    ($schemas.EvidenceSnapshotSelectionInput.properties.facts.maxItems == 50) and
+    ($schemas.EvidenceSnapshotFactInput.required
+        | index("factId") != null and index("factType") != null and
+          index("factValue") != null and index("numericClaim") != null) and
     ($schemas.ProfileInputSnapshot.required | index("provenance") != null) and
     ($schemas.ProfileInputSnapshot.properties.skills.maxItems == 40) and
     ($schemas.ProfileInputSnapshot.properties.skills.items.maxLength == 100) and

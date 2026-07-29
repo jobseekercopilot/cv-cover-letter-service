@@ -27,6 +27,15 @@ are recorded in [`api/client-release.json`](api/client-release.json). Generated
 client source and packages are disposable build output and are never committed.
 See [`api/README.md`](api/README.md) for the release and compatibility policy.
 
+Contract `3.3.0` accepts schema `2.0` immutable evidence snapshots for the
+durable Gateway flow. CV and cover-letter snapshots are validated independently
+against the exact profile revision, preserve claimant-selected entry and section
+order, and expose only stable confirmed fact IDs to generation. The claim
+ledger rejects positional profile IDs, cross-purpose evidence, unknown or
+duplicate facts, unsupported numeric or sensitive claims, and unaccounted final
+content. Schema `1.0` remains available only for the coordinated legacy
+migration.
+
 Generation accepts only the versioned, bounded profile and canonical-job
 snapshots documented in
 [`docs/GENERATION_INPUT_CONTRACT.md`](docs/GENERATION_INPUT_CONTRACT.md).
@@ -42,6 +51,10 @@ evidence. See
 [`docs/DRAFT_GENERATION_BOUNDARY.md`](docs/DRAFT_GENERATION_BOUNDARY.md).
 
 ## Prompt releases
+
+Prompt bundle `cv-cover-letter-1.4.0` treats projects, volunteering, caring
+responsibilities, career breaks, education, training, certifications and
+licences as first-class evidence without relabelling them as paid employment.
 
 Prompt template, rules, output schema and evaluation-policy versions are
 selected as one reviewed bundle. Checksums, an approved-release index and

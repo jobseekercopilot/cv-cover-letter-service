@@ -1,6 +1,7 @@
 package com.jobseekercopilot.cvcoverletter.service;
 
 import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validRequest;
+import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validVersionedRequest;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -133,6 +134,54 @@ class GenerationInputNormalizerTest {
                 InvalidGenerationInputException.class,
                 () -> normalizer.normalize("owner-123", request));
         assertTrue(exception.getMessage().contains("40000"));
+    }
+
+    @Test
+    void acceptsExactPurposeBoundSnapshotsAndPreservesClaimantOrder() {
+        var request = validVersionedRequest();
+
+        NormalizedGenerationInput actual =
+                normalizer.normalize("owner-123", request);
+
+        assertEquals("2.0", actual.inputSchemaVersion());
+        assertEquals(
+                List.of(
+                        com.jobseekercopilot.cvcoverletter.dto
+                                .EvidenceCategory.PROJECT),
+                actual.evidenceSnapshots().cv().sectionOrder());
+        assertEquals(
+                "DEMONSTRATED_SKILL",
+                actual.evidenceSnapshots().cv()
+                        .selections().get(0)
+                        .facts().get(0).factType());
+        assertTrue(actual.profile().skills().isEmpty());
+        assertTrue(actual.profile().employmentHistory().isEmpty());
+    }
+
+    @Test
+    void versionedFlowRejectsRawFactsMismatchedProfileAndWrongPurpose() {
+        var rawFacts = validVersionedRequest();
+        rawFacts.getProfile().setSkills(List.of("Browser supplied"));
+        assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize("owner-123", rawFacts));
+
+        var mismatchedProfile = validVersionedRequest();
+        mismatchedProfile.getEvidenceSnapshots().getCv()
+                .setProfileContentDigest("0".repeat(64));
+        assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize(
+                        "owner-123", mismatchedProfile));
+
+        var wrongPurpose = validVersionedRequest();
+        wrongPurpose.getEvidenceSnapshots().getCoverLetter()
+                .setPurpose(com.jobseekercopilot.cvcoverletter.dto
+                        .EvidenceSnapshotPurpose.CV);
+        assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize(
+                        "owner-123", wrongPurpose));
     }
 
     private List<String> codes(NormalizedGenerationInput input) {

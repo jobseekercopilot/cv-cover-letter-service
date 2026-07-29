@@ -1,6 +1,7 @@
 package com.jobseekercopilot.cvcoverletter.service;
 
 import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validRequest;
+import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validVersionedRequest;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -34,7 +35,7 @@ class PromptBundleEvaluationTest {
     void setUp() throws IOException {
         objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBundleProperties bundleProperties = new PromptBundleProperties();
-        bundleProperties.setSelectedReleaseId("cv-cover-letter-1.3.0");
+        bundleProperties.setSelectedReleaseId("cv-cover-letter-1.4.0");
         PromptBundleRegistry registry =
                 new PromptBundleRegistry(objectMapper, new DefaultResourceLoader(), bundleProperties);
         registry.initialize();
@@ -46,7 +47,7 @@ class PromptBundleEvaluationTest {
         normalizer = new GenerationInputNormalizer(
                 Clock.fixed(Instant.parse("2026-07-24T13:00:00Z"), ZoneOffset.UTC));
         try (InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.3.0/evaluation-policy.json")) {
+                "/prompts/bundles/cv-cover-letter-1.4.0/evaluation-policy.json")) {
             if (input == null) {
                 throw new IllegalStateException("Prompt evaluation policy fixture is missing.");
             }
@@ -60,7 +61,7 @@ class PromptBundleEvaluationTest {
 
         assertEquals(policy.policyVersion(), prompt.getGenerationMetadata().evaluationPolicyVersion());
         assertEquals(
-                "1dc0f71acd1e4292ce849cd73f664c2cd1b50744e0492a9f64e692d75f968aad",
+                "06ed8a6cdf73190786ae3d85196ae23a1b9a82e3d32f905e868f2bf5ced134c4",
                 sha256(boundaryMaterial(prompt)),
                 "The golden LLM boundary changed; review the trusted instructions, untrusted envelope, "
                         + "output schema and rollback metadata together.");
@@ -99,6 +100,21 @@ class PromptBundleEvaluationTest {
 
         List.of("openai", "anthropic", "gemini", "chatgpt", "responses api")
                 .forEach(provider -> assertFalse(prompt.contains(provider), provider));
+    }
+
+    @Test
+    void activeBundleExposesPurposeOrderAndNonTraditionalEvidenceWithoutRelabelling() {
+        CvCoverLetterPrompt prompt = promptBuilder.buildPrompt(
+                normalizer.normalize(
+                        "owner-secret",
+                        validVersionedRequest()));
+
+        assertTrue(prompt.getUntrustedInput().contains("\"PROJECT\""));
+        assertTrue(prompt.getUntrustedInput().contains("\"VOLUNTEERING\""));
+        assertTrue(prompt.getUntrustedInput().contains("\"sectionOrder\""));
+        assertTrue(prompt.getTrustedInstructions().contains(
+                "do not relabel them as"));
+        assertFalse(prompt.getUntrustedInput().contains("PROFILE.SKILL."));
     }
 
     private CvCoverLetterPrompt buildForJob(String jobDescription) {

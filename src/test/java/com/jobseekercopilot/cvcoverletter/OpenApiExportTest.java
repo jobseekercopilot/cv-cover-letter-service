@@ -47,7 +47,7 @@ class OpenApiExportTest {
                 contract.path("paths").path("/api/v1/cv-cover-letter/drafts").path("post");
         JsonNode estimate =
                 contract.path("paths").path("/api/v1/cv-cover-letter/drafts/estimate").path("post");
-        assertEquals("3.2.0", contract.path("info").path("version").asText());
+        assertEquals("3.3.0", contract.path("info").path("version").asText());
         assertEquals(
                 "X-Service-Token",
                 contract.path("components")
@@ -78,6 +78,10 @@ class OpenApiExportTest {
         for (String name : List.of(
                 "ContactInputSnapshot",
                 "EmploymentInput",
+                "EvidenceSnapshotFactInput",
+                "EvidenceSnapshotInput",
+                "EvidenceSnapshotSelectionInput",
+                "EvidenceSnapshotsInput",
                 "GenerateRequest",
                 "JobInputSnapshot",
                 "PromptGenerationMetadata",
@@ -92,6 +96,31 @@ class OpenApiExportTest {
                 .contains("profile"));
         assertTrue(schemas.path("GenerateRequest").path("required").toString()
                 .contains("job"));
+        assertTrue(schemas.path("GenerateRequest")
+                .path("properties")
+                .has("evidenceSnapshots"));
+        assertTrue(schemas.path("GenerateRequest")
+                .path("properties")
+                .path("inputSchemaVersion")
+                .path("pattern")
+                .asText()
+                .contains("(?:1|2)"));
+        assertEquals(
+                50,
+                schemas.path("EvidenceSnapshotInput")
+                        .path("properties")
+                        .path("selections")
+                        .path("maxItems")
+                        .asInt());
+        assertEquals(
+                "[\"EMPLOYMENT\",\"EDUCATION\",\"QUALIFICATION_TRAINING\","
+                        + "\"PROJECT\",\"VOLUNTEERING\",\"FREELANCE\","
+                        + "\"ACHIEVEMENT\",\"CAREER_BREAK\",\"OTHER\"]",
+                schemas.path("EvidenceSnapshotSelectionInput")
+                        .path("properties")
+                        .path("category")
+                        .path("enum")
+                        .toString());
         assertEquals(
                 12000,
                 schemas.path("JobInputSnapshot")
