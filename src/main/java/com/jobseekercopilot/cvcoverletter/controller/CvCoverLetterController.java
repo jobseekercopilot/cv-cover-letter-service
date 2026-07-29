@@ -88,8 +88,12 @@ public class CvCoverLetterController {
                     description = "Service authentication failed",
                     content = @Content(schema = @Schema(implementation = ServiceIdentityError.class))),
             @ApiResponse(
+                    responseCode = "422",
+                    description = "Model output could not be safely grounded in approved evidence",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(
                     responseCode = "502",
-                    description = "Model generation failed",
+                    description = "Model provider call failed",
                     content = @Content(schema = @Schema(implementation = ApiError.class)))
     })
     public ResponseEntity<DraftGenerationResponse> generateDraft(
@@ -116,6 +120,7 @@ public class CvCoverLetterController {
             @ApiResponse(responseCode = "200", description = "Documents generated and application recorded"),
             @ApiResponse(responseCode = "400", description = "Invalid request or owner context", content = @Content(schema = @Schema(oneOf = {ApiError.class, ServiceIdentityError.class}))),
             @ApiResponse(responseCode = "401", description = "Service authentication failed", content = @Content(schema = @Schema(implementation = ServiceIdentityError.class))),
+            @ApiResponse(responseCode = "422", description = "Model output could not be safely grounded in approved evidence", content = @Content(schema = @Schema(implementation = ApiError.class))),
             @ApiResponse(responseCode = "502", description = "Generation or downstream service failure", content = @Content(schema = @Schema(implementation = ApiError.class))),
             @ApiResponse(responseCode = "500", description = "Unexpected internal error", content = @Content(schema = @Schema(implementation = ApiError.class)))
     })

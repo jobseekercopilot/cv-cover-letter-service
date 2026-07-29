@@ -14,6 +14,7 @@ import com.jobseekercopilot.cvcoverletter.model.EvidencePurpose;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -27,7 +28,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.1.0";
+    static final String POLICY_VERSION = "2.2.0";
     private static final int MAX_CLAIMS = 40;
     private static final int MAX_CLAIM_REFERENCES = 30;
     private static final int MAX_REVIEW_TEXT_LENGTH = 500;
@@ -90,6 +91,12 @@ public class ClaimEvidenceValidator {
                             ignored -> new ArrayList<>())
                     .add(record);
         }
+        canonicalizeCitedAtomicContent(
+                output,
+                expandContainerContentPaths(
+                        documents.getClaims(),
+                        claimBearingPaths(output)),
+                evidenceById);
         normalizeCoreSkillEvidence(output, catalog.records());
         pruneUnsupportedWorkHistory(output, evidenceById);
         Set<String> expectedPaths = claimBearingPaths(output);
@@ -142,6 +149,90 @@ public class ClaimEvidenceValidator {
                     "final content contains unaccounted claim paths "
                             + unaccounted);
         }
+    }
+
+    private void canonicalizeCitedAtomicContent(
+            JsonNode output,
+            List<GeneratedClaim> claims,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById
+    ) {
+        for (GeneratedClaim claim : claims) {
+            if (claim == null
+                    || !isFinalContent(claim.getDisposition())) {
+                continue;
+            }
+            for (String contentPath : safe(claim.getContentPaths())) {
+                Predicate<ApprovedEvidenceRecord> atomicEvidence =
+                        atomicEvidenceFor(contentPath);
+                EvidencePurpose purpose =
+                        contentPath.startsWith("/cv/")
+                                ? EvidencePurpose.CV
+                                : contentPath.startsWith("/coverLetter/")
+                                        ? EvidencePurpose.COVER_LETTER
+                                        : null;
+                JsonNode current = output.at(contentPath);
+                if (atomicEvidence == null
+                        || purpose == null
+                        || !current.isTextual()
+                        || !StringUtils.hasText(current.textValue())) {
+                    continue;
+                }
+                Map<String, ApprovedEvidenceRecord> uniqueFacts =
+                        new LinkedHashMap<>();
+                for (String evidenceId : safe(
+                        claim.getEvidenceIds())) {
+                    for (ApprovedEvidenceRecord record :
+                            evidenceById.getOrDefault(
+                                    evidenceId, List.of())) {
+                        if (record.purpose().supports(purpose)
+                                && atomicEvidence.test(record)) {
+                            uniqueFacts.putIfAbsent(
+                                    normalise(record.value()),
+                                    record);
+                        }
+                    }
+                }
+                if (uniqueFacts.isEmpty()) {
+                    evidenceById.values().stream()
+                            .flatMap(List::stream)
+                            .filter(record ->
+                                    record.purpose()
+                                            .supports(purpose))
+                            .filter(atomicEvidence)
+                            .forEach(record ->
+                                    uniqueFacts.putIfAbsent(
+                                            normalise(record.value()),
+                                            record));
+                }
+                if (uniqueFacts.values().stream().anyMatch(
+                        record -> equalText(
+                                current.textValue(),
+                                record.value()))) {
+                    continue;
+                }
+                if (uniqueFacts.size() != 1
+                        && mayBeEmptyWhenUnsupported(contentPath)) {
+                    replaceText(output, contentPath, "");
+                    continue;
+                }
+                if (uniqueFacts.size() == 1) {
+                    replaceText(
+                            output,
+                            contentPath,
+                            uniqueFacts.values()
+                                    .iterator()
+                                    .next()
+                                    .value());
+                }
+            }
+        }
+    }
+
+    private boolean mayBeEmptyWhenUnsupported(String contentPath) {
+        return contentPath.matches(
+                        "/cv/qualifications/\\d+/"
+                                + "(issuingBody|status|grade|dateAchieved|expectedCompletion)")
+                || contentPath.matches("/cv/workHistory/\\d+/endDate");
     }
 
     private void pruneUnsupportedWorkHistory(
@@ -801,7 +892,8 @@ public class ClaimEvidenceValidator {
                             .filter(atomicEvidence)
                             .anyMatch(record -> equalText(content, record.value())),
                     claimPath + ".evidenceIds",
-                    "atomic final claim is not an exact approved fact");
+                    "atomic final claim is not an exact approved fact at "
+                            + contentPath);
         } else {
             require(evidence.stream().anyMatch(record -> record.source() != EvidenceSource.REQUEST),
                     claimPath + ".evidenceIds",

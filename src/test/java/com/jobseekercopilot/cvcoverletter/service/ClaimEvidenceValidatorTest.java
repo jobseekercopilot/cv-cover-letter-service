@@ -102,7 +102,8 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
-    void rejectsFabricatedTitleDateMetricToolAndQualification() throws Exception {
+    void canonicalizesAtomicValuesToTheSingleCitedApprovedFact()
+            throws Exception {
         assertUnsafePersonalSummary(
                 "A Java developer who improved throughput by 37%.",
                 "numeric claim is absent");
@@ -115,15 +116,159 @@ class ClaimEvidenceValidatorTest {
 
         ObjectNode fabricatedTitle = validOutput();
         ((ObjectNode) fabricatedTitle.path("coverLetter")).put("jobTitle", "Senior Architect");
-        assertRejected(fabricatedTitle, "atomic final claim is not an exact approved fact");
+        GeneratedApplicationDocuments correctedTitle =
+                parse(fabricatedTitle);
+        assertEquals(
+                "Java Developer",
+                correctedTitle.getCoverLetter().getJobTitle());
 
         ObjectNode fabricatedQualification = validOutput();
         addQualification(fabricatedQualification, "PhD Computing", "2024");
-        assertRejected(fabricatedQualification, "atomic final claim is not an exact approved fact");
+        GeneratedApplicationDocuments correctedQualification =
+                parse(fabricatedQualification);
+        assertEquals(
+                "BSc Computing",
+                correctedQualification.getCv()
+                        .getQualifications().get(0)
+                        .getQualificationName());
 
         ObjectNode fabricatedDate = validOutput();
         addQualification(fabricatedDate, "BSc Computing", "2019");
-        assertRejected(fabricatedDate, "atomic final claim is not an exact approved fact");
+        GeneratedApplicationDocuments correctedDate =
+                parse(fabricatedDate);
+        assertEquals(
+                "2024",
+                correctedDate.getCv()
+                        .getQualifications().get(0)
+                        .getDateAchieved());
+    }
+
+    @Test
+    void rejectsAtomicContentWithoutOneCompatibleCitedFact()
+            throws Exception {
+        ObjectNode output = validOutput();
+        ObjectNode skill = objectMapper.createObjectNode();
+        skill.put("name", "Fabricated Platform");
+        skill.put("evidence", "Fabricated evidence.");
+        ((ArrayNode) output.at("/cv/coreSkills")).add(skill);
+        ObjectNode claim = objectMapper.createObjectNode();
+        claim.put("claimId", "CLAIM-011");
+        claim.put("disposition", "SUPPORTED");
+        claim.putArray("evidenceIds").add("JOB.COMPANY");
+        claim.putArray("contentPaths")
+                .add("/cv/coreSkills/0/name")
+                .add("/cv/coreSkills/0/evidence");
+        claim.put("reviewText", "");
+        ((ArrayNode) output.path("claims")).add(claim);
+
+        assertRejected(
+                output,
+                "atomic final claim is not an exact approved fact");
+    }
+
+    @Test
+    void canonicalizesFromTheOnlyApprovedPathFactWhenCitationIsWrong()
+            throws Exception {
+        ObjectNode output = validOutput();
+        ((ObjectNode) output.path("coverLetter"))
+                .put("jobTitle", "Senior Architect");
+        ArrayNode evidenceIds =
+                (ArrayNode) output.at("/claims/3/evidenceIds");
+        evidenceIds.removeAll().add("JOB.COMPANY");
+
+        GeneratedApplicationDocuments corrected = parse(output);
+
+        assertEquals(
+                "Java Developer",
+                corrected.getCoverLetter().getJobTitle());
+        assertTrue(corrected.getClaims().get(3)
+                .getEvidenceIds().contains("JOB.TITLE"));
+    }
+
+    @Test
+    void clearsOptionalAtomicContentWhenNoApprovedFactExists()
+            throws Exception {
+        ObjectNode output = validOutput();
+        addQualification(output, "BSc Computing", "2024");
+        ((ObjectNode) output.at("/cv/qualifications/0"))
+                .put("status", "Completed")
+                .put("grade", "Distinction");
+        ObjectNode qualificationClaim =
+                (ObjectNode) output.at("/claims/10");
+        ArrayNode evidenceIds =
+                (ArrayNode) qualificationClaim.path("evidenceIds");
+        for (int index = evidenceIds.size() - 1;
+                index >= 0;
+                index--) {
+            String evidenceId = evidenceIds.get(index).asText();
+            if (evidenceId.endsWith(".STATUS")
+                    || evidenceId.endsWith(".GRADE")) {
+                evidenceIds.remove(index);
+            }
+        }
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                catalog.records().stream()
+                        .filter(record ->
+                                !record.evidenceId().endsWith(".STATUS")
+                                        && !record.evidenceId()
+                                                .endsWith(".GRADE"))
+                        .toList(),
+                catalog.sectionOrder());
+
+        GeneratedApplicationDocuments corrected = parse(output);
+
+        assertEquals(
+                "",
+                corrected.getCv().getQualifications().get(0)
+                        .getStatus());
+        assertEquals(
+                "",
+                corrected.getCv().getQualifications().get(0)
+                        .getGrade());
+        assertFalse(corrected.getClaims().stream()
+                .flatMap(claim -> claim.getContentPaths().stream())
+                .anyMatch(path ->
+                        path.equals("/cv/qualifications/0/status")
+                                || path.equals(
+                                        "/cv/qualifications/0/grade")));
+    }
+
+    @Test
+    void clearsAmbiguousOptionalAtomicContentRatherThanGuessing()
+            throws Exception {
+        ObjectNode output = validOutput();
+        addQualification(output, "BSc Computing", "2024");
+        ((ObjectNode) output.at("/cv/qualifications/0"))
+                .put("status", "Finished");
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                java.util.stream.Stream.concat(
+                                catalog.records().stream(),
+                                java.util.stream.Stream.of(
+                                        new com.jobseekercopilot
+                                                .cvcoverletter.model
+                                                .ApprovedEvidenceRecord(
+                                                        "PROFILE.QUALIFICATION.2.STATUS",
+                                                        com.jobseekercopilot
+                                                                .cvcoverletter.model
+                                                                .EvidenceSource.PROFILE,
+                                                        "/profile/qualifications/1/status",
+                                                        "IN_PROGRESS")))
+                        .toList(),
+                catalog.sectionOrder());
+        ((ArrayNode) output.at("/claims/10/evidenceIds"))
+                .add("PROFILE.QUALIFICATION.2.STATUS");
+        ((ArrayNode) output.at("/claims/10/contentPaths"))
+                .removeAll()
+                .add("/cv/qualifications");
+
+        GeneratedApplicationDocuments corrected = parse(output);
+
+        assertEquals(
+                "",
+                corrected.getCv().getQualifications().get(0)
+                        .getStatus());
     }
 
     @Test
@@ -296,7 +441,7 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
-    void restoresAnExactAtomicEvidenceReferenceWithoutAcceptingFabrication()
+    void restoresAnExactAtomicEvidenceReferenceAndCanonicalizesFinalContent()
             throws Exception {
         ObjectNode output = validOutput();
         ArrayNode evidenceIds =
@@ -311,9 +456,11 @@ class ClaimEvidenceValidatorTest {
         ((ObjectNode) output.path("cv")).put(
                 "targetRole",
                 "Fabricated Architect");
-        assertRejected(
-                output,
-                "atomic final claim is not an exact approved fact");
+        evidenceIds.removeAll().add("JOB.TITLE");
+        GeneratedApplicationDocuments corrected = parse(output);
+        assertEquals(
+                "Java Developer",
+                corrected.getCv().getTargetRole());
     }
 
     @Test
