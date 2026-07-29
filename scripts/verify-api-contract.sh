@@ -35,10 +35,12 @@ jq -e '
         "PromptGenerationMetadata",
         "ProfileInputSnapshot",
         "QualificationInput",
-        "SnapshotProvenance"
+        "SnapshotProvenance",
+        "ValidatedClaim",
+        "ValidatedClaimLedger"
     ] as $closed |
     (.openapi | type == "string" and startswith("3.")) and
-    (.info.version == "3.3.0") and
+    (.info.version == "3.4.0") and
     (.paths["/api/v1/cv-cover-letter/drafts/estimate"].post.operationId
         == "estimateDraft") and
     (.paths["/api/v1/cv-cover-letter/drafts"].post.operationId
@@ -61,8 +63,22 @@ jq -e '
     ($schemas.DraftGenerationResponse.required
         | index("operationId") != null and index("cvTitle") != null and
           index("coverLetterTitle") != null and index("cvContent") != null and
-          index("coverLetterContent") != null and index("usage") != null and
+          index("coverLetterContent") != null and
+          index("claimLedger") != null and index("usage") != null and
           index("audit") != null) and
+    ($schemas.DraftGenerationResponse.properties.claimLedger["$ref"]
+        == "#/components/schemas/ValidatedClaimLedger") and
+    ($schemas.ValidatedClaimLedger.required
+        | index("ledgerId") != null and index("ledgerSha256") != null and
+          index("policyVersion") != null and index("parserVersion") != null and
+          index("claims") != null) and
+    ($schemas.ValidatedClaimLedger.properties.ledgerSha256.pattern
+        == "^[a-f0-9]{64}$") and
+    ($schemas.ValidatedClaimLedger.properties.claims.maxItems == 40) and
+    ($schemas.ValidatedClaim.required
+        | index("claimId") != null and index("disposition") != null and
+          index("evidenceIds") != null and index("contentPaths") != null and
+          index("reviewText") != null) and
     ($schemas.DraftGenerationResponse.properties
         | has("applicationId") | not) and
     ($schemas.DraftGenerationResponse.properties

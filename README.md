@@ -27,14 +27,15 @@ are recorded in [`api/client-release.json`](api/client-release.json). Generated
 client source and packages are disposable build output and are never committed.
 See [`api/README.md`](api/README.md) for the release and compatibility policy.
 
-Contract `3.3.0` accepts schema `2.0` immutable evidence snapshots for the
+Contract `3.4.0` accepts schema `2.0` immutable evidence snapshots for the
 durable Gateway flow. CV and cover-letter snapshots are validated independently
 against the exact profile revision, preserve claimant-selected entry and section
 order, and expose only stable confirmed fact IDs to generation. The claim
 ledger rejects positional profile IDs, cross-purpose evidence, unknown or
 duplicate facts, unsupported numeric or sensitive claims, and unaccounted final
-content. Schema `1.0` remains available only for the coordinated legacy
-migration.
+content. The draft response now exposes the exact bounded validated claim
+ledger with a stable ID and SHA-256 digest for downstream document provenance.
+Schema `1.0` remains available only for the coordinated legacy migration.
 
 Generation accepts only the versioned, bounded profile and canonical-job
 snapshots documented in

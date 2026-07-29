@@ -18,12 +18,12 @@ manifest() {
 mvn -B --no-transfer-progress -f "$module/pom.xml" clean package
 manifest > "$temporary_dir/first"
 test -s "$temporary_dir/first"
-sha256sum "$module/target/cv-cover-letter-service-client-3.3.0-rev.027db472b3bf.jar" \
+sha256sum "$module/target/cv-cover-letter-service-client-3.4.0-rev.fed6400b706b.jar" \
     > "$temporary_dir/first-jar"
 
 mvn -B --no-transfer-progress -f "$module/pom.xml" clean package
 manifest > "$temporary_dir/second"
-sha256sum "$module/target/cv-cover-letter-service-client-3.3.0-rev.027db472b3bf.jar" \
+sha256sum "$module/target/cv-cover-letter-service-client-3.4.0-rev.fed6400b706b.jar" \
     > "$temporary_dir/second-jar"
 
 cmp "$temporary_dir/first" "$temporary_dir/second"

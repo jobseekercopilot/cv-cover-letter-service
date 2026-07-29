@@ -6,7 +6,7 @@
 
     <groupId>com.jobseekercopilot.clients</groupId>
     <artifactId>cv-cover-letter-service-client</artifactId>
-    <version>3.3.0-rev.027db472b3bf</version>
+    <version>3.4.0-rev.fed6400b706b</version>
     <packaging>jar</packaging>
 
     <name>Job Seeker Copilot CV and Cover Letter API Client</name>
@@ -25,9 +25,9 @@
         <jakarta-validation.version>3.0.2</jakarta-validation.version>
         <jobseekercopilot.contract.repository>jobseekercopilot/cv-cover-letter-service</jobseekercopilot.contract.repository>
         <jobseekercopilot.contract.path>contracts/openapi.json</jobseekercopilot.contract.path>
-        <jobseekercopilot.contract.version>3.3.0</jobseekercopilot.contract.version>
-        <jobseekercopilot.contract.revision>027db472b3bf39a722e7612de32e80ce7310b7c3</jobseekercopilot.contract.revision>
-        <jobseekercopilot.contract.sha256>85bbcdcb47f79c6d3a8cb2e5c19b4ac8dccb1e8ba39ac697ad2a18205dd1745d</jobseekercopilot.contract.sha256>
+        <jobseekercopilot.contract.version>3.4.0</jobseekercopilot.contract.version>
+        <jobseekercopilot.contract.revision>fed6400b706b7b44bdbf3241809123fc0d66d3f7</jobseekercopilot.contract.revision>
+        <jobseekercopilot.contract.sha256>9b0001257ff800bec919c7fff7e0d43eebfd3600e7f86d9d3fdd9616cf3e5d08</jobseekercopilot.contract.sha256>
     </properties>
 
     <dependencyManagement>

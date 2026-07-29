@@ -47,7 +47,7 @@ class OpenApiExportTest {
                 contract.path("paths").path("/api/v1/cv-cover-letter/drafts").path("post");
         JsonNode estimate =
                 contract.path("paths").path("/api/v1/cv-cover-letter/drafts/estimate").path("post");
-        assertEquals("3.3.0", contract.path("info").path("version").asText());
+        assertEquals("3.4.0", contract.path("info").path("version").asText());
         assertEquals(
                 "X-Service-Token",
                 contract.path("components")
@@ -87,9 +87,15 @@ class OpenApiExportTest {
                 "PromptGenerationMetadata",
                 "ProfileInputSnapshot",
                 "QualificationInput",
-                "SnapshotProvenance")) {
+                "SnapshotProvenance",
+                "ValidatedClaim",
+                "ValidatedClaimLedger")) {
             assertFalse(schemas.path(name).path("additionalProperties").asBoolean(true));
         }
+        assertTrue(schemas.path("DraftGenerationResponse")
+                .path("required")
+                .toString()
+                .contains("claimLedger"));
         assertTrue(schemas.path("GenerateRequest").path("required").toString()
                 .contains("inputSchemaVersion"));
         assertTrue(schemas.path("GenerateRequest").path("required").toString()

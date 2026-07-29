@@ -27,6 +27,8 @@ public record DraftGenerationResponse(
         String inputSchemaVersion,
         List<InputWarning> inputWarnings,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        ValidatedClaimLedger claimLedger,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         DraftGenerationUsage usage,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         DraftGenerationAudit audit) {
