@@ -1,8 +1,12 @@
 # Claim evidence policy
 
-Prompt release `cv-cover-letter-1.5.0`, output schema `3.2.0`, claim policy
+Prompt release `cv-cover-letter-1.5.1`, output schema `3.2.0`, claim policy
 `2.4.0` and deterministic quality policy `1.0.0` establish the current
 claim-provenance and document-quality boundary.
+
+Release `1.5.1` makes the provider perform an explicit final-pointer coverage
+audit, including generic narrative and each populated array index, before it
+returns the claim ledger. Local validation remains fail-closed and unchanged.
 
 ## Approved evidence
 

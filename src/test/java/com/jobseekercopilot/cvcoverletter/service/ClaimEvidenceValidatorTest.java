@@ -103,6 +103,39 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
+    void rejectsTheExactRealProviderLedgerOmissionWithoutWeakeningCoverage()
+            throws Exception {
+        ObjectNode output = validOutput();
+        ArrayNode claims = (ArrayNode) output.path("claims");
+        java.util.Set<String> omittedPaths = java.util.Set.of(
+                "/cv/title",
+                "/cv/personalSummary",
+                "/coverLetter/title",
+                "/coverLetter/bodyParagraphs/1",
+                "/coverLetter/bodyParagraphs/2",
+                "/coverLetter/closingParagraph");
+        for (int index = claims.size() - 1; index >= 0; index--) {
+            JsonNode contentPaths = claims.get(index).path("contentPaths");
+            boolean coversOmittedPath = false;
+            for (JsonNode contentPath : contentPaths) {
+                if (omittedPaths.contains(contentPath.asText())) {
+                    coversOmittedPath = true;
+                    break;
+                }
+            }
+            if (coversOmittedPath) {
+                claims.remove(index);
+            }
+        }
+
+        InvalidLlmResponseException error =
+                assertRejected(output, "final content contains unaccounted claim paths");
+
+        omittedPaths.forEach(path ->
+                assertTrue(error.getMessage().contains(path), error.getMessage()));
+    }
+
+    @Test
     void canonicalizesAtomicValuesToTheSingleCitedApprovedFact()
             throws Exception {
         assertUnsafePersonalSummary(
@@ -352,6 +385,50 @@ class ClaimEvidenceValidatorTest {
         evidenceIds.add("JOB.DESCRIPTION");
 
         assertRejected(output, "candidate claim has no approved profile evidence");
+    }
+
+    @Test
+    void rejectsJobAdvertAsSoleEvidenceForCoveredVersionedPersonalContent()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        ((ObjectNode) output.path("cv")).put(
+                "personalSummary",
+                "A reliable service developer.");
+        ObjectNode personalClaim = (ObjectNode) output.at("/claims/1");
+        personalClaim.withArray("evidenceIds")
+                .removeAll()
+                .add("JOB.DESCRIPTION");
+        personalClaim.withArray("contentPaths")
+                .removeAll()
+                .add("/cv/personalSummary");
+
+        assertRejected(
+                output,
+                "candidate claim has no approved profile evidence");
+    }
+
+    @Test
+    void rejectsJobAdvertAsSoleEvidenceForCoveredVersionedCoverNarrative()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        ((ArrayNode) output.at("/coverLetter/bodyParagraphs"))
+                .set(
+                        0,
+                        objectMapper.getNodeFactory().textNode(
+                                "I would bring a reliable approach."));
+        ObjectNode narrativeClaim = (ObjectNode) output.at("/claims/6");
+        narrativeClaim.withArray("evidenceIds")
+                .removeAll()
+                .add("JOB.DESCRIPTION");
+        narrativeClaim.withArray("contentPaths")
+                .removeAll()
+                .add("/coverLetter/bodyParagraphs/0");
+
+        assertRejected(
+                output,
+                "candidate claim has no confirmed claimant evidence");
     }
 
     @Test

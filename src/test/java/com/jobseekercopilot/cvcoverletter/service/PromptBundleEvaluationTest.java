@@ -35,7 +35,7 @@ class PromptBundleEvaluationTest {
     void setUp() throws IOException {
         objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBundleProperties bundleProperties = new PromptBundleProperties();
-        bundleProperties.setSelectedReleaseId("cv-cover-letter-1.5.0");
+        bundleProperties.setSelectedReleaseId("cv-cover-letter-1.5.1");
         PromptBundleRegistry registry =
                 new PromptBundleRegistry(objectMapper, new DefaultResourceLoader(), bundleProperties);
         registry.initialize();
@@ -47,7 +47,7 @@ class PromptBundleEvaluationTest {
         normalizer = new GenerationInputNormalizer(
                 Clock.fixed(Instant.parse("2026-07-24T13:00:00Z"), ZoneOffset.UTC));
         try (InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.5.0/evaluation-policy.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.1/evaluation-policy.json")) {
             if (input == null) {
                 throw new IllegalStateException("Prompt evaluation policy fixture is missing.");
             }
@@ -61,7 +61,7 @@ class PromptBundleEvaluationTest {
 
         assertEquals(policy.policyVersion(), prompt.getGenerationMetadata().evaluationPolicyVersion());
         assertEquals(
-                "529e8e3c569f111ea2498ac822bb5b94a90cd42421377aa3fec8860191d1d2ef",
+                "593a4d8f776a40e229555d3beef5ba29f1c3f040c542d0eb07761c6da761d1ae",
                 sha256(boundaryMaterial(prompt)),
                 "The golden LLM boundary changed; review the trusted instructions, untrusted envelope, "
                         + "output schema and rollback metadata together.");
@@ -79,6 +79,55 @@ class PromptBundleEvaluationTest {
                 marker -> assertTrue(trustedInstructions.contains(marker), marker));
         policy.qualityMarkers().forEach(
                 marker -> assertTrue(trustedInstructions.contains(marker), marker));
+    }
+
+    @Test
+    void activeBundleNamesEveryPathOmittedByTheRealProviderResponse() {
+        String trustedInstructions = buildForJob("Build useful and reliable services.")
+                .getTrustedInstructions();
+
+        List.of(
+                        "/cv/title",
+                        "/cv/personalSummary",
+                        "/coverLetter/title",
+                        "/coverLetter/bodyParagraphs/1",
+                        "/coverLetter/bodyParagraphs/2",
+                        "/coverLetter/closingParagraph")
+                .forEach(path ->
+                        assertTrue(trustedInstructions.contains(path), path));
+        assertTrue(trustedInstructions.contains(
+                "Generic, professional and application prose is"));
+        assertTrue(trustedInstructions.contains(
+                "union of contentPaths from every SUPPORTED and"));
+        assertTrue(trustedInstructions.contains(
+                "no missing pointer, no duplicate pointer"));
+    }
+
+    @Test
+    void activeBundleRequiresConfirmedClaimantEvidenceBeyondCanonicalIdentity() {
+        String trustedInstructions = buildForJob("Build useful and reliable services.")
+                .getTrustedInstructions();
+
+        List.of(
+                        "/cv/title",
+                        "/cv/targetRole",
+                        "/coverLetter/title",
+                        "/coverLetter/jobTitle",
+                        "/coverLetter/companyName")
+                .forEach(path ->
+                        assertTrue(trustedInstructions.contains(path), path));
+        assertTrue(trustedInstructions.contains(
+                "Every SUPPORTED or REWORDED claim containing any other pointer"));
+        assertTrue(trustedInstructions.contains(
+                "catalogVersion 2.0"));
+        assertTrue(trustedInstructions.contains(
+                "source is\nEVIDENCE_SNAPSHOT"));
+        assertTrue(trustedInstructions.contains(
+                "JOB.TITLE, JOB.COMPANY, JOB.DESCRIPTION and REQUEST.GENERATION_INTENT"));
+        assertTrue(trustedInstructions.contains(
+                "are never sufficient alone"));
+        assertTrue(trustedInstructions.contains(
+                "including for\ngeneric application prose"));
     }
 
     @Test

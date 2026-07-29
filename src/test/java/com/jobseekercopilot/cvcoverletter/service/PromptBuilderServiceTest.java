@@ -22,7 +22,7 @@ class PromptBuilderServiceTest {
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBuilderService service = new PromptBuilderService(
                 objectMapper,
-                registry(objectMapper, "cv-cover-letter-1.5.0"),
+                registry(objectMapper, "cv-cover-letter-1.5.1"),
                 properties,
                 new ClaimEvidenceCatalogFactory());
         GenerationInputNormalizer normalizer = new GenerationInputNormalizer(
@@ -35,7 +35,13 @@ class PromptBuilderServiceTest {
         assertTrue(result.getTrustedInstructions().contains("UK English"));
         assertTrue(result.getTrustedInstructions().contains("Aim for 5 to 7 concise paragraphs"));
         assertTrue(result.getTrustedInstructions().contains("specific to the job"));
-        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.5.0"));
+        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.5.1"));
+        assertTrue(result.getTrustedInstructions().contains(
+                "Generic, professional and application prose is"));
+        assertTrue(result.getTrustedInstructions().contains(
+                "/coverLetter/bodyParagraphs/{i}"));
+        assertTrue(result.getTrustedInstructions().contains(
+                "It must equal the complete claim-bearing checklist exactly"));
         assertTrue(result.getTrustedInstructions().contains("UNTRUSTED CONTENT RULES"));
         assertTrue(result.getTrustedInstructions().contains(
                 "[CANONICAL JOB FACTS SUPPLIED THROUGH THE UNTRUSTED INPUT CHANNEL]"));

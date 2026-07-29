@@ -5,7 +5,7 @@ Each approved release under `src/main/resources/prompts/bundles` packages the
 template, generation rules, output schema and synthetic evaluation policy with
 immutable component checksums. `index.json` is the only runtime allowlist.
 
-The active `cv-cover-letter-1.5.0` release converts the normalised profile and
+The active `cv-cover-letter-1.5.1` release converts the normalised profile and
 canonical job into a stable approved-evidence catalogue and treats that
 catalogue and normalisation warnings as untrusted data. It places the safety
 rules before that evidence and forbids direct, indirect, encoded, nested,
@@ -20,8 +20,10 @@ project evidence, caps and deduplicates confirmed skills, requires the correct
 generic UK sign-off, and requires every selected evidence entry to appear in
 final content for its purpose. The deterministic quality policy is enabled
 only for the `3.2.0` schema shape containing `cv.projects`; selecting the
-approved `1.4.0` rollback continues to use its older schema without applying
-new-shape constraints.
+approved `1.5.0` rollback retains the same strict schema and local validation.
+Release `1.5.1` adds an exhaustive final-pointer checklist, dynamic-index
+instructions and a complete coverage exemplar so generic narrative is not
+silently omitted from the model-produced claim ledger.
 
 Runtime assembly preserves those domains as separate LLM Gateway v2 fields:
 reviewed bundle text becomes `trustedInstructions`, normalised evidence becomes
@@ -83,8 +85,8 @@ bounded schema. They are compiled into closed structural schemas at runtime and
 remain subject to parser `3.1.0` response, text, array and active-content
 limits. Releases from `1.2.0` onward have specific field-by-field bounds at
 both the provider and local validation boundaries; releases from `1.3.0`
-onward enable the claim evidence ledger. The `1.5.0` post-grounding quality
-policy is gated by the new project-aware schema so approved rollback remains
+onward enable the claim evidence ledger. The `1.5.x` post-grounding quality
+policy is gated by the project-aware schema so approved rollback remains
 usable with an evidence catalogue.
 
 ## Verification

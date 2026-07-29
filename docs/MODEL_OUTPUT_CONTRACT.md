@@ -2,8 +2,8 @@
 
 CV and Cover Letter Service treats model output as untrusted until it passes
 the exact reviewed schema and local safe-content policy. The active prompt
-release is `cv-cover-letter-1.5.0`; it owns output schema `3.2.0` at
-`src/main/resources/prompts/bundles/cv-cover-letter-1.5.0/output-schema.json`.
+release is `cv-cover-letter-1.5.1`; it owns output schema `3.2.0` at
+`src/main/resources/prompts/bundles/cv-cover-letter-1.5.1/output-schema.json`.
 Its reviewed SHA-256 is
 `036ce33ef517c0c4b7cca5fa4467f31f9ecc85e90f98504a430162cc844a2998`.
 
@@ -94,7 +94,7 @@ no live or paid provider request and use no real job-seeker data or production
 credentials.
 
 See [`CLAIM_EVIDENCE_POLICY.md`](CLAIM_EVIDENCE_POLICY.md) for the catalogue,
-disposition and fail-closed rules. Prompt release `1.4.0` remains the immediate
+disposition and fail-closed rules. Prompt release `1.5.0` remains the immediate
 approved emergency rollback. Claim-ledger validation is applied when the
-selected schema contains `claims`; the `1.5.0` quality policy is applied only
+selected schema contains `claims`; the `1.5.x` quality policy is applied only
 when the selected schema also contains the governed `cv.projects` shape.
