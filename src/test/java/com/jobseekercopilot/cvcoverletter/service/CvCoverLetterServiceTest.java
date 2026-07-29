@@ -71,7 +71,10 @@ class CvCoverLetterServiceTest {
         service = new CvCoverLetterService(promptBuilderService, inputNormalizer, llmGatewayApi, paymentBillingClient, properties,
                 new LlmResponseParser(new ObjectMapper(), new ClaimEvidenceValidator()),
                 new CvDocumentRenderer(),
-                new CoverLetterDocumentRenderer(), documentStoreApi, applicationTrackerApi);
+                new CoverLetterDocumentRenderer(),
+                new ValidatedClaimLedgerFactory(),
+                documentStoreApi,
+                applicationTrackerApi);
 
         request = validRequest();
         normalizedInput = new GenerationInputNormalizer().normalize("user-123", request);
@@ -120,6 +123,8 @@ class CvCoverLetterServiceTest {
                 "gpt-4.1-mini-2025-04-14",
                 actual.audit().modelId());
         assertEquals("1.0", actual.inputSchemaVersion());
+        assertEquals(10, actual.claimLedger().claims().size());
+        assertEquals(64, actual.claimLedger().ledgerSha256().length());
         verify(llmGatewayApi).generateV2(any());
         verifyNoInteractions(
                 paymentBillingClient,

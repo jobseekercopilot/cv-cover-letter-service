@@ -56,6 +56,7 @@ class CvCoverLetterControllerIntegrationTest {
                         null,
                         "1.0",
                         List.of(),
+                        null,
                         new DraftGenerationResponse.DraftGenerationUsage(
                                 100L, 200L, 300L),
                         new DraftGenerationResponse.DraftGenerationAudit(

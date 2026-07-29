@@ -50,6 +50,7 @@ public class CvCoverLetterService {
     private final LlmResponseParser responseParser;
     private final CvDocumentRenderer cvRenderer;
     private final CoverLetterDocumentRenderer coverLetterRenderer;
+    private final ValidatedClaimLedgerFactory claimLedgerFactory;
     private final GeneratedDocumentsApi documentStoreApi;
     private final ApplicationRecordsApi applicationTrackerApi;
 
@@ -106,6 +107,8 @@ public class CvCoverLetterService {
                 prepared.prompt().getGenerationMetadata(),
                 prepared.input().inputSchemaVersion(),
                 prepared.input().warnings(),
+                claimLedgerFactory.create(
+                        operationId, draft.documents().getClaims()),
                 new DraftGenerationResponse.DraftGenerationUsage(
                         usage == null ? null : usage.getInputTokens(),
                         usage == null ? null : usage.getOutputTokens(),

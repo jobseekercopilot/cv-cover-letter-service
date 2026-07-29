@@ -28,7 +28,9 @@ public class OpenApiConfig {
             "PromptGenerationMetadata",
             "ProfileInputSnapshot",
             "QualificationInput",
-            "SnapshotProvenance");
+            "SnapshotProvenance",
+            "ValidatedClaim",
+            "ValidatedClaimLedger");
 
     @Bean
     OpenAPI cvCoverLetterOpenApi() {
@@ -41,7 +43,7 @@ public class OpenApiConfig {
                                 .name("X-Service-Token")))
                 .info(new Info()
                         .title("Jobseeker Copilot - CV Cover Letter Service API")
-                        .version("3.3.0")
+                        .version("3.4.0")
                         .description("""
                                 Produces bounded CV and cover-letter drafts from
                                 purpose-specific immutable confirmed evidence
