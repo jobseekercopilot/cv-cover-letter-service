@@ -250,6 +250,40 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
+    void splitsExpandedContainerClaimsAtThePublishedReferenceLimit()
+            throws Exception {
+        ObjectNode output = validOutput();
+        ArrayNode skills = (ArrayNode) output.at("/cv/coreSkills");
+        for (int index = 0; index < 20; index++) {
+            ObjectNode skill = objectMapper.createObjectNode();
+            skill.put("name", "Java");
+            skill.put("evidence", "Java");
+            skills.add(skill);
+        }
+        ObjectNode containerClaim = objectMapper.createObjectNode();
+        containerClaim.put("claimId", "CLAIM-020");
+        containerClaim.put("disposition", "SUPPORTED");
+        containerClaim.putArray("evidenceIds").add("PROFILE.SKILL.1");
+        containerClaim.putArray("contentPaths").add("/cv/coreSkills");
+        containerClaim.put("reviewText", "");
+        ((ArrayNode) output.path("claims")).add(containerClaim);
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        List<String> skillPaths = accepted.getClaims().stream()
+                .flatMap(claim -> claim.getContentPaths().stream())
+                .filter(path -> path.startsWith("/cv/coreSkills/"))
+                .toList();
+        assertEquals(40, skillPaths.size());
+        assertTrue(accepted.getClaims().stream()
+                .allMatch(claim ->
+                        claim.getContentPaths().size() <= 30));
+        assertTrue(accepted.getClaims().stream()
+                .allMatch(claim ->
+                        claim.getEvidenceIds().size() <= 30));
+    }
+
+    @Test
     void assignsAStableInternalIdWhenTheModelDuplicatesAClaimId()
             throws Exception {
         ObjectNode output = validOutput();

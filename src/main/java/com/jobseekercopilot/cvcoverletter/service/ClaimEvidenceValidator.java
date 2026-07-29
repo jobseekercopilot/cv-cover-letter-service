@@ -28,6 +28,9 @@ import org.springframework.util.StringUtils;
 @Component
 public class ClaimEvidenceValidator {
     static final String POLICY_VERSION = "2.1.0";
+    private static final int MAX_CLAIMS = 40;
+    private static final int MAX_CLAIM_REFERENCES = 30;
+    private static final int MAX_REVIEW_TEXT_LENGTH = 500;
 
     private static final Pattern NUMERIC_CLAIM =
             Pattern.compile("(?<![\\p{L}\\p{N}])\\d+(?:[.,]\\d+)?%?(?![\\p{L}\\p{N}])");
@@ -111,8 +114,13 @@ public class ClaimEvidenceValidator {
                 output,
                 claims,
                 evidenceById);
+        claims = normalizeDuplicateClaimIds(
+                splitOversizedContentPathClaims(claims));
         documents.setClaims(claims);
 
+        require(claims.size() <= MAX_CLAIMS,
+                "$.claims",
+                "normalized claim ledger exceeds the bounded claim count");
         Set<String> coveredPaths = new HashSet<>();
         Set<String> claimIds = new HashSet<>();
         for (int index = 0; index < claims.size(); index++) {
@@ -583,6 +591,34 @@ public class ClaimEvidenceValidator {
         return List.copyOf(normalized);
     }
 
+    private List<GeneratedClaim> splitOversizedContentPathClaims(
+            List<GeneratedClaim> claims
+    ) {
+        List<GeneratedClaim> normalized = new ArrayList<>();
+        for (GeneratedClaim claim : claims) {
+            List<String> contentPaths =
+                    claim == null ? List.of() : safe(claim.getContentPaths());
+            if (contentPaths.size() <= MAX_CLAIM_REFERENCES) {
+                normalized.add(claim);
+                continue;
+            }
+            for (int start = 0;
+                    start < contentPaths.size();
+                    start += MAX_CLAIM_REFERENCES) {
+                int end = Math.min(
+                        start + MAX_CLAIM_REFERENCES,
+                        contentPaths.size());
+                GeneratedClaim bounded = copyWithClaimId(
+                        claim,
+                        claim.getClaimId());
+                bounded.setContentPaths(
+                        List.copyOf(contentPaths.subList(start, end)));
+                normalized.add(bounded);
+            }
+        }
+        return List.copyOf(normalized);
+    }
+
     private List<GeneratedClaim> splitPurposeSpanningClaims(
             List<GeneratedClaim> claims,
             Map<String, List<ApprovedEvidenceRecord>> evidenceById
@@ -680,6 +716,17 @@ public class ClaimEvidenceValidator {
 
         List<String> evidenceIds = safe(claim.getEvidenceIds());
         List<String> contentPaths = safe(claim.getContentPaths());
+        require(evidenceIds.size() <= MAX_CLAIM_REFERENCES,
+                claimPath + ".evidenceIds",
+                "claim exceeds the bounded evidence-reference count");
+        require(contentPaths.size() <= MAX_CLAIM_REFERENCES,
+                claimPath + ".contentPaths",
+                "claim exceeds the bounded content-path count");
+        require(claim.getReviewText() == null
+                        || claim.getReviewText().length()
+                                <= MAX_REVIEW_TEXT_LENGTH,
+                claimPath + ".reviewText",
+                "claim review text exceeds the bounded length");
         List<List<ApprovedEvidenceRecord>> evidenceCandidates =
                 new ArrayList<>();
         Set<String> uniqueEvidenceIds = new HashSet<>();
