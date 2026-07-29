@@ -78,6 +78,11 @@ public class LlmResponseParser {
             if (evidenceCatalog != null
                     && schema.path("properties").path("claims").isObject()) {
                 claimEvidenceValidator.validate(output, documents, evidenceCatalog);
+                var normalizedClaims = documents.getClaims();
+                documents = objectMapper.treeToValue(
+                        output,
+                        GeneratedApplicationDocuments.class);
+                documents.setClaims(normalizedClaims);
             }
             return documents;
         } catch (JsonProcessingException exception) {

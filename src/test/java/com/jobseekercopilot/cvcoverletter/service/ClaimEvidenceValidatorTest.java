@@ -3,6 +3,7 @@ package com.jobseekercopilot.cvcoverletter.service;
 import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validRequest;
 import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validVersionedRequest;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -73,11 +74,25 @@ class ClaimEvidenceValidatorTest {
 
         ObjectNode missingCoverage = validOutput();
         ((ArrayNode) missingCoverage.path("claims")).remove(8);
-        assertRejected(missingCoverage, "unaccounted claim path");
+        GeneratedApplicationDocuments normalizedMissingCoverage =
+                parse(missingCoverage);
+        assertTrue(normalizedMissingCoverage.getClaims().stream()
+                .flatMap(claim -> claim.getContentPaths().stream())
+                .anyMatch("/coverLetter/closingParagraph"::equals));
+        assertFalse("Thank you for your consideration.".equals(
+                normalizedMissingCoverage.getCoverLetter()
+                        .getClosingParagraph()));
 
         ObjectNode duplicateCoverage = validOutput();
         ((ArrayNode) duplicateCoverage.at("/claims/1/contentPaths")).add("/cv/targetRole");
-        assertRejected(duplicateCoverage, "covered more than once");
+        GeneratedApplicationDocuments normalizedDuplicateCoverage =
+                parse(duplicateCoverage);
+        assertEquals(
+                1,
+                normalizedDuplicateCoverage.getClaims().stream()
+                        .flatMap(claim -> claim.getContentPaths().stream())
+                        .filter("/cv/targetRole"::equals)
+                        .count());
 
         ObjectNode reviewOnlyFinalPath = validOutput();
         ObjectNode claim = (ObjectNode) reviewOnlyFinalPath.at("/claims/0");
@@ -172,6 +187,165 @@ class ClaimEvidenceValidatorTest {
                 "not approved for this document purpose");
     }
 
+    @Test
+    void splitsModelClaimsByDocumentPurposeBeforeEvidenceValidation()
+            throws Exception {
+        catalog = new ClaimEvidenceCatalogFactory().create(
+                new GenerationInputNormalizer(
+                        Clock.fixed(
+                                Instant.parse("2026-07-24T13:00:00Z"),
+                                ZoneOffset.UTC))
+                        .normalize(
+                                "owner-secret",
+                                validVersionedRequest()));
+        ObjectNode output = versionedOutput();
+        combineClaimPurposes(output);
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertEquals(10, accepted.getClaims().size());
+        assertTrue(accepted.getClaims().stream()
+                .anyMatch(claim -> "CLAIM-1000".equals(claim.getClaimId())));
+        accepted.getClaims().stream()
+                .filter(claim -> claim.getContentPaths() != null
+                        && !claim.getContentPaths().isEmpty())
+                .forEach(claim -> {
+                    boolean cvOnly = claim.getContentPaths().stream()
+                            .allMatch(path -> path.startsWith("/cv/"));
+                    boolean coverLetterOnly = claim.getContentPaths().stream()
+                            .allMatch(path -> path.startsWith("/coverLetter/"));
+                    assertTrue(cvOnly || coverLetterOnly);
+                    assertFalse(cvOnly && coverLetterOnly);
+                });
+
+        ObjectNode unknownEvidence = versionedOutput();
+        combineClaimPurposes(unknownEvidence);
+        ((ArrayNode) unknownEvidence.at("/claims/1/evidenceIds"))
+                .add("UNKNOWN.EVIDENCE");
+        assertRejected(unknownEvidence, "evidence ID is not approved");
+    }
+
+    @Test
+    void expandsContainerPointersAndStillValidatesEveryFinalTextPath()
+            throws Exception {
+        ObjectNode output = validOutput();
+        ArrayNode claims = (ArrayNode) output.path("claims");
+        ObjectNode combinedParagraphClaim = (ObjectNode) claims.get(6);
+        ObjectNode secondParagraphClaim = (ObjectNode) claims.get(7);
+        secondParagraphClaim.withArray("evidenceIds")
+                .forEach(combinedParagraphClaim.withArray("evidenceIds")::add);
+        combinedParagraphClaim.withArray("contentPaths")
+                .removeAll()
+                .add("/coverLetter/bodyParagraphs");
+        claims.remove(7);
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertEquals(9, accepted.getClaims().size());
+        assertEquals(
+                List.of(
+                        "/coverLetter/bodyParagraphs/0",
+                        "/coverLetter/bodyParagraphs/1"),
+                accepted.getClaims().get(6).getContentPaths());
+    }
+
+    @Test
+    void assignsAStableInternalIdWhenTheModelDuplicatesAClaimId()
+            throws Exception {
+        ObjectNode output = validOutput();
+        ((ObjectNode) output.at("/claims/1")).put("claimId", "CLAIM-001");
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertEquals("CLAIM-001", accepted.getClaims().get(0).getClaimId());
+        assertEquals("CLAIM-1000", accepted.getClaims().get(1).getClaimId());
+    }
+
+    @Test
+    void restoresAnExactAtomicEvidenceReferenceWithoutAcceptingFabrication()
+            throws Exception {
+        ObjectNode output = validOutput();
+        ArrayNode evidenceIds =
+                (ArrayNode) output.at("/claims/0/evidenceIds");
+        evidenceIds.removeAll().add("PROFILE.SKILL.1");
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertTrue(accepted.getClaims().get(0).getEvidenceIds()
+                .contains("JOB.TITLE"));
+
+        ((ObjectNode) output.path("cv")).put(
+                "targetRole",
+                "Fabricated Architect");
+        assertRejected(
+                output,
+                "atomic final claim is not an exact approved fact");
+    }
+
+    @Test
+    void restoresOnlyCandidateEvidenceForAnExactSpecificNarrativeTerm()
+            throws Exception {
+        ObjectNode output = validOutput();
+        ((ObjectNode) output.path("coverLetter")).withArray("bodyParagraphs")
+                .set(1, objectMapper.getNodeFactory().textNode(
+                        "I build useful Java services."));
+        ArrayNode evidenceIds =
+                (ArrayNode) output.at("/claims/7/evidenceIds");
+        evidenceIds.removeAll().add("JOB.DESCRIPTION");
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertTrue(accepted.getClaims().get(7).getEvidenceIds()
+                .contains("PROFILE.SKILL.1"));
+
+        ((ObjectNode) output.path("coverLetter")).withArray("bodyParagraphs")
+                .set(1, objectMapper.getNodeFactory().textNode(
+                        "I build useful Kubernetes services."));
+        assertRejected(
+                output,
+                "sensitive or specific claim is absent from approved evidence");
+    }
+
+    @Test
+    void replacesModelAuthoredSkillEvidenceWithExactClaimantEvidence()
+            throws Exception {
+        ObjectNode output = validOutput();
+        ObjectNode skill = objectMapper.createObjectNode();
+        skill.put("name", "Java");
+        skill.put("evidence", "More than 99 years of Java experience.");
+        ((ArrayNode) output.at("/cv/coreSkills")).add(skill);
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertEquals(
+                "Java",
+                accepted.getCv().getCoreSkills().get(0).getEvidence());
+        assertTrue(accepted.getClaims().stream()
+                .anyMatch(claim -> claim.getContentPaths().equals(
+                        List.of("/cv/coreSkills/0/name"))));
+        assertTrue(accepted.getClaims().stream()
+                .anyMatch(claim -> claim.getContentPaths().equals(
+                        List.of("/cv/coreSkills/0/evidence"))));
+    }
+
+    @Test
+    void removesWorkHistoryThatInventsRequiredAtomicDates()
+            throws Exception {
+        ObjectNode output = validOutput();
+        ObjectNode history = objectMapper.createObjectNode();
+        history.put("jobTitle", "Developer");
+        history.put("employer", "Example employer");
+        history.put("startDate", "1900");
+        history.put("endDate", "");
+        history.putArray("responsibilities");
+        history.put("tailoredDescription", "Unsupported history.");
+        ((ArrayNode) output.at("/cv/workHistory")).add(history);
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertTrue(accepted.getCv().getWorkHistory().isEmpty());
+    }
+
     private void assertUnsafePersonalSummary(String value, String reason) throws Exception {
         ObjectNode output = validOutput();
         ((ObjectNode) output.path("cv")).put("personalSummary", value);
@@ -219,6 +393,17 @@ class ClaimEvidenceValidatorTest {
         cvTitleEvidence.removeAll();
         cvTitleEvidence.add("JOB.TITLE");
         return output;
+    }
+
+    private void combineClaimPurposes(ObjectNode output) {
+        ArrayNode claims = (ArrayNode) output.path("claims");
+        ObjectNode cvClaim = (ObjectNode) claims.get(1);
+        ObjectNode coverLetterClaim = (ObjectNode) claims.get(6);
+        coverLetterClaim.withArray("evidenceIds")
+                .forEach(cvClaim.withArray("evidenceIds")::add);
+        coverLetterClaim.withArray("contentPaths")
+                .forEach(cvClaim.withArray("contentPaths")::add);
+        claims.remove(6);
     }
 
     private ObjectNode reviewOnlyClaim(String id, String disposition, String reviewText) {

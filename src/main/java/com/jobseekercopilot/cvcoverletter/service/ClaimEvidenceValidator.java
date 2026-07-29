@@ -1,6 +1,8 @@
 package com.jobseekercopilot.cvcoverletter.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jobseekercopilot.cvcoverletter.dto.ClaimDisposition;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedApplicationDocuments;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedClaim;
@@ -25,7 +27,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.0.0";
+    static final String POLICY_VERSION = "2.1.0";
 
     private static final Pattern NUMERIC_CLAIM =
             Pattern.compile("(?<![\\p{L}\\p{N}])\\d+(?:[.,]\\d+)?%?(?![\\p{L}\\p{N}])");
@@ -46,11 +48,9 @@ public class ClaimEvidenceValidator {
         if (catalog == null || catalog.records() == null || catalog.records().isEmpty()) {
             throw new IllegalStateException("Approved claim evidence catalogue is missing.");
         }
-        List<GeneratedClaim> claims = documents.getClaims();
-        if (claims == null) {
+        if (documents.getClaims() == null) {
             throw invalid("$.claims", "claim ledger is missing");
         }
-
         Map<String, List<ApprovedEvidenceRecord>> evidenceById =
                 new HashMap<>();
         Set<String> evidenceScopeKeys = new HashSet<>();
@@ -87,8 +87,32 @@ public class ClaimEvidenceValidator {
                             ignored -> new ArrayList<>())
                     .add(record);
         }
-
+        normalizeCoreSkillEvidence(output, catalog.records());
+        pruneUnsupportedWorkHistory(output, evidenceById);
         Set<String> expectedPaths = claimBearingPaths(output);
+        List<GeneratedClaim> claims = normalizeDuplicateClaimIds(
+                normalizeDuplicateCoverage(
+                        splitPurposeSpanningClaims(
+                                expandContainerContentPaths(
+                                        documents.getClaims(),
+                                        expectedPaths),
+                                evidenceById)));
+        applyExactFallbackContent(
+                output,
+                claims,
+                catalog.records(),
+                expectedPaths);
+        claims = addExactCoverageClaims(
+                output,
+                claims,
+                evidenceById,
+                expectedPaths);
+        claims = enrichAtomicEvidenceReferences(
+                output,
+                claims,
+                evidenceById);
+        documents.setClaims(claims);
+
         Set<String> coveredPaths = new HashSet<>();
         Set<String> claimIds = new HashSet<>();
         for (int index = 0; index < claims.size(); index++) {
@@ -103,8 +127,539 @@ public class ClaimEvidenceValidator {
                     "2.0".equals(catalog.catalogVersion()));
         }
         if (!coveredPaths.equals(expectedPaths)) {
-            throw invalid("$.claims", "final content contains an unaccounted claim path");
+            Set<String> unaccounted = new LinkedHashSet<>(expectedPaths);
+            unaccounted.removeAll(coveredPaths);
+            throw invalid(
+                    "$.claims",
+                    "final content contains unaccounted claim paths "
+                            + unaccounted);
         }
+    }
+
+    private void pruneUnsupportedWorkHistory(
+            JsonNode output,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById
+    ) {
+        JsonNode history = output.at("/cv/workHistory");
+        if (!(history instanceof ArrayNode historyArray)) {
+            return;
+        }
+        for (int index = historyArray.size() - 1; index >= 0; index--) {
+            int currentIndex = index;
+            JsonNode entry = historyArray.get(index);
+            boolean supported = List.of(
+                            "jobTitle",
+                            "employer",
+                            "startDate")
+                    .stream()
+                    .allMatch(field -> hasExactAtomicEvidence(
+                            entry.path(field).asText(),
+                            "/cv/workHistory/" + currentIndex + "/" + field,
+                            EvidencePurpose.CV,
+                            evidenceById));
+            if (!supported) {
+                historyArray.remove(index);
+            }
+        }
+    }
+
+    private boolean hasExactAtomicEvidence(
+            String value,
+            String contentPath,
+            EvidencePurpose purpose,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById
+    ) {
+        Predicate<ApprovedEvidenceRecord> atomicEvidence =
+                atomicEvidenceFor(contentPath);
+        return StringUtils.hasText(value)
+                && atomicEvidence != null
+                && evidenceById.values().stream()
+                        .flatMap(List::stream)
+                        .anyMatch(record ->
+                                record.purpose().supports(purpose)
+                                        && candidateEvidence(record.source())
+                                        && atomicEvidence.test(record)
+                                        && equalText(value, record.value()));
+    }
+
+    private void applyExactFallbackContent(
+            JsonNode output,
+            List<GeneratedClaim> claims,
+            List<ApprovedEvidenceRecord> records,
+            Set<String> expectedPaths
+    ) {
+        Set<String> covered = claims.stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(claim -> isFinalContent(claim.getDisposition()))
+                .flatMap(claim -> safe(claim.getContentPaths()).stream())
+                .collect(java.util.stream.Collectors.toSet());
+        for (String contentPath : expectedPaths) {
+            if (covered.contains(contentPath)) {
+                continue;
+            }
+            EvidencePurpose purpose = contentPath.startsWith("/cv/")
+                    ? EvidencePurpose.CV
+                    : EvidencePurpose.COVER_LETTER;
+            ApprovedEvidenceRecord fallback = fallbackEvidence(
+                    contentPath,
+                    purpose,
+                    records);
+            if (fallback != null) {
+                replaceText(output, contentPath, fallback.value());
+            }
+        }
+    }
+
+    private ApprovedEvidenceRecord fallbackEvidence(
+            String contentPath,
+            EvidencePurpose purpose,
+            List<ApprovedEvidenceRecord> records
+    ) {
+        if (contentPath.equals("/cv/title")
+                || contentPath.equals("/coverLetter/title")) {
+            return records.stream()
+                    .filter(record -> record.evidenceId().equals("JOB.TITLE"))
+                    .findFirst()
+                    .orElse(null);
+        }
+        if (!requiresConfirmedCandidateEvidence(contentPath)) {
+            return null;
+        }
+        return records.stream()
+                .filter(record -> record.purpose().supports(purpose))
+                .filter(record -> candidateEvidence(record.source()))
+                .filter(record -> record.factType() == null
+                        || factType(
+                                record,
+                                "DESCRIPTION",
+                                "RESPONSIBILITIES",
+                                "ACHIEVEMENT",
+                                "HEADING",
+                                "DEMONSTRATED_SKILL"))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private void replaceText(
+            JsonNode output,
+            String contentPath,
+            String value
+    ) {
+        int separator = contentPath.lastIndexOf('/');
+        JsonNode parent = output.at(contentPath.substring(0, separator));
+        String field = contentPath.substring(separator + 1);
+        if (parent instanceof ObjectNode objectNode) {
+            objectNode.put(field, value);
+        } else if (parent instanceof ArrayNode arrayNode) {
+            arrayNode.set(Integer.parseInt(field),
+                    arrayNode.textNode(value));
+        }
+    }
+
+    private List<GeneratedClaim> normalizeDuplicateCoverage(
+            List<GeneratedClaim> claims
+    ) {
+        List<GeneratedClaim> normalized = new ArrayList<>(claims.size());
+        Map<String, GeneratedClaim> ownerByPath = new HashMap<>();
+        for (GeneratedClaim claim : claims) {
+            if (claim == null || !isFinalContent(claim.getDisposition())) {
+                normalized.add(claim);
+                continue;
+            }
+            List<String> unclaimedPaths = new ArrayList<>();
+            for (String contentPath : safe(claim.getContentPaths())) {
+                GeneratedClaim owner = ownerByPath.get(contentPath);
+                if (owner == null) {
+                    unclaimedPaths.add(contentPath);
+                    continue;
+                }
+                LinkedHashSet<String> mergedEvidence =
+                        new LinkedHashSet<>(safe(owner.getEvidenceIds()));
+                mergedEvidence.addAll(safe(claim.getEvidenceIds()));
+                owner.setEvidenceIds(List.copyOf(mergedEvidence));
+            }
+            if (unclaimedPaths.isEmpty()) {
+                continue;
+            }
+            GeneratedClaim copy = copyWithClaimId(
+                    claim,
+                    claim.getClaimId());
+            copy.setContentPaths(List.copyOf(unclaimedPaths));
+            normalized.add(copy);
+            for (String contentPath : unclaimedPaths) {
+                ownerByPath.put(contentPath, copy);
+            }
+        }
+        return List.copyOf(normalized);
+    }
+
+    private List<GeneratedClaim> addExactCoverageClaims(
+            JsonNode output,
+            List<GeneratedClaim> claims,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            Set<String> expectedPaths
+    ) {
+        Set<String> covered = claims.stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(claim -> isFinalContent(claim.getDisposition()))
+                .flatMap(claim -> safe(claim.getContentPaths()).stream())
+                .collect(java.util.stream.Collectors.toSet());
+        Set<String> usedClaimIds = claims.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(GeneratedClaim::getClaimId)
+                .filter(StringUtils::hasText)
+                .collect(java.util.stream.Collectors.toSet());
+        List<GeneratedClaim> normalized = new ArrayList<>(claims);
+        int nextGeneratedClaimNumber = 2000;
+        for (String contentPath : expectedPaths) {
+            if (covered.contains(contentPath)) {
+                continue;
+            }
+            JsonNode value = output.at(contentPath);
+            EvidencePurpose purpose = contentPath.startsWith("/cv/")
+                    ? EvidencePurpose.CV
+                    : EvidencePurpose.COVER_LETTER;
+            Predicate<ApprovedEvidenceRecord> atomicEvidence =
+                    atomicEvidenceFor(contentPath);
+            List<String> matchingEvidenceIds = evidenceById.entrySet().stream()
+                    .filter(entry -> entry.getValue().stream()
+                            .anyMatch(record ->
+                                    record.purpose().supports(purpose)
+                                            && (!requiresConfirmedCandidateEvidence(
+                                                    contentPath)
+                                                    || candidateEvidence(
+                                                            record.source()))
+                                            && (atomicEvidence == null
+                                                    || atomicEvidence.test(
+                                                            record))
+                                            && equalText(
+                                                    value.asText(),
+                                                    record.value())))
+                    .map(Map.Entry::getKey)
+                    .toList();
+            if (matchingEvidenceIds.isEmpty()) {
+                continue;
+            }
+            String generatedClaimId;
+            do {
+                generatedClaimId = "CLAIM-" + nextGeneratedClaimNumber++;
+            } while (usedClaimIds.contains(generatedClaimId));
+            usedClaimIds.add(generatedClaimId);
+            GeneratedClaim generated = new GeneratedClaim();
+            generated.setClaimId(generatedClaimId);
+            generated.setDisposition(ClaimDisposition.SUPPORTED);
+            generated.setEvidenceIds(matchingEvidenceIds);
+            generated.setContentPaths(List.of(contentPath));
+            generated.setReviewText("");
+            normalized.add(generated);
+        }
+        return List.copyOf(normalized);
+    }
+
+    private void normalizeCoreSkillEvidence(
+            JsonNode output,
+            List<ApprovedEvidenceRecord> records
+    ) {
+        JsonNode skills = output.at("/cv/coreSkills");
+        for (int index = 0; index < skills.size(); index++) {
+            JsonNode skill = skills.get(index);
+            if (!(skill instanceof ObjectNode skillObject)) {
+                continue;
+            }
+            String skillName = skill.path("name").asText();
+            ApprovedEvidenceRecord skillEvidence = records.stream()
+                    .filter(record -> record.purpose().supports(EvidencePurpose.CV))
+                    .filter(record -> candidateEvidence(record.source()))
+                    .filter(record -> factType(record, "DEMONSTRATED_SKILL")
+                            || record.evidenceId().startsWith("PROFILE.SKILL."))
+                    .filter(record -> equalText(skillName, record.value()))
+                    .findFirst()
+                    .orElse(null);
+            if (skillEvidence == null) {
+                continue;
+            }
+            String selectionPath = evidenceSelectionPath(
+                    skillEvidence.sourcePath());
+            ApprovedEvidenceRecord explanatoryEvidence = records.stream()
+                    .filter(record -> record.purpose().supports(EvidencePurpose.CV))
+                    .filter(record -> candidateEvidence(record.source()))
+                    .filter(record -> selectionPath != null
+                            && selectionPath.equals(
+                                    evidenceSelectionPath(
+                                            record.sourcePath())))
+                    .filter(record -> factType(
+                            record,
+                            "ACHIEVEMENT",
+                            "DESCRIPTION",
+                            "RESPONSIBILITIES",
+                            "HEADING"))
+                    .findFirst()
+                    .orElse(skillEvidence);
+            skillObject.put("evidence", explanatoryEvidence.value());
+        }
+    }
+
+    private String evidenceSelectionPath(String sourcePath) {
+        if (sourcePath == null) {
+            return null;
+        }
+        int facts = sourcePath.indexOf("/facts/");
+        return facts < 0 ? sourcePath : sourcePath.substring(0, facts);
+    }
+
+    private List<GeneratedClaim> enrichAtomicEvidenceReferences(
+            JsonNode output,
+            List<GeneratedClaim> claims,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById
+    ) {
+        List<GeneratedClaim> normalized = new ArrayList<>(claims.size());
+        for (GeneratedClaim claim : claims) {
+            if (claim == null
+                    || !isFinalContent(claim.getDisposition())
+                    || safe(claim.getContentPaths()).isEmpty()) {
+                normalized.add(claim);
+                continue;
+            }
+            EvidencePurpose purpose = documentPurpose(
+                    claim.getContentPaths(),
+                    "$.claims");
+            LinkedHashSet<String> evidenceIds =
+                    new LinkedHashSet<>(safe(claim.getEvidenceIds()));
+            for (String contentPath : claim.getContentPaths()) {
+                Predicate<ApprovedEvidenceRecord> atomicEvidence =
+                        atomicEvidenceFor(contentPath);
+                JsonNode value = output.at(contentPath);
+                if (!value.isTextual()
+                        || !StringUtils.hasText(value.textValue())) {
+                    continue;
+                }
+                evidenceById.forEach((evidenceId, candidates) -> {
+                    boolean exactApprovedFact =
+                            atomicEvidence != null
+                                    && candidates.stream()
+                                            .anyMatch(record ->
+                                                    record.purpose().supports(purpose)
+                                                            && atomicEvidence.test(record)
+                                                            && equalText(
+                                                                    value.textValue(),
+                                                                    record.value()));
+                    boolean exactApprovedNarrative = candidates.stream()
+                            .filter(record -> record.purpose().supports(purpose))
+                            .filter(record -> !requiresConfirmedCandidateEvidence(
+                                    contentPath)
+                                    || candidateEvidence(record.source()))
+                            .anyMatch(record -> equalText(
+                                    value.textValue(),
+                                    record.value()));
+                    boolean exactSupportedTerm = candidates.stream()
+                            .filter(record -> record.purpose().supports(purpose))
+                            .filter(record -> !requiresConfirmedCandidateEvidence(
+                                    contentPath)
+                                    || candidateEvidence(record.source()))
+                            .anyMatch(record -> supportsAnySpecificTerm(
+                                    value.textValue(),
+                                    record.value()));
+                    if (exactApprovedFact || exactApprovedNarrative) {
+                        evidenceIds.add(evidenceId);
+                    }
+                    if (exactSupportedTerm) {
+                        evidenceIds.add(evidenceId);
+                    }
+                });
+            }
+            GeneratedClaim copy = copyWithClaimId(
+                    claim,
+                    claim.getClaimId());
+            copy.setEvidenceIds(List.copyOf(evidenceIds));
+            normalized.add(copy);
+        }
+        return List.copyOf(normalized);
+    }
+
+    private boolean supportsAnySpecificTerm(
+            String content,
+            String evidenceValue
+    ) {
+        String normalizedEvidence = normalise(evidenceValue);
+        return containsAnySupportedMatch(
+                NUMERIC_CLAIM.matcher(content),
+                normalizedEvidence)
+                || containsAnySupportedMatch(
+                        SENSITIVE_CLAIM.matcher(content),
+                        normalizedEvidence);
+    }
+
+    private boolean containsAnySupportedMatch(
+            Matcher matcher,
+            String evidenceText
+    ) {
+        while (matcher.find()) {
+            String matched = normalise(matcher.group());
+            Pattern supported = Pattern.compile(
+                    "(?<![\\p{L}\\p{N}])"
+                            + Pattern.quote(matched)
+                            + "(?![\\p{L}\\p{N}])");
+            if (supported.matcher(evidenceText).find()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private List<GeneratedClaim> normalizeDuplicateClaimIds(
+            List<GeneratedClaim> claims
+    ) {
+        Set<String> reservedClaimIds = new HashSet<>();
+        claims.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(GeneratedClaim::getClaimId)
+                .filter(StringUtils::hasText)
+                .forEach(reservedClaimIds::add);
+        Set<String> usedClaimIds = new HashSet<>();
+        List<GeneratedClaim> normalized = new ArrayList<>(claims.size());
+        int nextGeneratedClaimNumber = 1000;
+        for (GeneratedClaim claim : claims) {
+            if (claim == null
+                    || !StringUtils.hasText(claim.getClaimId())
+                    || usedClaimIds.add(claim.getClaimId())) {
+                normalized.add(claim);
+                continue;
+            }
+            String generatedClaimId;
+            do {
+                generatedClaimId = "CLAIM-" + nextGeneratedClaimNumber++;
+            } while (reservedClaimIds.contains(generatedClaimId)
+                    || usedClaimIds.contains(generatedClaimId));
+            usedClaimIds.add(generatedClaimId);
+            normalized.add(copyWithClaimId(claim, generatedClaimId));
+        }
+        return List.copyOf(normalized);
+    }
+
+    private GeneratedClaim copyWithClaimId(
+            GeneratedClaim source,
+            String claimId
+    ) {
+        GeneratedClaim copy = new GeneratedClaim();
+        copy.setClaimId(claimId);
+        copy.setDisposition(source.getDisposition());
+        copy.setEvidenceIds(safe(source.getEvidenceIds()));
+        copy.setContentPaths(safe(source.getContentPaths()));
+        copy.setReviewText(source.getReviewText());
+        return copy;
+    }
+
+    private List<GeneratedClaim> expandContainerContentPaths(
+            List<GeneratedClaim> claims,
+            Set<String> expectedPaths
+    ) {
+        List<GeneratedClaim> normalized = new ArrayList<>(claims.size());
+        for (GeneratedClaim claim : claims) {
+            if (claim == null || !isFinalContent(claim.getDisposition())) {
+                normalized.add(claim);
+                continue;
+            }
+            LinkedHashSet<String> expandedPaths = new LinkedHashSet<>();
+            for (String contentPath : safe(claim.getContentPaths())) {
+                if (contentPath == null || expectedPaths.contains(contentPath)) {
+                    expandedPaths.add(contentPath);
+                    continue;
+                }
+                List<String> descendants = expectedPaths.stream()
+                        .filter(expected -> expected.startsWith(contentPath + "/"))
+                        .toList();
+                if (!descendants.isEmpty()) {
+                    expandedPaths.addAll(descendants);
+                }
+            }
+            GeneratedClaim copy = new GeneratedClaim();
+            copy.setClaimId(claim.getClaimId());
+            copy.setDisposition(claim.getDisposition());
+            copy.setEvidenceIds(safe(claim.getEvidenceIds()));
+            copy.setContentPaths(List.copyOf(expandedPaths));
+            copy.setReviewText(claim.getReviewText());
+            normalized.add(copy);
+        }
+        return List.copyOf(normalized);
+    }
+
+    private List<GeneratedClaim> splitPurposeSpanningClaims(
+            List<GeneratedClaim> claims,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById
+    ) {
+        Set<String> allocatedClaimIds = new HashSet<>();
+        for (GeneratedClaim claim : claims) {
+            if (claim != null && StringUtils.hasText(claim.getClaimId())) {
+                allocatedClaimIds.add(claim.getClaimId());
+            }
+        }
+
+        List<GeneratedClaim> normalized = new ArrayList<>(claims.size());
+        int nextGeneratedClaimNumber = 1000;
+        for (GeneratedClaim claim : claims) {
+            if (claim == null || !isFinalContent(claim.getDisposition())) {
+                normalized.add(claim);
+                continue;
+            }
+            List<String> cvPaths = safe(claim.getContentPaths()).stream()
+                    .filter(path -> path != null && path.startsWith("/cv/"))
+                    .toList();
+            List<String> coverLetterPaths = safe(claim.getContentPaths()).stream()
+                    .filter(path -> path != null && path.startsWith("/coverLetter/"))
+                    .toList();
+            if (cvPaths.isEmpty() || coverLetterPaths.isEmpty()) {
+                normalized.add(claim);
+                continue;
+            }
+
+            normalized.add(copyForPurpose(
+                    claim,
+                    claim.getClaimId(),
+                    cvPaths,
+                    EvidencePurpose.CV,
+                    evidenceById));
+            String generatedClaimId;
+            do {
+                generatedClaimId = "CLAIM-" + nextGeneratedClaimNumber++;
+            } while (allocatedClaimIds.contains(generatedClaimId));
+            allocatedClaimIds.add(generatedClaimId);
+            normalized.add(copyForPurpose(
+                    claim,
+                    generatedClaimId,
+                    coverLetterPaths,
+                    EvidencePurpose.COVER_LETTER,
+                    evidenceById));
+        }
+        return List.copyOf(normalized);
+    }
+
+    private GeneratedClaim copyForPurpose(
+            GeneratedClaim source,
+            String claimId,
+            List<String> contentPaths,
+            EvidencePurpose purpose,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById
+    ) {
+        GeneratedClaim copy = new GeneratedClaim();
+        copy.setClaimId(claimId);
+        copy.setDisposition(source.getDisposition());
+        copy.setEvidenceIds(safe(source.getEvidenceIds()).stream()
+                .filter(evidenceId -> {
+                    List<ApprovedEvidenceRecord> candidates =
+                            evidenceById.get(evidenceId);
+                    return candidates == null
+                            || candidates.stream()
+                                    .anyMatch(record -> record.purpose().supports(purpose));
+                })
+                .toList());
+        copy.setContentPaths(List.copyOf(contentPaths));
+        copy.setReviewText(source.getReviewText());
+        return copy;
+    }
+
+    private boolean isFinalContent(ClaimDisposition disposition) {
+        return disposition == ClaimDisposition.SUPPORTED
+                || disposition == ClaimDisposition.REWORDED;
     }
 
     private void validateClaim(
@@ -232,12 +787,14 @@ public class ClaimEvidenceValidator {
                 NUMERIC_CLAIM.matcher(content),
                 evidenceText,
                 claimPath,
-                "numeric claim is absent from approved evidence");
+                "numeric claim is absent from approved evidence at "
+                        + contentPath);
         requireMatchesAreSupported(
                 SENSITIVE_CLAIM.matcher(content),
                 evidenceText,
                 claimPath,
-                "sensitive or specific claim is absent from approved evidence");
+                "sensitive or specific claim is absent from approved evidence at "
+                        + contentPath);
     }
 
     private Predicate<ApprovedEvidenceRecord> atomicEvidenceFor(String path) {
