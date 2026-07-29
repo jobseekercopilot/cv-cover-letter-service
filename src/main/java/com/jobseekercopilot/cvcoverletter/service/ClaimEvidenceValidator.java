@@ -28,7 +28,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.4.0";
+    static final String POLICY_VERSION = "2.5.0";
     private static final int MAX_CLAIMS = 40;
     private static final int MAX_CLAIM_REFERENCES = 30;
     private static final int MAX_REVIEW_TEXT_LENGTH = 500;
@@ -100,6 +100,10 @@ public class ClaimEvidenceValidator {
         canonicalizeOptionalAtomicContent(output, evidenceById);
         canonicalizeDocumentIdentity(output, evidenceById);
         pruneUnsupportedWorkHistory(output, evidenceById);
+        canonicalizeUnclaimedProjectDescriptions(
+                output,
+                documents.getClaims(),
+                evidenceById);
         Set<String> expectedPaths = claimBearingPaths(output);
         List<GeneratedClaim> claims = normalizeDuplicateClaimIds(
                 normalizeDuplicateCoverage(
@@ -335,6 +339,123 @@ public class ClaimEvidenceValidator {
         }
     }
 
+    private void canonicalizeUnclaimedProjectDescriptions(
+            JsonNode output,
+            List<GeneratedClaim> claims,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById
+    ) {
+        Set<String> currentPaths = claimBearingPaths(output);
+        List<GeneratedClaim> expandedClaims = expandContainerContentPaths(
+                        claims,
+                        currentPaths);
+        Set<String> claimedPaths = expandedClaims.stream()
+                .filter(java.util.Objects::nonNull)
+                .flatMap(claim -> safe(claim.getContentPaths()).stream())
+                .collect(java.util.stream.Collectors.toSet());
+        JsonNode projects = output.at("/cv/projects");
+        for (int index = 0; index < projects.size(); index++) {
+            String descriptionPath =
+                    "/cv/projects/" + index + "/description";
+            if (currentPaths.contains(descriptionPath)
+                    && !claimedPaths.contains(descriptionPath)) {
+                ApprovedEvidenceRecord description =
+                        uniqueProjectDescriptionEvidence(
+                                output,
+                                expandedClaims,
+                                evidenceById,
+                                index);
+                if (description != null) {
+                    replaceText(
+                            output,
+                            descriptionPath,
+                            description.value());
+                }
+            }
+        }
+    }
+
+    private ApprovedEvidenceRecord uniqueProjectDescriptionEvidence(
+            JsonNode output,
+            List<GeneratedClaim> claims,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            int projectIndex
+    ) {
+        String titlePath = "/cv/projects/" + projectIndex + "/title";
+        JsonNode title = output.at(titlePath);
+        if (!title.isTextual()
+                || !StringUtils.hasText(title.textValue())) {
+            return null;
+        }
+        Set<String> titleSelections = claims.stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(claim ->
+                        isFinalContent(claim.getDisposition()))
+                .filter(claim ->
+                        safe(claim.getContentPaths())
+                                .contains(titlePath))
+                .flatMap(claim ->
+                        safe(claim.getEvidenceIds()).stream())
+                .flatMap(evidenceId ->
+                        evidenceById
+                                .getOrDefault(evidenceId, List.of())
+                                .stream())
+                .filter(record ->
+                        record.source()
+                                == EvidenceSource.EVIDENCE_SNAPSHOT)
+                .filter(record ->
+                        record.purpose()
+                                .supports(EvidencePurpose.CV))
+                .filter(record ->
+                        "PROJECT".equals(record.category()))
+                .filter(record ->
+                        "HEADING".equals(record.factType()))
+                .filter(record ->
+                        equalText(
+                                title.textValue(),
+                                record.value()))
+                .map(this::evidenceSelection)
+                .filter(StringUtils::hasText)
+                .collect(java.util.stream.Collectors.toSet());
+        if (titleSelections.size() != 1) {
+            return null;
+        }
+        String titleSelection =
+                titleSelections.iterator().next();
+        List<ApprovedEvidenceRecord> descriptions =
+                evidenceById.values().stream()
+                        .flatMap(List::stream)
+                        .filter(record ->
+                                record.source()
+                                        == EvidenceSource.EVIDENCE_SNAPSHOT)
+                        .filter(record ->
+                                record.purpose()
+                                        .supports(EvidencePurpose.CV))
+                        .filter(record ->
+                                "PROJECT".equals(record.category()))
+                        .filter(record ->
+                                "DESCRIPTION".equals(record.factType()))
+                        .filter(record ->
+                                titleSelection.equals(
+                                        evidenceSelection(record)))
+                        .toList();
+        return descriptions.size() == 1
+                ? descriptions.get(0)
+                : null;
+    }
+
+    private String evidenceSelection(
+            ApprovedEvidenceRecord record
+    ) {
+        if (record == null
+                || !StringUtils.hasText(record.sourcePath())) {
+            return "";
+        }
+        int facts = record.sourcePath().indexOf("/facts/");
+        return facts < 0
+                ? ""
+                : record.sourcePath().substring(0, facts);
+    }
+
     private boolean hasExactAtomicEvidence(
             String value,
             String contentPath,
@@ -435,22 +556,46 @@ public class ClaimEvidenceValidator {
                     : EvidencePurpose.COVER_LETTER;
             Predicate<ApprovedEvidenceRecord> atomicEvidence =
                     atomicEvidenceFor(contentPath);
-            List<String> matchingEvidenceIds = evidenceById.entrySet().stream()
-                    .filter(entry -> entry.getValue().stream()
-                            .anyMatch(record ->
-                                    record.purpose().supports(purpose)
-                                            && (!requiresConfirmedCandidateEvidence(
-                                                    contentPath)
-                                                    || candidateEvidence(
-                                                            record.source()))
-                                            && (atomicEvidence == null
-                                                    || atomicEvidence.test(
-                                                            record))
-                                            && equalText(
-                                                    value.asText(),
-                                                    record.value())))
-                    .map(Map.Entry::getKey)
-                    .toList();
+            List<String> matchingEvidenceIds;
+            if (contentPath.matches(
+                    "/cv/projects/\\d+/description")) {
+                int projectIndex = Integer.parseInt(
+                        contentPath.split("/")[3]);
+                ApprovedEvidenceRecord description =
+                        uniqueProjectDescriptionEvidence(
+                                output,
+                                claims,
+                                evidenceById,
+                                projectIndex);
+                matchingEvidenceIds =
+                        description != null
+                                        && equalText(
+                                                value.asText(),
+                                                description.value())
+                                ? List.of(description.evidenceId())
+                                : List.of();
+            } else {
+                matchingEvidenceIds =
+                        evidenceById.entrySet().stream()
+                                .filter(entry ->
+                                        entry.getValue().stream()
+                                                .anyMatch(record ->
+                                                        record.purpose()
+                                                                .supports(purpose)
+                                                                && (!requiresConfirmedCandidateEvidence(
+                                                                        contentPath)
+                                                                        || candidateEvidence(
+                                                                                record.source()))
+                                                                && (atomicEvidence
+                                                                                == null
+                                                                        || atomicEvidence
+                                                                                .test(record))
+                                                                && equalText(
+                                                                        value.asText(),
+                                                                        record.value())))
+                                .map(Map.Entry::getKey)
+                                .toList();
+            }
             if (matchingEvidenceIds.isEmpty()) {
                 continue;
             }

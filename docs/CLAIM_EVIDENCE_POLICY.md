@@ -1,12 +1,16 @@
 # Claim evidence policy
 
 Prompt release `cv-cover-letter-1.5.1`, output schema `3.2.0`, claim policy
-`2.4.0` and deterministic quality policy `1.0.0` establish the current
+`2.5.0` and deterministic quality policy `1.1.0` establish the current
 claim-provenance and document-quality boundary.
 
 Release `1.5.1` makes the provider perform an explicit final-pointer coverage
 audit, including generic narrative and each populated array index, before it
-returns the claim ledger. Local validation remains fail-closed and unchanged.
+returns the claim ledger. Local validation remains fail-closed. If the model
+omits only a required project-description pointer, policy `2.5.0` replaces
+that prose with the unique exact `DESCRIPTION` fact from the PROJECT selection
+anchored by the same project's exact claimed `HEADING`; it then creates exact
+claim coverage. Missing, ambiguous or cross-selection evidence still rejects.
 
 ## Approved evidence
 
@@ -50,7 +54,9 @@ external write, `ClaimEvidenceValidator`:
    project titles/roles/context/dates and employment titles/employers/dates to
    the appropriate approved record;
 6. rejects uncited numeric claims and unsupported high-risk terms covering
-   tools, qualifications, motivation, availability, salary and right-to-work.
+   tools, qualifications, motivation, availability, salary and right-to-work;
+7. revalidates the complete schema and plain-text policy after every trusted
+   canonicalisation.
 
 For schema `3.2.0`, `GeneratedDocumentQualityValidator` runs only after the
 grounding ledger is normalised and accepted. It:
@@ -64,7 +70,9 @@ grounding ledger is normalised and accepted. It:
    its document purpose;
 5. requires CV project, employment and education selections to appear in their
    governed sections, and requires each project to use one selected PROJECT
-   entry.
+   entry;
+6. requires every project description and highlight to cite same-selection
+   project narrative evidence.
 
 Project facts cannot satisfy the atomic employment fields. Empty optional
 employment narrative remains empty rather than being replaced with an

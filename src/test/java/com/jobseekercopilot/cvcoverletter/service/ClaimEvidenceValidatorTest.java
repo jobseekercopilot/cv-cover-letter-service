@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.jobseekercopilot.cvcoverletter.dto.ClaimDisposition;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedApplicationDocuments;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidLlmResponseException;
 import com.jobseekercopilot.cvcoverletter.model.ApprovedEvidenceRecord;
@@ -39,7 +40,7 @@ class ClaimEvidenceValidatorTest {
                 new ClaimEvidenceValidator(),
                 new GeneratedDocumentQualityValidator());
         try (InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.5.0/output-schema.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.1/output-schema.json")) {
             if (input == null) {
                 throw new IllegalStateException("Claim evidence schema fixture is missing.");
             }
@@ -133,6 +134,271 @@ class ClaimEvidenceValidatorTest {
 
         omittedPaths.forEach(path ->
                 assertTrue(error.getMessage().contains(path), error.getMessage()));
+    }
+
+    @Test
+    void groundsAnUnclaimedProjectDescriptionInItsExactSelectedFact()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        removeContentPath(output, 1, "/cv/projects/0/description");
+        ((ObjectNode) output.at("/cv/projects/0"))
+                .put(
+                        "description",
+                        "This model-authored paraphrase has no claim.");
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertEquals(
+                "Built useful services.",
+                accepted.getCv().getProjects().get(0).getDescription());
+        var descriptionClaim = accepted.getClaims().stream()
+                .filter(claim -> claim.getContentPaths().contains(
+                        "/cv/projects/0/description"))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(
+                List.of(com.jobseekercopilot.cvcoverletter
+                        .GenerationInputFixtures
+                        .CV_PROJECT_FACT_ID.toString()),
+                descriptionClaim.getEvidenceIds());
+        assertEquals(
+                ClaimDisposition.SUPPORTED,
+                descriptionClaim.getDisposition());
+        assertEquals(
+                List.of("/cv/projects/0/description"),
+                descriptionClaim.getContentPaths());
+        assertTrue(
+                descriptionClaim.getClaimId().startsWith("CLAIM-2"));
+    }
+
+    @Test
+    void stillRejectsAnUnclaimedRequiredNarrativePath()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        removeContentPath(output, 1, "/cv/personalSummary");
+
+        InvalidLlmResponseException error = assertRejected(
+                output,
+                "final content contains unaccounted claim paths");
+
+        assertTrue(
+                error.getMessage().contains("/cv/personalSummary"),
+                error.getMessage());
+    }
+
+    @Test
+    void leavesAClaimedGroundedProjectDescriptionUnchanged()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        ((ObjectNode) output.at("/cv/projects/0"))
+                .put(
+                        "description",
+                        "Developed useful services.");
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertEquals(
+                "Developed useful services.",
+                accepted.getCv().getProjects().get(0).getDescription());
+        assertTrue(accepted.getClaims().stream()
+                .flatMap(claim -> claim.getContentPaths().stream())
+                .anyMatch("/cv/projects/0/description"::equals));
+    }
+
+    @Test
+    void claimedUnsupportedProjectTextStillFailsEvidenceValidation()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        ((ObjectNode) output.at("/cv/projects/0"))
+                .put("description", "Built Kubernetes services.");
+
+        assertRejected(
+                output,
+                "sensitive or specific claim is absent from approved evidence");
+    }
+
+    @Test
+    void claimedGenericProjectProseCannotUseOnlyHeadingEvidence()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        ((ObjectNode) output.at("/cv/projects/0"))
+                .put(
+                        "description",
+                        "Delivered useful services with a careful approach.");
+        removeEvidenceId(
+                output,
+                1,
+                com.jobseekercopilot.cvcoverletter
+                        .GenerationInputFixtures
+                        .CV_PROJECT_FACT_ID.toString());
+
+        assertRejected(
+                output,
+                "project narrative lacks same-selection evidence");
+    }
+
+    @Test
+    void rejectsAnUnclaimedProjectDescriptionWhenItsSelectionHasNoDescriptionFact()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        removeContentPath(output, 1, "/cv/projects/0/description");
+        removeEvidenceId(
+                output,
+                1,
+                com.jobseekercopilot.cvcoverletter
+                        .GenerationInputFixtures
+                        .CV_PROJECT_FACT_ID.toString());
+        catalog = withoutEvidence(
+                com.jobseekercopilot.cvcoverletter
+                        .GenerationInputFixtures
+                        .CV_PROJECT_FACT_ID.toString());
+
+        InvalidLlmResponseException error = assertRejected(
+                output,
+                "final content contains unaccounted claim paths");
+
+        assertTrue(
+                error.getMessage().contains(
+                        "/cv/projects/0/description"),
+                error.getMessage());
+    }
+
+    @Test
+    void rejectsAnUnclaimedProjectDescriptionWhenItsSelectionIsAmbiguous()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        removeContentPath(output, 1, "/cv/projects/0/description");
+        List<ApprovedEvidenceRecord> records =
+                new java.util.ArrayList<>(catalog.records());
+        records.add(new ApprovedEvidenceRecord(
+                "83000000-0000-4000-8000-000000000001",
+                EvidenceSource.EVIDENCE_SNAPSHOT,
+                "/evidenceSnapshots/cv/selections/0/facts/3",
+                "A second description in the same project.",
+                "DESCRIPTION",
+                "PROJECT",
+                EvidencePurpose.CV));
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                List.copyOf(records),
+                catalog.sectionOrder());
+
+        InvalidLlmResponseException error = assertRejected(
+                output,
+                "final content contains unaccounted claim paths");
+
+        assertTrue(
+                error.getMessage().contains(
+                        "/cv/projects/0/description"),
+                error.getMessage());
+    }
+
+    @Test
+    void neverUsesDescriptionEvidenceFromAnotherProjectSelection()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        removeContentPath(output, 1, "/cv/projects/0/description");
+        removeEvidenceId(
+                output,
+                1,
+                com.jobseekercopilot.cvcoverletter
+                        .GenerationInputFixtures
+                        .CV_PROJECT_FACT_ID.toString());
+        catalog = withoutEvidence(
+                com.jobseekercopilot.cvcoverletter
+                        .GenerationInputFixtures
+                        .CV_PROJECT_FACT_ID.toString());
+        List<ApprovedEvidenceRecord> records =
+                new java.util.ArrayList<>(catalog.records());
+        records.add(new ApprovedEvidenceRecord(
+                "84000000-0000-4000-8000-000000000001",
+                EvidenceSource.EVIDENCE_SNAPSHOT,
+                "/evidenceSnapshots/cv/selections/1/facts/0",
+                "Description from another selected project.",
+                "DESCRIPTION",
+                "PROJECT",
+                EvidencePurpose.CV));
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                List.copyOf(records),
+                catalog.sectionOrder());
+
+        InvalidLlmResponseException error = assertRejected(
+                output,
+                "final content contains unaccounted claim paths");
+
+        assertTrue(
+                error.getMessage().contains(
+                        "/cv/projects/0/description"),
+                error.getMessage());
+    }
+
+    @Test
+    void canonicalizationCannotBypassSelectedEvidenceQuality()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        removeContentPath(output, 1, "/cv/projects/0/description");
+        List<ApprovedEvidenceRecord> records =
+                new java.util.ArrayList<>(catalog.records());
+        records.add(new ApprovedEvidenceRecord(
+                "85000000-0000-4000-8000-000000000001",
+                EvidenceSource.EVIDENCE_SNAPSHOT,
+                "/evidenceSnapshots/cv/selections/1/facts/0",
+                "Another selected project remains unrepresented.",
+                "DESCRIPTION",
+                "PROJECT",
+                EvidencePurpose.CV));
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                List.copyOf(records),
+                catalog.sectionOrder());
+
+        assertRejected(
+                output,
+                "a selected evidence entry is missing from final content");
+    }
+
+    @Test
+    void revalidatesSchemaAndPlainTextAfterProjectCanonicalization()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode oversized = versionedOutput();
+        removeContentPath(
+                oversized,
+                1,
+                "/cv/projects/0/description");
+        replaceEvidenceValue(
+                com.jobseekercopilot.cvcoverletter
+                        .GenerationInputFixtures
+                        .CV_PROJECT_FACT_ID.toString(),
+                "x".repeat(2_001));
+        assertRejected(
+                oversized,
+                "does not satisfy the bounded text policy");
+
+        useVersionedCatalog();
+        ObjectNode activeContent = versionedOutput();
+        removeContentPath(
+                activeContent,
+                1,
+                "/cv/projects/0/description");
+        replaceEvidenceValue(
+                com.jobseekercopilot.cvcoverletter
+                        .GenerationInputFixtures
+                        .CV_PROJECT_FACT_ID.toString(),
+                "<script>alert(1)</script>");
+        assertRejected(
+                activeContent,
+                "active or markup content is forbidden");
     }
 
     @Test
@@ -548,6 +814,45 @@ class ClaimEvidenceValidatorTest {
         assertRejected(
                 versionedOutput(),
                 "a selected evidence entry is missing from final content");
+    }
+
+    @Test
+    void cvClaimWithSharedStableIdDoesNotCoverACoverLetterSelection()
+            throws Exception {
+        useVersionedCatalog();
+        String sharedId = com.jobseekercopilot.cvcoverletter
+                .GenerationInputFixtures.CV_PROJECT_FACT_ID.toString();
+        addCoverSelectionSharingEvidenceId(sharedId);
+
+        assertRejected(
+                versionedOutput(),
+                "a selected evidence entry is missing from final content");
+    }
+
+    @Test
+    void separatePurposeClaimsWithSharedStableIdCoverBothSelections()
+            throws Exception {
+        useVersionedCatalog();
+        String sharedId = com.jobseekercopilot.cvcoverletter
+                .GenerationInputFixtures.CV_PROJECT_FACT_ID.toString();
+        addCoverSelectionSharingEvidenceId(sharedId);
+        ObjectNode output = versionedOutput();
+        ((ArrayNode) output.at("/claims/6/evidenceIds"))
+                .add(sharedId);
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertTrue(accepted.getClaims().stream()
+                .filter(claim -> claim.getEvidenceIds()
+                        .contains(sharedId))
+                .anyMatch(claim -> claim.getContentPaths().stream()
+                        .allMatch(path -> path.startsWith("/cv/"))));
+        assertTrue(accepted.getClaims().stream()
+                .filter(claim -> claim.getEvidenceIds()
+                        .contains(sharedId))
+                .anyMatch(claim -> claim.getContentPaths().stream()
+                        .allMatch(path ->
+                                path.startsWith("/coverLetter/"))));
     }
 
     @Test
@@ -1039,6 +1344,91 @@ class ClaimEvidenceValidatorTest {
         coverLetterClaim.withArray("contentPaths")
                 .forEach(cvClaim.withArray("contentPaths")::add);
         claims.remove(6);
+    }
+
+    private void removeContentPath(
+            ObjectNode output,
+            int claimIndex,
+            String path
+    ) {
+        ArrayNode contentPaths =
+                (ArrayNode) output.at(
+                        "/claims/" + claimIndex + "/contentPaths");
+        for (int index = contentPaths.size() - 1; index >= 0; index--) {
+            if (contentPaths.get(index).asText().equals(path)) {
+                contentPaths.remove(index);
+            }
+        }
+    }
+
+    private void removeEvidenceId(
+            ObjectNode output,
+            int claimIndex,
+            String evidenceId
+    ) {
+        ArrayNode evidenceIds =
+                (ArrayNode) output.at(
+                        "/claims/" + claimIndex + "/evidenceIds");
+        for (int index = evidenceIds.size() - 1; index >= 0; index--) {
+            if (evidenceIds.get(index).asText().equals(evidenceId)) {
+                evidenceIds.remove(index);
+            }
+        }
+    }
+
+    private ClaimEvidenceCatalog withoutEvidence(
+            String evidenceId
+    ) {
+        return new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                catalog.records().stream()
+                        .filter(record ->
+                                !record.evidenceId()
+                                        .equals(evidenceId))
+                        .toList(),
+                catalog.sectionOrder());
+    }
+
+    private void addCoverSelectionSharingEvidenceId(
+            String evidenceId
+    ) {
+        List<ApprovedEvidenceRecord> records =
+                new java.util.ArrayList<>(catalog.records());
+        records.add(new ApprovedEvidenceRecord(
+                evidenceId,
+                EvidenceSource.EVIDENCE_SNAPSHOT,
+                "/evidenceSnapshots/coverLetter/selections/1/facts/0",
+                "Led community workshops.",
+                "DESCRIPTION",
+                "VOLUNTEERING",
+                EvidencePurpose.COVER_LETTER));
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                List.copyOf(records),
+                catalog.sectionOrder());
+    }
+
+    private void replaceEvidenceValue(
+            String evidenceId,
+            String value
+    ) {
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                catalog.records().stream()
+                        .map(record ->
+                                record.evidenceId()
+                                                .equals(evidenceId)
+                                        ? new ApprovedEvidenceRecord(
+                                                record.evidenceId(),
+                                                record.source(),
+                                                record.sourcePath(),
+                                                value,
+                                                record.factType(),
+                                                record.category(),
+                                                record.purpose())
+                                        : record)
+                        .toList(),
+                catalog.sectionOrder());
     }
 
     private ObjectNode reviewOnlyClaim(String id, String disposition, String reviewText) {

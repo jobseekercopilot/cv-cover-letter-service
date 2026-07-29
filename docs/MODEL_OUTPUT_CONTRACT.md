@@ -78,12 +78,13 @@ application creation or charge commit after invalid output.
 
 Successful response metadata and structured logs record the prompt release,
 template, rules and schema versions and their hashes. Request/response logs
-also record LLM contract `2.0`, parser `3.1.0`, claim policy `2.4.0`, the actual model ID and the
-gateway-owned deployment, admission and pricing-policy versions. The consumer
-accepts those fields only from the mandatory audit block in the reviewed
-gateway contract pinned at `c0a2eb1`; missing or malformed audit evidence fails
-before document storage, application creation or billing commit. The exact
-model ID is also written to the existing Payment commit record.
+also record LLM contract `2.0`, parser `3.2.0`, claim policy `2.5.0`, the
+actual model ID and the gateway-owned deployment, admission and pricing-policy
+versions. The consumer accepts those fields only from the mandatory audit block
+in the reviewed gateway contract pinned at `c0a2eb1`; missing or malformed
+audit evidence fails before document storage, application creation or billing
+commit. The exact model ID is also written to the existing Payment commit
+record.
 
 Durable attachment of the complete claim and generation provenance to an
 immutable stored document remains dependent on DOC-06 and is outside

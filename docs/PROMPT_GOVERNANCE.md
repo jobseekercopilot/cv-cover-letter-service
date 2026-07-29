@@ -82,7 +82,7 @@ does not reverse documents already generated or stored, so operators must use
 the recorded release and component hashes when identifying affected outputs.
 The oldest approved releases contain output exemplars rather than the active
 bounded schema. They are compiled into closed structural schemas at runtime and
-remain subject to parser `3.1.0` response, text, array and active-content
+remain subject to parser `3.2.0` response, text, array and active-content
 limits. Releases from `1.2.0` onward have specific field-by-field bounds at
 both the provider and local validation boundaries; releases from `1.3.0`
 onward enable the claim evidence ledger. The `1.5.x` post-grounding quality

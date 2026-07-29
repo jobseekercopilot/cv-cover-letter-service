@@ -19,7 +19,7 @@ import org.springframework.web.util.HtmlUtils;
 @Component
 public class LlmResponseParser {
 
-    static final String PARSER_VERSION = "3.1.0";
+    static final String PARSER_VERSION = "3.2.0";
     static final int MAX_RAW_RESPONSE_CHARACTERS = 100_000;
     static final int MAX_FALLBACK_TEXT_CHARACTERS = 4_000;
     static final int MAX_FALLBACK_ARRAY_ITEMS = 40;
@@ -81,6 +81,8 @@ public class LlmResponseParser {
             if (evidenceCatalog != null
                     && schema.path("properties").path("claims").isObject()) {
                 claimEvidenceValidator.validate(output, documents, evidenceCatalog);
+                validateSchema(output, schema, "$");
+                validatePlainText(output, "$");
                 var normalizedClaims = documents.getClaims();
                 documents = objectMapper.treeToValue(
                         output,

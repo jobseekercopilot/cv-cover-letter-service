@@ -27,7 +27,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class GeneratedDocumentQualityValidator {
-    static final String POLICY_VERSION = "1.0.0";
+    static final String POLICY_VERSION = "1.1.0";
     private static final int MIN_TARGET_SKILLS = 8;
     private static final int MAX_SKILLS = 12;
 
@@ -249,15 +249,20 @@ public class GeneratedDocumentQualityValidator {
         }
         Map<SelectionKey, List<ApprovedEvidenceRecord>> selections =
                 snapshotSelections(catalog.records());
-        Map<String, Set<String>> finalPathsByEvidenceId =
+        Map<PurposeEvidenceKey, Set<String>> finalPathsByEvidenceId =
                 finalPathsByEvidenceId(documents.getClaims());
         for (Map.Entry<SelectionKey, List<ApprovedEvidenceRecord>> entry :
                 selections.entrySet()) {
             Set<String> selectedPaths = new LinkedHashSet<>();
             for (ApprovedEvidenceRecord record : entry.getValue()) {
-                selectedPaths.addAll(finalPathsByEvidenceId.getOrDefault(
-                        record.evidenceId(),
-                        Set.of()));
+                for (EvidencePurpose purpose :
+                        supportedDocumentPurposes(entry.getKey().purpose())) {
+                    selectedPaths.addAll(finalPathsByEvidenceId.getOrDefault(
+                            new PurposeEvidenceKey(
+                                    purpose,
+                                    record.evidenceId()),
+                            Set.of()));
+                }
             }
             require(!selectedPaths.isEmpty(),
                     "$.claims",
@@ -280,9 +285,14 @@ public class GeneratedDocumentQualityValidator {
         if (!"2.0".equals(catalog.catalogVersion())) {
             return;
         }
-        Map<String, ApprovedEvidenceRecord> evidenceById = new HashMap<>();
+        Map<String, List<ApprovedEvidenceRecord>> evidenceById =
+                new HashMap<>();
         catalog.records().forEach(record ->
-                evidenceById.put(record.evidenceId(), record));
+                evidenceById
+                        .computeIfAbsent(
+                                record.evidenceId(),
+                                ignored -> new ArrayList<>())
+                        .add(record));
         List<GeneratedClaim> claims = safe(documents.getClaims());
         int projectCount = safe(documents.getCv().getProjects()).size();
         for (int index = 0; index < projectCount; index++) {
@@ -304,22 +314,96 @@ public class GeneratedDocumentQualityValidator {
                     continue;
                 }
                 for (String evidenceId : safe(claim.getEvidenceIds())) {
-                    ApprovedEvidenceRecord record =
-                            evidenceById.get(evidenceId);
-                    if (record == null
-                            || record.source()
-                                    != EvidenceSource.EVIDENCE_SNAPSHOT) {
-                        continue;
+                    for (ApprovedEvidenceRecord record :
+                            evidenceById.getOrDefault(
+                                    evidenceId,
+                                    List.of())) {
+                        if (record.source()
+                                        != EvidenceSource.EVIDENCE_SNAPSHOT
+                                || !record.purpose()
+                                        .supports(EvidencePurpose.CV)) {
+                            continue;
+                        }
+                        selections.add(selectionPath(record.sourcePath()));
+                        categories.add(record.category());
                     }
-                    selections.add(selectionPath(record.sourcePath()));
-                    categories.add(record.category());
                 }
             }
             require(selections.size() == 1
                             && categories.equals(Set.of("PROJECT")),
                     "$.cv.projects[" + index + "]",
                     "project fields must come from one selected project entry");
+            String selection = selections.iterator().next();
+            require(StringUtils.hasText(
+                            documents.getCv().getProjects().get(index)
+                                    .getDescription()),
+                    "$.cv.projects[" + index + "].description",
+                    "project description is missing");
+            requireProjectNarrativeEvidence(
+                    claims,
+                    evidenceById,
+                    prefix + "description",
+                    selection);
+            for (int highlightIndex = 0;
+                    highlightIndex
+                            < safe(documents.getCv().getProjects().get(index)
+                                    .getHighlights()).size();
+                    highlightIndex++) {
+                requireProjectNarrativeEvidence(
+                        claims,
+                        evidenceById,
+                        prefix + "highlights/" + highlightIndex,
+                        selection);
+            }
         }
+    }
+
+    private void requireProjectNarrativeEvidence(
+            List<GeneratedClaim> claims,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            String contentPath,
+            String selection
+    ) {
+        boolean grounded = claims.stream()
+                .filter(this::isFinal)
+                .filter(claim ->
+                        safe(claim.getContentPaths())
+                                .contains(contentPath))
+                .flatMap(claim ->
+                        safe(claim.getEvidenceIds()).stream())
+                .flatMap(evidenceId ->
+                        evidenceById
+                                .getOrDefault(evidenceId, List.of())
+                                .stream())
+                .filter(record ->
+                        record.source()
+                                == EvidenceSource.EVIDENCE_SNAPSHOT)
+                .filter(record ->
+                        record.purpose()
+                                .supports(EvidencePurpose.CV))
+                .filter(record ->
+                        "PROJECT".equals(record.category()))
+                .filter(record ->
+                        projectNarrativeFact(record.factType()))
+                .anyMatch(record ->
+                        selection.equals(
+                                selectionPath(record.sourcePath())));
+        require(grounded,
+                "$." + contentPath.substring(1)
+                        .replaceAll("/(\\d+)", "[$1]")
+                        .replace('/', '.'),
+                "project narrative lacks same-selection evidence");
+    }
+
+    private boolean projectNarrativeFact(String factType) {
+        return factType != null
+                && Set.of(
+                        "DESCRIPTION",
+                        "RESPONSIBILITY",
+                        "RESPONSIBILITIES",
+                        "ACHIEVEMENT",
+                        "ACHIEVEMENTS")
+                .contains(factType);
     }
 
     private Map<SelectionKey, List<ApprovedEvidenceRecord>> snapshotSelections(
@@ -341,23 +425,60 @@ public class GeneratedDocumentQualityValidator {
         return selections;
     }
 
-    private Map<String, Set<String>> finalPathsByEvidenceId(
+    private Map<PurposeEvidenceKey, Set<String>> finalPathsByEvidenceId(
             List<GeneratedClaim> claims
     ) {
-        Map<String, Set<String>> pathsByEvidenceId = new HashMap<>();
+        Map<PurposeEvidenceKey, Set<String>> pathsByEvidenceId =
+                new HashMap<>();
         for (GeneratedClaim claim : safe(claims)) {
             if (!isFinal(claim)) {
+                continue;
+            }
+            EvidencePurpose purpose =
+                    finalContentPurpose(claim.getContentPaths());
+            if (purpose == null) {
                 continue;
             }
             for (String evidenceId : safe(claim.getEvidenceIds())) {
                 pathsByEvidenceId
                         .computeIfAbsent(
-                                evidenceId,
+                                new PurposeEvidenceKey(
+                                        purpose,
+                                        evidenceId),
                                 ignored -> new LinkedHashSet<>())
                         .addAll(safe(claim.getContentPaths()));
             }
         }
         return pathsByEvidenceId;
+    }
+
+    private EvidencePurpose finalContentPurpose(
+            List<String> contentPaths
+    ) {
+        List<String> paths = safe(contentPaths);
+        if (!paths.isEmpty()
+                && paths.stream().allMatch(path ->
+                        path != null && path.startsWith("/cv/"))) {
+            return EvidencePurpose.CV;
+        }
+        if (!paths.isEmpty()
+                && paths.stream().allMatch(path ->
+                        path != null
+                                && path.startsWith("/coverLetter/"))) {
+            return EvidencePurpose.COVER_LETTER;
+        }
+        return null;
+    }
+
+    private Set<EvidencePurpose> supportedDocumentPurposes(
+            EvidencePurpose purpose
+    ) {
+        if (purpose == EvidencePurpose.BOTH) {
+            return Set.of(
+                    EvidencePurpose.CV,
+                    EvidencePurpose.COVER_LETTER);
+        }
+        return purpose == null ? Set.of() : Set.of(purpose);
     }
 
     private String requiredSectionPrefix(SelectionKey key) {
@@ -481,6 +602,12 @@ public class GeneratedDocumentQualityValidator {
             EvidencePurpose purpose,
             String sourcePath,
             String category
+    ) {
+    }
+
+    private record PurposeEvidenceKey(
+            EvidencePurpose purpose,
+            String evidenceId
     ) {
     }
 }
