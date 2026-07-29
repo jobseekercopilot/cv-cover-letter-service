@@ -8,6 +8,7 @@ import com.jobseekercopilot.cvcoverletter.exception.InvalidLlmResponseException;
 import com.jobseekercopilot.cvcoverletter.model.ApprovedEvidenceRecord;
 import com.jobseekercopilot.cvcoverletter.model.ClaimEvidenceCatalog;
 import com.jobseekercopilot.cvcoverletter.model.EvidenceSource;
+import com.jobseekercopilot.cvcoverletter.model.EvidencePurpose;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -24,7 +25,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "1.0.0";
+    static final String POLICY_VERSION = "2.0.0";
 
     private static final Pattern NUMERIC_CLAIM =
             Pattern.compile("(?<![\\p{L}\\p{N}])\\d+(?:[.,]\\d+)?%?(?![\\p{L}\\p{N}])");
@@ -50,11 +51,41 @@ public class ClaimEvidenceValidator {
             throw invalid("$.claims", "claim ledger is missing");
         }
 
-        Map<String, ApprovedEvidenceRecord> evidenceById = new HashMap<>();
+        Map<String, List<ApprovedEvidenceRecord>> evidenceById =
+                new HashMap<>();
+        Set<String> evidenceScopeKeys = new HashSet<>();
         for (ApprovedEvidenceRecord record : catalog.records()) {
-            if (evidenceById.put(record.evidenceId(), record) != null) {
-                throw new IllegalStateException("Approved evidence catalogue contains duplicate IDs.");
+            if (record == null
+                    || !StringUtils.hasText(record.evidenceId())
+                    || record.purpose() == null
+                    || !evidenceScopeKeys.add(
+                            record.evidenceId()
+                                    + ":"
+                                    + record.purpose())) {
+                throw new IllegalStateException(
+                        "Approved evidence catalogue contains invalid or duplicate scoped IDs.");
             }
+            if ("2.0".equals(catalog.catalogVersion())) {
+                if (record.source() == EvidenceSource.PROFILE
+                        || record.evidenceId().startsWith("PROFILE.")) {
+                    throw new IllegalStateException(
+                            "Versioned evidence catalogue contains positional profile evidence.");
+                }
+                if (record.source()
+                        == EvidenceSource.EVIDENCE_SNAPSHOT) {
+                    try {
+                        java.util.UUID.fromString(record.evidenceId());
+                    } catch (IllegalArgumentException exception) {
+                        throw new IllegalStateException(
+                                "Versioned evidence catalogue contains a non-stable fact ID.");
+                    }
+                }
+            }
+            evidenceById
+                    .computeIfAbsent(
+                            record.evidenceId(),
+                            ignored -> new ArrayList<>())
+                    .add(record);
         }
 
         Set<String> expectedPaths = claimBearingPaths(output);
@@ -68,7 +99,8 @@ public class ClaimEvidenceValidator {
                     expectedPaths,
                     coveredPaths,
                     claimIds,
-                    evidenceById);
+                    evidenceById,
+                    "2.0".equals(catalog.catalogVersion()));
         }
         if (!coveredPaths.equals(expectedPaths)) {
             throw invalid("$.claims", "final content contains an unaccounted claim path");
@@ -82,7 +114,8 @@ public class ClaimEvidenceValidator {
             Set<String> expectedPaths,
             Set<String> coveredPaths,
             Set<String> claimIds,
-            Map<String, ApprovedEvidenceRecord> evidenceById
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            boolean versionedEvidence
     ) {
         String claimPath = "$.claims[" + index + "]";
         require(claim != null, claimPath, "claim is missing");
@@ -92,15 +125,19 @@ public class ClaimEvidenceValidator {
 
         List<String> evidenceIds = safe(claim.getEvidenceIds());
         List<String> contentPaths = safe(claim.getContentPaths());
-        List<ApprovedEvidenceRecord> evidence = new ArrayList<>();
+        List<List<ApprovedEvidenceRecord>> evidenceCandidates =
+                new ArrayList<>();
         Set<String> uniqueEvidenceIds = new HashSet<>();
         for (String evidenceId : evidenceIds) {
             require(StringUtils.hasText(evidenceId), claimPath + ".evidenceIds", "evidence ID is blank");
             require(uniqueEvidenceIds.add(evidenceId),
                     claimPath + ".evidenceIds", "evidence ID is duplicated");
-            ApprovedEvidenceRecord record = evidenceById.get(evidenceId);
-            require(record != null, claimPath + ".evidenceIds", "evidence ID is not approved");
-            evidence.add(record);
+            List<ApprovedEvidenceRecord> candidates =
+                    evidenceById.get(evidenceId);
+            require(candidates != null,
+                    claimPath + ".evidenceIds",
+                    "evidence ID is not approved");
+            evidenceCandidates.add(candidates);
         }
 
         boolean finalContent = claim.getDisposition() == ClaimDisposition.SUPPORTED
@@ -113,10 +150,25 @@ public class ClaimEvidenceValidator {
             return;
         }
 
-        require(!evidence.isEmpty(), claimPath + ".evidenceIds", "final claim has no approved evidence");
         require(!contentPaths.isEmpty(), claimPath + ".contentPaths", "final claim has no content path");
         require(!StringUtils.hasText(claim.getReviewText()),
                 claimPath + ".reviewText", "final claim contains review-only text");
+        EvidencePurpose purpose =
+                documentPurpose(contentPaths, claimPath);
+        List<ApprovedEvidenceRecord> evidence = new ArrayList<>();
+        for (List<ApprovedEvidenceRecord> candidates :
+                evidenceCandidates) {
+            List<ApprovedEvidenceRecord> compatible = candidates.stream()
+                    .filter(record -> record.purpose().supports(purpose))
+                    .toList();
+            require(compatible.size() == 1,
+                    claimPath + ".evidenceIds",
+                    "evidence ID is not approved for this document purpose");
+            evidence.add(compatible.get(0));
+        }
+        require(!evidence.isEmpty(),
+                claimPath + ".evidenceIds",
+                "final claim has no approved evidence");
         for (String contentPath : contentPaths) {
             require(expectedPaths.contains(contentPath),
                     claimPath + ".contentPaths", "content path is not an approved final claim path");
@@ -125,7 +177,12 @@ public class ClaimEvidenceValidator {
             JsonNode value = output.at(contentPath);
             require(value.isTextual() && StringUtils.hasText(value.textValue()),
                     claimPath + ".contentPaths", "content path does not contain final text");
-            validateEvidenceAlignment(contentPath, value.textValue(), evidence, claimPath);
+            validateEvidenceAlignment(
+                    contentPath,
+                    value.textValue(),
+                    evidence,
+                    claimPath,
+                    versionedEvidence);
         }
     }
 
@@ -133,7 +190,8 @@ public class ClaimEvidenceValidator {
             String contentPath,
             String content,
             List<ApprovedEvidenceRecord> evidence,
-            String claimPath
+            String claimPath,
+            boolean versionedEvidence
     ) {
         Predicate<ApprovedEvidenceRecord> atomicEvidence = atomicEvidenceFor(contentPath);
         if (atomicEvidence != null) {
@@ -146,11 +204,23 @@ public class ClaimEvidenceValidator {
             require(evidence.stream().anyMatch(record -> record.source() != EvidenceSource.REQUEST),
                     claimPath + ".evidenceIds",
                     "final claim is supported only by generation intent");
-            if (contentPath.startsWith("/cv/")) {
+            if (contentPath.startsWith("/cv/")
+                    && (!versionedEvidence
+                            || requiresConfirmedCandidateEvidence(
+                                    contentPath))) {
                 require(evidence.stream().anyMatch(
-                                record -> record.source() == EvidenceSource.PROFILE),
+                                record -> candidateEvidence(
+                                        record.source())),
                         claimPath + ".evidenceIds",
                         "candidate claim has no approved profile evidence");
+            }
+            if (versionedEvidence
+                    && requiresConfirmedCandidateEvidence(contentPath)) {
+                require(evidence.stream().anyMatch(
+                                record -> candidateEvidence(
+                                        record.source())),
+                        claimPath + ".evidenceIds",
+                        "candidate claim has no confirmed claimant evidence");
             }
         }
 
@@ -176,37 +246,63 @@ public class ClaimEvidenceValidator {
                     || record.evidenceId().equals("JOB.TITLE");
         }
         if (path.matches("/cv/coreSkills/\\d+/name")) {
-            return record -> record.evidenceId().startsWith("PROFILE.SKILL.");
+            return record -> record.evidenceId().startsWith("PROFILE.SKILL.")
+                    || factType(record, "DEMONSTRATED_SKILL");
         }
         if (path.matches("/cv/qualifications/\\d+/qualificationName")) {
-            return suffix(".NAME");
+            return record -> suffix(".NAME").test(record)
+                    || factType(record, "QUALIFICATION_TITLE");
         }
         if (path.matches("/cv/qualifications/\\d+/issuingBody")) {
-            return suffix(".ISSUING_BODY");
+            return record -> suffix(".ISSUING_BODY").test(record)
+                    || factType(record, "ISSUER", "INSTITUTION");
         }
         if (path.matches("/cv/qualifications/\\d+/status")) {
-            return suffix(".STATUS");
+            return record -> suffix(".STATUS").test(record)
+                    || factType(
+                            record,
+                            "STATUS",
+                            "RESULT",
+                            "RESULT_OR_STATUS");
         }
         if (path.matches("/cv/qualifications/\\d+/grade")) {
-            return suffix(".GRADE");
+            return record -> suffix(".GRADE").test(record)
+                    || factType(
+                            record,
+                            "RESULT",
+                            "RESULT_OR_STATUS");
         }
         if (path.matches("/cv/qualifications/\\d+/dateAchieved")) {
-            return suffix(".DATE_ACHIEVED");
+            return record -> suffix(".DATE_ACHIEVED").test(record)
+                    || factType(record, "ISSUE_DATE");
         }
         if (path.matches("/cv/qualifications/\\d+/expectedCompletion")) {
-            return suffix(".EXPECTED_COMPLETION");
+            return record -> suffix(".EXPECTED_COMPLETION").test(record)
+                    || factType(record, "EXPECTED_COMPLETION", "END_DATE");
         }
         if (path.matches("/cv/workHistory/\\d+/jobTitle")) {
-            return employmentSuffix(".JOB_TITLE");
+            return record -> employmentSuffix(".JOB_TITLE").test(record)
+                    || factType(
+                            record,
+                            "ROLE_TITLE",
+                            "PROJECT_ROLE",
+                            "HEADING");
         }
         if (path.matches("/cv/workHistory/\\d+/employer")) {
-            return employmentSuffix(".EMPLOYER");
+            return record -> employmentSuffix(".EMPLOYER").test(record)
+                    || factType(
+                            record,
+                            "ORGANISATION",
+                            "ORGANISATION_CONTEXT",
+                            "INSTITUTION");
         }
         if (path.matches("/cv/workHistory/\\d+/startDate")) {
-            return employmentSuffix(".START_DATE");
+            return record -> employmentSuffix(".START_DATE").test(record)
+                    || factType(record, "START_DATE");
         }
         if (path.matches("/cv/workHistory/\\d+/endDate")) {
-            return employmentSuffix(".END_DATE");
+            return record -> employmentSuffix(".END_DATE").test(record)
+                    || factType(record, "END_DATE");
         }
         if (path.equals("/coverLetter/jobTitle")) {
             return record -> record.evidenceId().equals("JOB.TITLE");
@@ -215,6 +311,46 @@ public class ClaimEvidenceValidator {
             return record -> record.evidenceId().equals("JOB.COMPANY");
         }
         return null;
+    }
+
+    private EvidencePurpose documentPurpose(
+            List<String> contentPaths,
+            String claimPath) {
+        Set<EvidencePurpose> purposes = new HashSet<>();
+        for (String contentPath : contentPaths) {
+            if (contentPath.startsWith("/cv/")) {
+                purposes.add(EvidencePurpose.CV);
+            } else if (contentPath.startsWith("/coverLetter/")) {
+                purposes.add(EvidencePurpose.COVER_LETTER);
+            }
+        }
+        require(purposes.size() == 1,
+                claimPath + ".contentPaths",
+                "a claim cannot span document purposes");
+        return purposes.iterator().next();
+    }
+
+    private boolean candidateEvidence(EvidenceSource source) {
+        return source == EvidenceSource.PROFILE
+                || source == EvidenceSource.EVIDENCE_SNAPSHOT;
+    }
+
+    private boolean requiresConfirmedCandidateEvidence(String path) {
+        return !path.equals("/cv/title")
+                && !path.equals("/cv/targetRole")
+                && !path.equals("/coverLetter/title")
+                && !path.equals("/coverLetter/jobTitle")
+                && !path.equals("/coverLetter/companyName");
+    }
+
+    private boolean factType(
+            ApprovedEvidenceRecord record,
+            String... allowed) {
+        if (record.factType() == null) {
+            return false;
+        }
+        return java.util.Arrays.asList(allowed)
+                .contains(record.factType());
     }
 
     private Predicate<ApprovedEvidenceRecord> suffix(String suffix) {

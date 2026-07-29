@@ -1,6 +1,7 @@
 package com.jobseekercopilot.cvcoverletter.service;
 
 import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validRequest;
+import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validVersionedRequest;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -142,6 +143,35 @@ class ClaimEvidenceValidatorTest {
         assertRejected(output, "candidate claim has no approved profile evidence");
     }
 
+    @Test
+    void versionedEvidenceIsStableAndCannotCrossDocumentPurposes()
+            throws Exception {
+        catalog = new ClaimEvidenceCatalogFactory().create(
+                new GenerationInputNormalizer(
+                        Clock.fixed(
+                                Instant.parse("2026-07-24T13:00:00Z"),
+                                ZoneOffset.UTC))
+                        .normalize(
+                                "owner-secret",
+                                validVersionedRequest()));
+        ObjectNode output = versionedOutput();
+
+        GeneratedApplicationDocuments accepted = parse(output);
+        assertEquals(10, accepted.getClaims().size());
+
+        ((ArrayNode) output.at("/claims/1/evidenceIds"))
+                .set(
+                        0,
+                        objectMapper.getNodeFactory().textNode(
+                                com.jobseekercopilot.cvcoverletter
+                                        .GenerationInputFixtures
+                                        .COVER_EXPERIENCE_FACT_ID
+                                        .toString()));
+        assertRejected(
+                output,
+                "not approved for this document purpose");
+    }
+
     private void assertUnsafePersonalSummary(String value, String reason) throws Exception {
         ObjectNode output = validOutput();
         ((ObjectNode) output.path("cv")).put("personalSummary", value);
@@ -162,6 +192,33 @@ class ClaimEvidenceValidatorTest {
 
     private ObjectNode validOutput() throws Exception {
         return (ObjectNode) objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+    }
+
+    private ObjectNode versionedOutput() throws Exception {
+        ObjectNode output = validOutput();
+        String cvFact = com.jobseekercopilot.cvcoverletter
+                .GenerationInputFixtures.CV_SKILL_FACT_ID.toString();
+        String coverFact = com.jobseekercopilot.cvcoverletter
+                .GenerationInputFixtures.COVER_EXPERIENCE_FACT_ID
+                .toString();
+        ((ArrayNode) output.at("/claims/1/evidenceIds"))
+                .set(
+                        0,
+                        objectMapper.getNodeFactory().textNode(cvFact));
+        for (int claimIndex : List.of(5, 6, 7, 8)) {
+            ArrayNode evidence =
+                    (ArrayNode) output.at(
+                            "/claims/"
+                                    + claimIndex
+                                    + "/evidenceIds");
+            evidence.removeAll();
+            evidence.add(coverFact);
+        }
+        ArrayNode cvTitleEvidence =
+                (ArrayNode) output.at("/claims/9/evidenceIds");
+        cvTitleEvidence.removeAll();
+        cvTitleEvidence.add("JOB.TITLE");
+        return output;
     }
 
     private ObjectNode reviewOnlyClaim(String id, String disposition, String reviewText) {

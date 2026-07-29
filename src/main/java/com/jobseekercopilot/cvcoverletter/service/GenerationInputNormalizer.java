@@ -3,6 +3,11 @@ package com.jobseekercopilot.cvcoverletter.service;
 import com.jobseekercopilot.cvcoverletter.dto.ContactDetails;
 import com.jobseekercopilot.cvcoverletter.dto.ContactInputSnapshot;
 import com.jobseekercopilot.cvcoverletter.dto.EmploymentInput;
+import com.jobseekercopilot.cvcoverletter.dto.EvidenceSnapshotFactInput;
+import com.jobseekercopilot.cvcoverletter.dto.EvidenceSnapshotInput;
+import com.jobseekercopilot.cvcoverletter.dto.EvidenceSnapshotPurpose;
+import com.jobseekercopilot.cvcoverletter.dto.EvidenceSnapshotSelectionInput;
+import com.jobseekercopilot.cvcoverletter.dto.EvidenceSnapshotsInput;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateRequest;
 import com.jobseekercopilot.cvcoverletter.dto.InputSourceOwner;
 import com.jobseekercopilot.cvcoverletter.dto.InputWarning;
@@ -15,6 +20,10 @@ import com.jobseekercopilot.cvcoverletter.dto.SnapshotProvenance;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidGenerationInputException;
 import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput;
 import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput.PromptEmployment;
+import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput.PromptEvidenceFact;
+import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput.PromptEvidenceSelection;
+import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput.PromptEvidenceSnapshot;
+import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput.PromptEvidenceSnapshots;
 import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput.PromptJob;
 import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput.PromptProfile;
 import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput.PromptQualification;
@@ -41,7 +50,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class GenerationInputNormalizer {
 
-    static final String INPUT_SCHEMA_VERSION = "1.0";
+    static final String LEGACY_INPUT_SCHEMA_VERSION = "1.0";
+    static final String EVIDENCE_INPUT_SCHEMA_VERSION = "2.0";
     static final int MAX_NORMALIZED_PROMPT_CHARACTERS = 40_000;
 
     private static final Duration MAX_CLOCK_SKEW = Duration.ofMinutes(5);
@@ -55,6 +65,9 @@ public class GenerationInputNormalizer {
     private static final Pattern WHITESPACE = Pattern.compile("\\s+");
     private static final Pattern OPAQUE_REFERENCE =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}");
+    private static final Pattern SHA256 = Pattern.compile("[a-f0-9]{64}");
+    private static final Pattern FACT_TYPE =
+            Pattern.compile("[A-Z][A-Z0-9_]{0,79}");
 
     private final Clock clock;
 
@@ -70,7 +83,11 @@ public class GenerationInputNormalizer {
         if (ownerId == null || ownerId.isBlank()) {
             throw invalid("owner", "trusted owner is required");
         }
-        if (request == null || !INPUT_SCHEMA_VERSION.equals(request.getInputSchemaVersion())) {
+        if (request == null
+                || (!LEGACY_INPUT_SCHEMA_VERSION.equals(
+                                request.getInputSchemaVersion())
+                        && !EVIDENCE_INPUT_SCHEMA_VERSION.equals(
+                                request.getInputSchemaVersion()))) {
             throw invalid("inputSchemaVersion", "unsupported input schema version");
         }
 
@@ -92,18 +109,226 @@ public class GenerationInputNormalizer {
         ContactDetails contact = normalizeContact(profile, warnings);
         PromptProfile promptProfile = normalizeProfile(profile, warnings);
         PromptJob promptJob = normalizeJob(job, warnings);
-        enforceTotalLimit(promptProfile, promptJob);
+        PromptEvidenceSnapshots evidenceSnapshots =
+                EVIDENCE_INPUT_SCHEMA_VERSION.equals(
+                                request.getInputSchemaVersion())
+                        ? normalizeEvidenceSnapshots(
+                                profile,
+                                profileProvenance,
+                                request.getEvidenceSnapshots(),
+                                warnings)
+                        : null;
+        enforceTotalLimit(
+                promptProfile,
+                promptJob,
+                evidenceSnapshots);
 
         return new NormalizedGenerationInput(
                 ownerId.trim(),
-                INPUT_SCHEMA_VERSION,
+                request.getInputSchemaVersion(),
                 profileProvenance,
                 contactProvenance,
                 jobProvenance,
                 contact,
                 promptProfile,
                 promptJob,
+                evidenceSnapshots,
                 List.copyOf(warnings));
+    }
+
+    private PromptEvidenceSnapshots normalizeEvidenceSnapshots(
+            ProfileInputSnapshot profile,
+            SnapshotProvenance profileProvenance,
+            EvidenceSnapshotsInput source,
+            List<InputWarning> warnings) {
+        require(source, "evidenceSnapshots");
+        if (!safe(profile.getSkills()).isEmpty()
+                || !safe(profile.getQualifications()).isEmpty()
+                || !safe(profile.getEmploymentHistory()).isEmpty()) {
+            throw invalid(
+                    "profile",
+                    "schema 2.0 does not accept browser-positioned claimant facts");
+        }
+        PromptEvidenceSnapshot cv = normalizeEvidenceSnapshot(
+                require(source.getCv(), "evidenceSnapshots.cv"),
+                EvidenceSnapshotPurpose.CV,
+                "evidenceSnapshots.cv",
+                warnings);
+        PromptEvidenceSnapshot coverLetter = normalizeEvidenceSnapshot(
+                require(
+                        source.getCoverLetter(),
+                        "evidenceSnapshots.coverLetter"),
+                EvidenceSnapshotPurpose.COVER_LETTER,
+                "evidenceSnapshots.coverLetter",
+                warnings);
+        if (cv.snapshotId().equals(coverLetter.snapshotId())) {
+            throw invalid(
+                    "evidenceSnapshots",
+                    "CV and cover letter require distinct purpose-bound snapshots");
+        }
+        String expectedRevision = profileProvenance.getResourceId();
+        String expectedVersion =
+                "sha256:" + cv.profileContentDigest();
+        if (!cv.profileRevisionId().toString().equals(expectedRevision)
+                || !coverLetter.profileRevisionId()
+                        .equals(cv.profileRevisionId())
+                || !coverLetter.profileContentDigest()
+                        .equals(cv.profileContentDigest())
+                || !expectedVersion.equals(
+                        profileProvenance.getVersion())) {
+            throw invalid(
+                    "evidenceSnapshots",
+                    "snapshots must bind to the exact supplied profile revision and digest");
+        }
+        return new PromptEvidenceSnapshots(cv, coverLetter);
+    }
+
+    private PromptEvidenceSnapshot normalizeEvidenceSnapshot(
+            EvidenceSnapshotInput source,
+            EvidenceSnapshotPurpose expectedPurpose,
+            String path,
+            List<InputWarning> warnings) {
+        require(source.getSnapshotId(), path + ".snapshotId");
+        if (source.getPurpose() != expectedPurpose) {
+            throw invalid(
+                    path + ".purpose",
+                    "must be " + expectedPurpose);
+        }
+        require(source.getProfileRevisionId(),
+                path + ".profileRevisionId");
+        String profileDigest = digest(
+                source.getProfileContentDigest(),
+                path + ".profileContentDigest");
+        String snapshotDigest =
+                digest(source.getSnapshotDigest(),
+                        path + ".snapshotDigest");
+        Instant createdAt = require(
+                source.getCreatedAt(), path + ".createdAt");
+        if (createdAt.isAfter(clock.instant().plus(MAX_CLOCK_SKEW))) {
+            throw invalid(path + ".createdAt", "must not be in the future");
+        }
+        List<com.jobseekercopilot.cvcoverletter.dto.EvidenceCategory>
+                sectionOrder = source.getSectionOrder() == null
+                ? List.of()
+                : List.copyOf(source.getSectionOrder());
+        if (sectionOrder.isEmpty()
+                || sectionOrder.size() > 9
+                || sectionOrder.stream().anyMatch(java.util.Objects::isNull)
+                || new LinkedHashSet<>(sectionOrder).size()
+                        != sectionOrder.size()) {
+            throw invalid(
+                    path + ".sectionOrder",
+                    "must be a non-empty unique ordered category list");
+        }
+        List<EvidenceSnapshotSelectionInput> sourceSelections =
+                source.getSelections() == null
+                        ? List.of()
+                        : source.getSelections();
+        if (sourceSelections.isEmpty()
+                || sourceSelections.size() > 50) {
+            throw invalid(
+                    path + ".selections",
+                    "must contain 1 to 50 selected revisions");
+        }
+        Set<java.util.UUID> entryIds = new LinkedHashSet<>();
+        Set<java.util.UUID> factIds = new LinkedHashSet<>();
+        List<PromptEvidenceSelection> selections = new ArrayList<>();
+        for (int selectionIndex = 0;
+                selectionIndex < sourceSelections.size();
+                selectionIndex++) {
+            EvidenceSnapshotSelectionInput selection =
+                    require(
+                            sourceSelections.get(selectionIndex),
+                            path + ".selections[" + selectionIndex + "]");
+            String selectionPath =
+                    path + ".selections[" + selectionIndex + "]";
+            if (selection.getEntryId() == null
+                    || !entryIds.add(selection.getEntryId())) {
+                throw invalid(
+                        selectionPath + ".entryId",
+                        "must be present and unique");
+            }
+            require(selection.getRevisionId(),
+                    selectionPath + ".revisionId");
+            if (selection.getRevisionNumber() == null
+                    || selection.getRevisionNumber() < 1) {
+                throw invalid(
+                        selectionPath + ".revisionNumber",
+                        "must be positive");
+            }
+            if (selection.getCategory() == null
+                    || !sectionOrder.contains(
+                            selection.getCategory())) {
+                throw invalid(
+                        selectionPath + ".category",
+                        "must appear in the claimant section order");
+            }
+            String contentDigest = digest(
+                    selection.getContentDigest(),
+                    selectionPath + ".contentDigest");
+            List<EvidenceSnapshotFactInput> sourceFacts =
+                    selection.getFacts() == null
+                            ? List.of()
+                            : selection.getFacts();
+            if (sourceFacts.isEmpty() || sourceFacts.size() > 50) {
+                throw invalid(
+                        selectionPath + ".facts",
+                        "must contain 1 to 50 confirmed facts");
+            }
+            List<PromptEvidenceFact> facts = new ArrayList<>();
+            for (int factIndex = 0;
+                    factIndex < sourceFacts.size();
+                    factIndex++) {
+                EvidenceSnapshotFactInput fact = require(
+                        sourceFacts.get(factIndex),
+                        selectionPath + ".facts[" + factIndex + "]");
+                String factPath =
+                        selectionPath + ".facts[" + factIndex + "]";
+                if (fact.getFactId() == null
+                        || !factIds.add(fact.getFactId())) {
+                    throw invalid(
+                            factPath + ".factId",
+                            "must be present and unique within its snapshot");
+                }
+                String factType = fact.getFactType() == null
+                        ? ""
+                        : fact.getFactType().trim();
+                if (!FACT_TYPE.matcher(factType).matches()) {
+                    throw invalid(
+                            factPath + ".factType",
+                            "has an invalid stable type");
+                }
+                String factValue = normalizeText(
+                        fact.getFactValue(),
+                        factPath + ".factValue",
+                        warnings,
+                        true);
+                Boolean numericClaim = require(
+                        fact.getNumericClaim(),
+                        factPath + ".numericClaim");
+                facts.add(new PromptEvidenceFact(
+                        fact.getFactId(),
+                        factType,
+                        factValue,
+                        numericClaim));
+            }
+            selections.add(new PromptEvidenceSelection(
+                    selection.getEntryId(),
+                    selection.getRevisionId(),
+                    selection.getRevisionNumber(),
+                    selection.getCategory(),
+                    contentDigest,
+                    List.copyOf(facts)));
+        }
+        return new PromptEvidenceSnapshot(
+                source.getSnapshotId(),
+                expectedPurpose,
+                source.getProfileRevisionId(),
+                profileDigest,
+                sectionOrder,
+                List.copyOf(selections),
+                snapshotDigest,
+                createdAt);
     }
 
     private ContactDetails normalizeContact(
@@ -451,7 +676,10 @@ public class GenerationInputNormalizer {
         }
     }
 
-    private void enforceTotalLimit(PromptProfile profile, PromptJob job) {
+    private void enforceTotalLimit(
+            PromptProfile profile,
+            PromptJob job,
+            PromptEvidenceSnapshots evidenceSnapshots) {
         int characters = streamText(profile.skills(), Function.identity())
                 + streamText(profile.targetRoles(), Function.identity())
                 + streamText(profile.qualifications(), this::qualificationText)
@@ -461,6 +689,11 @@ public class GenerationInputNormalizer {
                 + textLength(job.location())
                 + textLength(job.employmentType())
                 + textLength(job.description());
+        if (evidenceSnapshots != null) {
+            characters += evidenceCharacters(evidenceSnapshots.cv());
+            characters += evidenceCharacters(
+                    evidenceSnapshots.coverLetter());
+        }
         if (characters > MAX_NORMALIZED_PROMPT_CHARACTERS) {
             throw invalid(
                     "input",
@@ -468,6 +701,14 @@ public class GenerationInputNormalizer {
                             + MAX_NORMALIZED_PROMPT_CHARACTERS
                             + " characters");
         }
+    }
+
+    private int evidenceCharacters(PromptEvidenceSnapshot snapshot) {
+        return snapshot.selections().stream()
+                .flatMap(selection -> selection.facts().stream())
+                .map(PromptEvidenceFact::factValue)
+                .mapToInt(this::textLength)
+                .sum();
     }
 
     private <T> int streamText(List<T> values, Function<T, String> mapper) {
@@ -500,6 +741,18 @@ public class GenerationInputNormalizer {
             throw invalid(path, "contains unsupported characters");
         }
         return normalized;
+    }
+
+    private String digest(String value, String path) {
+        String normalized = value == null ? "" : value.trim();
+        if (!SHA256.matcher(normalized).matches()) {
+            throw invalid(path, "must be a lowercase SHA-256 digest");
+        }
+        return normalized;
+    }
+
+    private <T> List<T> safe(List<T> value) {
+        return value == null ? List.of() : value;
     }
 
     private String key(String... values) {

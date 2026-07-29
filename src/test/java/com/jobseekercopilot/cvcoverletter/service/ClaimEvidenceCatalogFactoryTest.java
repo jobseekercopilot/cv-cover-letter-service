@@ -1,6 +1,7 @@
 package com.jobseekercopilot.cvcoverletter.service;
 
 import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validRequest;
+import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validVersionedRequest;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -46,5 +47,41 @@ class ClaimEvidenceCatalogFactoryTest {
         assertFalse(boundary.contains("job-v12"));
         assertFalse(boundary.contains("alex@example.com"));
         assertThrows(UnsupportedOperationException.class, () -> first.records().clear());
+    }
+
+    @Test
+    void versionedCatalogUsesStableFactIdsAndNonTraditionalSections() {
+        NormalizedGenerationInput input = new GenerationInputNormalizer(
+                Clock.fixed(
+                        Instant.parse("2026-07-24T13:00:00Z"),
+                        ZoneOffset.UTC))
+                .normalize("owner-secret", validVersionedRequest());
+
+        ClaimEvidenceCatalog catalog =
+                new ClaimEvidenceCatalogFactory().create(input);
+
+        assertEquals("2.0", catalog.catalogVersion());
+        assertFalse(catalog.toString().contains("PROFILE.SKILL."));
+        assertEquals(
+                java.util.List.of("PROJECT"),
+                catalog.sectionOrder().get(
+                        com.jobseekercopilot.cvcoverletter.model
+                                .EvidencePurpose.CV));
+        assertEquals(
+                java.util.List.of("VOLUNTEERING"),
+                catalog.sectionOrder().get(
+                        com.jobseekercopilot.cvcoverletter.model
+                                .EvidencePurpose.COVER_LETTER));
+        assertTrue(catalog.records().stream().anyMatch(record ->
+                record.evidenceId().equals(
+                        com.jobseekercopilot.cvcoverletter
+                                .GenerationInputFixtures
+                                .CV_SKILL_FACT_ID.toString())
+                        && "DEMONSTRATED_SKILL".equals(
+                                record.factType())
+                        && "PROJECT".equals(record.category())
+                        && record.purpose()
+                                == com.jobseekercopilot.cvcoverletter
+                                        .model.EvidencePurpose.CV));
     }
 }

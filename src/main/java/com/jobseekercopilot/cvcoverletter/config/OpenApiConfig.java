@@ -19,6 +19,10 @@ public class OpenApiConfig {
             "DraftGenerationResponse",
             "DraftGenerationUsage",
             "EmploymentInput",
+            "EvidenceSnapshotFactInput",
+            "EvidenceSnapshotInput",
+            "EvidenceSnapshotSelectionInput",
+            "EvidenceSnapshotsInput",
             "GenerateRequest",
             "JobInputSnapshot",
             "PromptGenerationMetadata",
@@ -37,12 +41,12 @@ public class OpenApiConfig {
                                 .name("X-Service-Token")))
                 .info(new Info()
                         .title("Jobseeker Copilot - CV Cover Letter Service API")
-                        .version("3.2.0")
+                        .version("3.3.0")
                         .description("""
-                                Produces bounded provenance-aware CV and cover-letter
-                                drafts for a Gateway-owned durable workflow. The
-                                legacy generate-and-commit endpoint remains during
-                                the coordinated consumer migration.
+                                Produces bounded CV and cover-letter drafts from
+                                purpose-specific immutable confirmed evidence
+                                snapshots. The legacy schema 1.0 endpoint contract
+                                remains during the coordinated consumer migration.
                                 """));
     }
 
