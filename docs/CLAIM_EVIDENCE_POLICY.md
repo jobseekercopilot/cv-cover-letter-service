@@ -1,15 +1,17 @@
 # Claim evidence policy
 
-Prompt release `cv-cover-letter-1.3.0` and output schema `3.0.0` establish the
-DOCGEN-08 claim-provenance boundary.
+Prompt release `cv-cover-letter-1.5.0`, output schema `3.2.0`, claim policy
+`2.4.0` and deterministic quality policy `1.0.0` establish the current
+claim-provenance and document-quality boundary.
 
 ## Approved evidence
 
 `ClaimEvidenceCatalogFactory` builds a new catalogue from the authenticated,
-normalised generation input. Stable IDs identify individual profile skills,
-target roles, qualification fields, employment fields, canonical job fields
-and the authenticated generation intent. The catalogue excludes owner IDs,
-source resource/version IDs and render-only contact details.
+normalised generation input. Schema `2.0` uses immutable purpose-bound evidence
+snapshots and stable fact UUIDs; the legacy catalogue retains positional profile
+facts only for the coordinated compatibility path. Canonical job facts and the
+authenticated generation intent remain service-owned. The catalogue excludes
+owner IDs and render-only contact details.
 
 The catalogue is server-owned. Model output cannot add evidence records or
 alter their IDs. Profile and job values are sent through LLM Gateway's
@@ -41,9 +43,29 @@ external write, `ClaimEvidenceValidator`:
 4. requires candidate CV narratives to cite profile evidence rather than job
    requirements or generation intent alone;
 5. exact-matches job titles, companies, profile skills, qualification facts,
-   employment titles, employers and dates to the appropriate approved record;
+   project titles/roles/context/dates and employment titles/employers/dates to
+   the appropriate approved record;
 6. rejects uncited numeric claims and unsupported high-risk terms covering
    tools, qualifications, motivation, availability, salary and right-to-work.
+
+For schema `3.2.0`, `GeneratedDocumentQualityValidator` runs only after the
+grounding ledger is normalised and accepted. It:
+
+1. requires canonical job titles, company, generic greeting and UK sign-off;
+2. limits skills to 12, rejects normalised duplicates and requires up to 8
+   confirmed demonstrated skills when that many are selected;
+3. rejects duplicate normalised narrative and repeated substantive
+   qualification phrases, including phrases embedded in longer paragraphs;
+4. requires every selected evidence entry to own at least one final path for
+   its document purpose;
+5. requires CV project, employment and education selections to appear in their
+   governed sections, and requires each project to use one selected PROJECT
+   entry.
+
+Project facts cannot satisfy the atomic employment fields. Empty optional
+employment narrative remains empty rather than being replaced with an
+arbitrary evidence fact. The active renderer omits every unsupported empty
+section.
 
 Validation failures expose only a ledger path and policy reason. They release
 the billing reservation and occur before document storage, application

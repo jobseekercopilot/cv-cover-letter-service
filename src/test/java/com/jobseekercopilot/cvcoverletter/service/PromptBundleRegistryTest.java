@@ -14,7 +14,7 @@ class PromptBundleRegistryTest {
 
     @Test
     void loadsAndVerifiesEveryPackagedApprovedBundle() {
-        PromptBundleRegistry registry = registry("cv-cover-letter-1.4.0");
+        PromptBundleRegistry registry = registry("cv-cover-letter-1.5.0");
 
         assertEquals(
                 java.util.Set.of(
@@ -22,29 +22,30 @@ class PromptBundleRegistryTest {
                         "cv-cover-letter-1.1.0",
                         "cv-cover-letter-1.2.0",
                         "cv-cover-letter-1.3.0",
-                        "cv-cover-letter-1.4.0"),
+                        "cv-cover-letter-1.4.0",
+                        "cv-cover-letter-1.5.0"),
                 registry.approvedReleaseIds());
         assertEquals("ACTIVE", registry.selected().releaseStatus());
-        assertEquals("1.4.0", registry.selected().metadata().bundleVersion());
-        assertEquals("3.1.0", registry.selected().metadata().schemaVersion());
+        assertEquals("1.5.0", registry.selected().metadata().bundleVersion());
+        assertEquals("3.2.0", registry.selected().metadata().schemaVersion());
         assertEquals(64, registry.selected().metadata().evaluationPolicySha256().length());
         assertFalse(registry.selected().metadata().bundleSha256().isBlank());
     }
 
     @Test
     void comparesReviewedReleasesAndSupportsConfigurationRollback() {
-        PromptBundleRegistry active = registry("cv-cover-letter-1.4.0");
+        PromptBundleRegistry active = registry("cv-cover-letter-1.5.0");
         PromptBundleComparison comparison =
-                active.compare("cv-cover-letter-1.3.0", "cv-cover-letter-1.4.0");
+                active.compare("cv-cover-letter-1.4.0", "cv-cover-letter-1.5.0");
 
         assertFalse(comparison.templateChanged());
         assertTrue(comparison.rulesChanged());
         assertTrue(comparison.schemaChanged());
         assertTrue(comparison.evaluationPolicyChanged());
 
-        PromptBundleRegistry rollback = registry("cv-cover-letter-1.2.0");
+        PromptBundleRegistry rollback = registry("cv-cover-letter-1.4.0");
         assertEquals("ROLLBACK", rollback.selected().releaseStatus());
-        assertEquals("1.2.0", rollback.selected().metadata().bundleVersion());
+        assertEquals("1.4.0", rollback.selected().metadata().bundleVersion());
     }
 
     @Test

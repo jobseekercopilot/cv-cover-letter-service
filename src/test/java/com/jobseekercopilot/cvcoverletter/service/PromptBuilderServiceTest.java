@@ -22,7 +22,7 @@ class PromptBuilderServiceTest {
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBuilderService service = new PromptBuilderService(
                 objectMapper,
-                registry(objectMapper, "cv-cover-letter-1.3.0"),
+                registry(objectMapper, "cv-cover-letter-1.5.0"),
                 properties,
                 new ClaimEvidenceCatalogFactory());
         GenerationInputNormalizer normalizer = new GenerationInputNormalizer(
@@ -35,7 +35,7 @@ class PromptBuilderServiceTest {
         assertTrue(result.getTrustedInstructions().contains("UK English"));
         assertTrue(result.getTrustedInstructions().contains("Aim for 5 to 7 concise paragraphs"));
         assertTrue(result.getTrustedInstructions().contains("specific to the job"));
-        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.3.0"));
+        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.5.0"));
         assertTrue(result.getTrustedInstructions().contains("UNTRUSTED CONTENT RULES"));
         assertTrue(result.getTrustedInstructions().contains(
                 "[CANONICAL JOB FACTS SUPPLIED THROUGH THE UNTRUSTED INPUT CHANNEL]"));
@@ -51,9 +51,13 @@ class PromptBuilderServiceTest {
         assertTrue(result.getOutputSchema().path("additionalProperties").isBoolean());
         assertTrue(result.getOutputSchema().at("/properties/cv/properties/title/pattern").isTextual());
         assertTrue(result.getOutputSchema().at(
-                "/properties/coverLetter/properties/bodyParagraphs/maxItems").asInt() == 7);
+                "/properties/coverLetter/properties/bodyParagraphs/maxItems").asInt() == 5);
+        assertTrue(result.getOutputSchema().at(
+                "/properties/cv/properties/coreSkills/maxItems").asInt() == 12);
+        assertTrue(result.getOutputSchema().at(
+                "/properties/cv/properties/projects").isObject());
         assertTrue(result.getGenerationMetadata().bundleSha256().matches("[a-f0-9]{64}"));
-        assertTrue(result.getGenerationMetadata().schemaVersion().equals("3.0.0"));
+        assertTrue(result.getGenerationMetadata().schemaVersion().equals("3.2.0"));
         assertTrue(result.getEvidenceCatalog().records().stream()
                 .anyMatch(record -> record.evidenceId().equals("JOB.TITLE")));
         assertFalse(result.getTrustedInstructions().contains("Build useful and reliable services."));

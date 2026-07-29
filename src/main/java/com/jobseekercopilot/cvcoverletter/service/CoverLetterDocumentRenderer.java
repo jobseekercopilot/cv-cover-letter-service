@@ -20,7 +20,14 @@ public class CoverLetterDocumentRenderer {
         if (contactDetails != null && contactDetails.hasAny()) {
             parts.add(String.join("\n", contactDetails.lines()));
         }
-        parts.add(letter.getGreeting().replaceAll("[,\\s]+$", "") + ",");
+        if (hasText(letter.getJobTitle())
+                && hasText(letter.getCompanyName())) {
+            parts.add("Application for "
+                    + letter.getJobTitle().trim()
+                    + " at "
+                    + letter.getCompanyName().trim());
+        }
+        parts.add("Dear Hiring Manager,");
         parts.add(letter.getOpeningParagraph());
         parts.addAll(letter.getBodyParagraphs());
         parts.add(letter.getClosingParagraph());
@@ -32,7 +39,11 @@ public class CoverLetterDocumentRenderer {
     private String signOff(ContactDetails contactDetails) {
         String fullName = contactDetails == null ? null : contactDetails.fullName();
         return fullName == null || fullName.isBlank()
-                ? "Kind regards,"
-                : "Kind regards,\n" + fullName.trim();
+                ? "Yours faithfully,"
+                : "Yours faithfully,\n" + fullName.trim();
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

@@ -5,15 +5,23 @@ Each approved release under `src/main/resources/prompts/bundles` packages the
 template, generation rules, output schema and synthetic evaluation policy with
 immutable component checksums. `index.json` is the only runtime allowlist.
 
-The active `cv-cover-letter-1.3.0` release converts the normalised profile and
+The active `cv-cover-letter-1.5.0` release converts the normalised profile and
 canonical job into a stable approved-evidence catalogue and treats that
 catalogue and normalisation warnings as untrusted data. It places the safety
 rules before that evidence and forbids direct, indirect, encoded, nested,
 Unicode-obfuscated and schema-escape instructions in source content from
-changing the task. The release also owns exact bounded JSON Schema `3.0.0`
+changing the task. The release also owns exact bounded JSON Schema `3.2.0`
 used at the provider boundary and by the local response parser. The domain
 bundle cannot name a model provider or transport API; provider mechanics
 belong behind LLM Gateway.
+
+Release `1.5.0` adds a dedicated project structure, separates employment from
+project evidence, caps and deduplicates confirmed skills, requires the correct
+generic UK sign-off, and requires every selected evidence entry to appear in
+final content for its purpose. The deterministic quality policy is enabled
+only for the `3.2.0` schema shape containing `cv.projects`; selecting the
+approved `1.4.0` rollback continues to use its older schema without applying
+new-shape constraints.
 
 Runtime assembly preserves those domains as separate LLM Gateway v2 fields:
 reviewed bundle text becomes `trustedInstructions`, normalised evidence becomes
@@ -70,12 +78,14 @@ Rollback restores prompt construction only. The LLM Gateway v2 physical
 trusted/untrusted separation remains enforced for every approved release. It
 does not reverse documents already generated or stored, so operators must use
 the recorded release and component hashes when identifying affected outputs.
-The older approved releases contain output exemplars rather than the active
+The oldest approved releases contain output exemplars rather than the active
 bounded schema. They are compiled into closed structural schemas at runtime and
-remain subject to parser `3.0.0` response, text, array and active-content
-limits. Releases `1.2.0` and `1.3.0` have specific field-by-field bounds at
-both the provider and local validation boundaries; only `1.3.0` enables the
-claim evidence ledger and deterministic claim validator.
+remain subject to parser `3.1.0` response, text, array and active-content
+limits. Releases from `1.2.0` onward have specific field-by-field bounds at
+both the provider and local validation boundaries; releases from `1.3.0`
+onward enable the claim evidence ledger. The `1.5.0` post-grounding quality
+policy is gated by the new project-aware schema so approved rollback remains
+usable with an evidence catalogue.
 
 ## Verification
 

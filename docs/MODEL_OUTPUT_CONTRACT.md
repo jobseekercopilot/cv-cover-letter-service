@@ -2,10 +2,10 @@
 
 CV and Cover Letter Service treats model output as untrusted until it passes
 the exact reviewed schema and local safe-content policy. The active prompt
-release is `cv-cover-letter-1.3.0`; it owns output schema `3.0.0` at
-`src/main/resources/prompts/bundles/cv-cover-letter-1.3.0/output-schema.json`.
+release is `cv-cover-letter-1.5.0`; it owns output schema `3.2.0` at
+`src/main/resources/prompts/bundles/cv-cover-letter-1.5.0/output-schema.json`.
 Its reviewed SHA-256 is
-`e82f1f3ee30793c2bcc3e2828a3c395c35f6312f3448d3c77824ea1b833d4e56`.
+`036ce33ef517c0c4b7cca5fa4467f31f9ecc85e90f98504a430162cc844a2998`.
 
 ## One contract at both boundaries
 
@@ -30,10 +30,11 @@ service's deliberately smaller subset.
 | CV or cover-letter titles | 200 characters |
 | Role, job, company, qualification and employer names | 80–160 characters by field |
 | CV summaries and tailored descriptions | 2,000 characters |
-| Cover-letter body | 1–7 paragraphs; 3,000 characters per paragraph |
-| Skills | 40 items |
-| Qualifications and work-history entries | 30 items each |
-| Responsibilities | 20 per work-history entry |
+| Cover-letter body | 3–5 body paragraphs; 3,000 characters per paragraph |
+| Skills | 0–12 items; quality policy requires up to 8 confirmed skills when available |
+| Projects | 10 entries; 8 highlights per project |
+| Qualifications and work-history entries | 20 items each |
+| Responsibilities | 12 per work-history entry |
 | Generation-note lists | 20 items; 500 characters per item |
 | Claim ledger | 1–40 claims; 30 evidence IDs and final paths per claim |
 
@@ -57,7 +58,16 @@ billing commit:
 5. bind the validated tree to the domain DTO;
 6. require every non-empty final claim-bearing path exactly once in the claim
    ledger and validate its disposition, approved evidence IDs, atomic facts,
-   numeric claims and high-risk claim categories.
+   numeric claims and high-risk claim categories;
+7. for schema `3.2.0`, enforce canonical titles and correspondence boilerplate,
+   unique skills and narrative, qualification-once, selected-entry coverage,
+   category-correct structured projects and employment-only work history.
+
+The renderer then omits empty sections, presents project-only CVs as Technical
+Profile, Projects, Technical Skills and Education and Qualifications, and adds
+a deterministic visible application line built from the ledger-owned canonical
+job title and company. Generic correspondence always uses `Dear Hiring Manager`
+and `Yours faithfully`.
 
 Failure messages contain only a JSON path and policy reason. They do not retain
 parser exceptions that may contain model-output fragments. Any failure
@@ -68,7 +78,7 @@ application creation or charge commit after invalid output.
 
 Successful response metadata and structured logs record the prompt release,
 template, rules and schema versions and their hashes. Request/response logs
-also record LLM contract `2.0`, parser `3.0.0`, the actual model ID and the
+also record LLM contract `2.0`, parser `3.1.0`, claim policy `2.4.0`, the actual model ID and the
 gateway-owned deployment, admission and pricing-policy versions. The consumer
 accepts those fields only from the mandatory audit block in the reviewed
 gateway contract pinned at `c0a2eb1`; missing or malformed audit evidence fails
@@ -84,6 +94,7 @@ no live or paid provider request and use no real job-seeker data or production
 credentials.
 
 See [`CLAIM_EVIDENCE_POLICY.md`](CLAIM_EVIDENCE_POLICY.md) for the catalogue,
-disposition and fail-closed rules. Schema `2.0.0` remains an approved emergency
-rollback contract; claim-ledger validation is applied only when the selected
-schema contains the governed `claims` property.
+disposition and fail-closed rules. Prompt release `1.4.0` remains the immediate
+approved emergency rollback. Claim-ledger validation is applied when the
+selected schema contains `claims`; the `1.5.0` quality policy is applied only
+when the selected schema also contains the governed `cv.projects` shape.

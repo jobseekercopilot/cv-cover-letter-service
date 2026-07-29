@@ -19,7 +19,7 @@ import org.springframework.web.util.HtmlUtils;
 @Component
 public class LlmResponseParser {
 
-    static final String PARSER_VERSION = "3.0.0";
+    static final String PARSER_VERSION = "3.1.0";
     static final int MAX_RAW_RESPONSE_CHARACTERS = 100_000;
     static final int MAX_FALLBACK_TEXT_CHARACTERS = 4_000;
     static final int MAX_FALLBACK_ARRAY_ITEMS = 40;
@@ -36,15 +36,18 @@ public class LlmResponseParser {
 
     private final ObjectMapper objectMapper;
     private final ClaimEvidenceValidator claimEvidenceValidator;
+    private final GeneratedDocumentQualityValidator qualityValidator;
 
     public LlmResponseParser(
             ObjectMapper objectMapper,
-            ClaimEvidenceValidator claimEvidenceValidator
+            ClaimEvidenceValidator claimEvidenceValidator,
+            GeneratedDocumentQualityValidator qualityValidator
     ) {
         this.objectMapper = objectMapper.copy()
                 .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
                 .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
         this.claimEvidenceValidator = claimEvidenceValidator;
+        this.qualityValidator = qualityValidator;
     }
 
     public GeneratedApplicationDocuments parse(String rawResponse, JsonNode schema) {
@@ -83,12 +86,24 @@ public class LlmResponseParser {
                         output,
                         GeneratedApplicationDocuments.class);
                 documents.setClaims(normalizedClaims);
+                if (usesStructuredQualityPolicy(schema)) {
+                    qualityValidator.validate(
+                            output,
+                            documents,
+                            evidenceCatalog);
+                }
             }
             return documents;
         } catch (JsonProcessingException exception) {
             // Parser exceptions can contain model-output fragments, so do not retain the cause.
             throw new InvalidLlmResponseException("LLM response was not valid JSON");
         }
+    }
+
+    private boolean usesStructuredQualityPolicy(JsonNode schema) {
+        return schema.at(
+                        "/properties/cv/properties/projects")
+                .isObject();
     }
 
     private void validateSchema(JsonNode value, JsonNode schema, String path) {

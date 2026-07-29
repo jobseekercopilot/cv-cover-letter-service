@@ -34,9 +34,12 @@ class ClaimEvidenceValidatorTest {
     @BeforeEach
     void setUp() throws Exception {
         objectMapper = new ObjectMapper().findAndRegisterModules();
-        parser = new LlmResponseParser(objectMapper, new ClaimEvidenceValidator());
+        parser = new LlmResponseParser(
+                objectMapper,
+                new ClaimEvidenceValidator(),
+                new GeneratedDocumentQualityValidator());
         try (InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.3.0/output-schema.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.0/output-schema.json")) {
             if (input == null) {
                 throw new IllegalStateException("Claim evidence schema fixture is missing.");
             }
@@ -77,14 +80,9 @@ class ClaimEvidenceValidatorTest {
 
         ObjectNode missingCoverage = validOutput();
         ((ArrayNode) missingCoverage.path("claims")).remove(8);
-        GeneratedApplicationDocuments normalizedMissingCoverage =
-                parse(missingCoverage);
-        assertTrue(normalizedMissingCoverage.getClaims().stream()
-                .flatMap(claim -> claim.getContentPaths().stream())
-                .anyMatch("/coverLetter/closingParagraph"::equals));
-        assertFalse("Thank you for your consideration.".equals(
-                normalizedMissingCoverage.getCoverLetter()
-                        .getClosingParagraph()));
+        assertRejected(
+                missingCoverage,
+                "final content contains unaccounted claim paths");
 
         ObjectNode duplicateCoverage = validOutput();
         ((ArrayNode) duplicateCoverage.at("/claims/1/contentPaths")).add("/cv/targetRole");
@@ -357,16 +355,227 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
+    void rejectsRepeatedSkillEvidenceAndNormalisedCoverParagraphs()
+            throws Exception {
+        ObjectNode repeatedSkills = validOutput();
+        ArrayNode skills = (ArrayNode) repeatedSkills.at("/cv/coreSkills");
+        for (String name : List.of("Java", "Spring")) {
+            ObjectNode skill = objectMapper.createObjectNode();
+            skill.put("name", name);
+            skill.put("evidence", "Built and maintained Java services.");
+            skills.add(skill);
+        }
+        ObjectNode skillClaim = objectMapper.createObjectNode();
+        skillClaim.put("claimId", "CLAIM-011");
+        skillClaim.put("disposition", "SUPPORTED");
+        skillClaim.putArray("evidenceIds")
+                .add("PROFILE.SKILL.1")
+                .add("PROFILE.SKILL.2")
+                .add("PROFILE.EMPLOYMENT.1.RESPONSIBILITIES");
+        skillClaim.putArray("contentPaths")
+                .add("/cv/coreSkills/0/name")
+                .add("/cv/coreSkills/0/evidence")
+                .add("/cv/coreSkills/1/name")
+                .add("/cv/coreSkills/1/evidence");
+        skillClaim.put("reviewText", "");
+        ((ArrayNode) repeatedSkills.path("claims")).add(skillClaim);
+        assertRejected(repeatedSkills, "repeated skill evidence");
+
+        ObjectNode repeatedParagraph = validOutput();
+        ((ArrayNode) repeatedParagraph.at("/coverLetter/bodyParagraphs"))
+                .set(
+                        1,
+                        objectMapper.getNodeFactory().textNode(
+                                "My experience is a strong match."));
+        assertRejected(
+                repeatedParagraph,
+                "duplicate normalised line or paragraph");
+    }
+
+    @Test
+    void rejectsSelectedProjectEvidenceThatIsNotInTheProjectSection()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        ((ArrayNode) output.at("/cv/projects")).removeAll();
+        ArrayNode contentPaths =
+                (ArrayNode) output.at("/claims/1/contentPaths");
+        for (int index = contentPaths.size() - 1;
+                index >= 0;
+                index--) {
+            if (contentPaths.get(index).asText()
+                    .startsWith("/cv/projects/")) {
+                contentPaths.remove(index);
+            }
+        }
+
+        assertRejected(
+                output,
+                "selected evidence is not represented in its governed section");
+    }
+
+    @Test
+    void requiresEightUniqueSkillsWhenEightConfirmedSkillsAreAvailable()
+            throws Exception {
+        useVersionedCatalog();
+        List<ApprovedEvidenceRecord> records =
+                new java.util.ArrayList<>(catalog.records());
+        List<String> additionalSkills = List.of(
+                "Kotlin",
+                "TypeScript",
+                "SQL",
+                "Docker",
+                "Terraform",
+                "Angular",
+                "Python");
+        for (int index = 0; index < additionalSkills.size(); index++) {
+            records.add(new ApprovedEvidenceRecord(
+                    "81000000-0000-4000-8000-00000000000" + index,
+                    EvidenceSource.EVIDENCE_SNAPSHOT,
+                    "/evidenceSnapshots/cv/selections/0/facts/"
+                            + (index + 3),
+                    additionalSkills.get(index),
+                    "DEMONSTRATED_SKILL",
+                    "PROJECT",
+                    EvidencePurpose.CV));
+        }
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                List.copyOf(records),
+                catalog.sectionOrder());
+
+        assertRejected(
+                versionedOutput(),
+                "does not cover the available confirmed skills");
+    }
+
+    @Test
+    void rejectsASelectedEvidenceEntryMissingFromFinalContent()
+            throws Exception {
+        useVersionedCatalog();
+        List<ApprovedEvidenceRecord> records =
+                new java.util.ArrayList<>(catalog.records());
+        records.add(new ApprovedEvidenceRecord(
+                "82000000-0000-4000-8000-000000000001",
+                EvidenceSource.EVIDENCE_SNAPSHOT,
+                "/evidenceSnapshots/coverLetter/selections/1/facts/0",
+                "Led community workshops.",
+                "DESCRIPTION",
+                "VOLUNTEERING",
+                EvidencePurpose.COVER_LETTER));
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                List.copyOf(records),
+                catalog.sectionOrder());
+
+        assertRejected(
+                versionedOutput(),
+                "a selected evidence entry is missing from final content");
+    }
+
+    @Test
+    void rejectsAQualificationPhraseRepeatedInsideLongerCoverParagraphs()
+            throws Exception {
+        useVersionedCatalog();
+        String qualificationId =
+                "80000000-0000-4000-8000-000000000005";
+        List<ApprovedEvidenceRecord> records =
+                new java.util.ArrayList<>(catalog.records());
+        records.add(new ApprovedEvidenceRecord(
+                qualificationId,
+                EvidenceSource.EVIDENCE_SNAPSHOT,
+                "/evidenceSnapshots/coverLetter/selections/1/facts/0",
+                "BMus Music Performance / Composition",
+                "PROGRAMME_OR_SUBJECT",
+                "EDUCATION",
+                EvidencePurpose.COVER_LETTER));
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                List.copyOf(records),
+                catalog.sectionOrder());
+        ObjectNode output = versionedOutput();
+        ArrayNode body =
+                (ArrayNode) output.at("/coverLetter/bodyParagraphs");
+        body.set(
+                0,
+                objectMapper.getNodeFactory().textNode(
+                        "My BMus Music Performance / Composition developed careful delivery."));
+        body.set(
+                1,
+                objectMapper.getNodeFactory().textNode(
+                        "Through BMus Music Performance / Composition, I built useful services."));
+        ((ArrayNode) output.at("/claims/6/evidenceIds"))
+                .add(qualificationId);
+        ((ArrayNode) output.at("/claims/7/evidenceIds"))
+                .add(qualificationId);
+
+        assertRejected(output, "qualification evidence is repeated");
+    }
+
+    @Test
+    void projectOnlyEvidenceRendersAsAProjectAndNeverAsEmployment()
+            throws Exception {
+        useVersionedCatalog();
+
+        GeneratedApplicationDocuments accepted = parse(versionedOutput());
+        String cv = new CvDocumentRenderer().render(accepted.getCv());
+        String coverLetter = new CoverLetterDocumentRenderer().render(
+                accepted.getCoverLetter());
+
+        assertTrue(cv.contains("Technical Profile"));
+        assertTrue(cv.contains("Projects\nJob Seeker Copilot"));
+        assertTrue(cv.contains("Technical Skills\nJava"));
+        assertFalse(cv.contains("Employment History"));
+        assertTrue(cv.indexOf("Technical Profile")
+                < cv.indexOf("Projects"));
+        assertTrue(cv.indexOf("Projects")
+                < cv.indexOf("Technical Skills"));
+        assertTrue(coverLetter.contains(
+                "Application for Java Developer at Example Ltd"));
+        assertTrue(coverLetter.endsWith("Yours faithfully,"));
+    }
+
+    @Test
+    void approvedRollbackSchemaRemainsUsableWithAnEvidenceCatalogue()
+            throws Exception {
+        JsonNode rollbackSchema;
+        try (InputStream input = getClass().getResourceAsStream(
+                "/prompts/bundles/cv-cover-letter-1.4.0/output-schema.json")) {
+            if (input == null) {
+                throw new IllegalStateException(
+                        "Rollback output schema fixture is missing.");
+            }
+            rollbackSchema = objectMapper.readTree(input);
+        }
+        ObjectNode output = validOutput();
+        ((ObjectNode) output.path("cv")).remove("projects");
+        ArrayNode skills = (ArrayNode) output.at("/cv/coreSkills");
+        for (int index = 0; index < 13; index++) {
+            ObjectNode skill = objectMapper.createObjectNode();
+            skill.put("name", "Java");
+            skill.put("evidence", "Java");
+            skills.add(skill);
+        }
+        ObjectNode claim = objectMapper.createObjectNode();
+        claim.put("claimId", "CLAIM-011");
+        claim.put("disposition", "SUPPORTED");
+        claim.putArray("evidenceIds").add("PROFILE.SKILL.1");
+        claim.putArray("contentPaths").add("/cv/coreSkills");
+        claim.put("reviewText", "");
+        ((ArrayNode) output.path("claims")).add(claim);
+
+        GeneratedApplicationDocuments accepted = parser.parse(
+                objectMapper.writeValueAsString(output),
+                rollbackSchema,
+                catalog);
+
+        assertEquals(13, accepted.getCv().getCoreSkills().size());
+    }
+
+    @Test
     void versionedEvidenceIsStableAndCannotCrossDocumentPurposes()
             throws Exception {
-        catalog = new ClaimEvidenceCatalogFactory().create(
-                new GenerationInputNormalizer(
-                        Clock.fixed(
-                                Instant.parse("2026-07-24T13:00:00Z"),
-                                ZoneOffset.UTC))
-                        .normalize(
-                                "owner-secret",
-                                validVersionedRequest()));
+        useVersionedCatalog();
         ObjectNode output = versionedOutput();
 
         GeneratedApplicationDocuments accepted = parse(output);
@@ -443,42 +652,24 @@ class ClaimEvidenceValidatorTest {
         assertEquals(
                 List.of(
                         "/coverLetter/bodyParagraphs/0",
-                        "/coverLetter/bodyParagraphs/1"),
+                        "/coverLetter/bodyParagraphs/1",
+                        "/coverLetter/bodyParagraphs/2"),
                 accepted.getClaims().get(6).getContentPaths());
     }
 
     @Test
-    void splitsExpandedContainerClaimsAtThePublishedReferenceLimit()
+    void rejectsSkillListsAboveTheGovernedQualityLimit()
             throws Exception {
         ObjectNode output = validOutput();
         ArrayNode skills = (ArrayNode) output.at("/cv/coreSkills");
-        for (int index = 0; index < 20; index++) {
+        for (int index = 0; index < 13; index++) {
             ObjectNode skill = objectMapper.createObjectNode();
             skill.put("name", "Java");
-            skill.put("evidence", "Java");
+            skill.put("evidence", "");
             skills.add(skill);
         }
-        ObjectNode containerClaim = objectMapper.createObjectNode();
-        containerClaim.put("claimId", "CLAIM-020");
-        containerClaim.put("disposition", "SUPPORTED");
-        containerClaim.putArray("evidenceIds").add("PROFILE.SKILL.1");
-        containerClaim.putArray("contentPaths").add("/cv/coreSkills");
-        containerClaim.put("reviewText", "");
-        ((ArrayNode) output.path("claims")).add(containerClaim);
 
-        GeneratedApplicationDocuments accepted = parse(output);
-
-        List<String> skillPaths = accepted.getClaims().stream()
-                .flatMap(claim -> claim.getContentPaths().stream())
-                .filter(path -> path.startsWith("/cv/coreSkills/"))
-                .toList();
-        assertEquals(40, skillPaths.size());
-        assertTrue(accepted.getClaims().stream()
-                .allMatch(claim ->
-                        claim.getContentPaths().size() <= 30));
-        assertTrue(accepted.getClaims().stream()
-                .allMatch(claim ->
-                        claim.getEvidenceIds().size() <= 30));
+        assertRejected(output, "$.cv.coreSkills");
     }
 
     @Test
@@ -541,25 +732,30 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
-    void replacesModelAuthoredSkillEvidenceWithExactClaimantEvidence()
+    void preservesSupportedSkillNarrativeInsteadOfReplacingItWithAnArbitraryFact()
             throws Exception {
         ObjectNode output = validOutput();
         ObjectNode skill = objectMapper.createObjectNode();
         skill.put("name", "Java");
-        skill.put("evidence", "More than 99 years of Java experience.");
+        skill.put("evidence", "Built useful Java services.");
         ((ArrayNode) output.at("/cv/coreSkills")).add(skill);
+        ObjectNode claim = objectMapper.createObjectNode();
+        claim.put("claimId", "CLAIM-011");
+        claim.put("disposition", "REWORDED");
+        claim.putArray("evidenceIds")
+                .add("PROFILE.SKILL.1")
+                .add("PROFILE.EMPLOYMENT.1.RESPONSIBILITIES");
+        claim.putArray("contentPaths")
+                .add("/cv/coreSkills/0/name")
+                .add("/cv/coreSkills/0/evidence");
+        claim.put("reviewText", "");
+        ((ArrayNode) output.path("claims")).add(claim);
 
         GeneratedApplicationDocuments accepted = parse(output);
 
         assertEquals(
-                "Java",
+                "Built useful Java services.",
                 accepted.getCv().getCoreSkills().get(0).getEvidence());
-        assertTrue(accepted.getClaims().stream()
-                .anyMatch(claim -> claim.getContentPaths().equals(
-                        List.of("/cv/coreSkills/0/name"))));
-        assertTrue(accepted.getClaims().stream()
-                .anyMatch(claim -> claim.getContentPaths().equals(
-                        List.of("/cv/coreSkills/0/evidence"))));
     }
 
     @Test
@@ -622,9 +818,7 @@ class ClaimEvidenceValidatorTest {
         history.put("endDate", "Present");
         history.putArray("responsibilities")
                 .add("Built and maintained Java services.");
-        history.put(
-                "tailoredDescription",
-                "Built and maintained Java services.");
+        history.put("tailoredDescription", "");
         ((ArrayNode) output.at("/cv/workHistory")).add(history);
 
         ObjectNode claim = objectMapper.createObjectNode();
@@ -641,8 +835,7 @@ class ClaimEvidenceValidatorTest {
                 .add("/cv/workHistory/0/employer")
                 .add("/cv/workHistory/0/startDate")
                 .add("/cv/workHistory/0/endDate")
-                .add("/cv/workHistory/0/responsibilities/0")
-                .add("/cv/workHistory/0/tailoredDescription");
+                .add("/cv/workHistory/0/responsibilities/0");
         claim.put("reviewText", "");
         ((ArrayNode) output.path("claims")).add(claim);
 
@@ -692,6 +885,17 @@ class ClaimEvidenceValidatorTest {
         return parser.parse(objectMapper.writeValueAsString(output), schema, catalog);
     }
 
+    private void useVersionedCatalog() {
+        catalog = new ClaimEvidenceCatalogFactory().create(
+                new GenerationInputNormalizer(
+                        Clock.fixed(
+                                Instant.parse("2026-07-24T13:00:00Z"),
+                                ZoneOffset.UTC))
+                        .normalize(
+                                "owner-secret",
+                                validVersionedRequest()));
+    }
+
     private ObjectNode validOutput() throws Exception {
         return (ObjectNode) objectMapper.readTree(CvCoverLetterServiceTest.validJson());
     }
@@ -700,13 +904,39 @@ class ClaimEvidenceValidatorTest {
         ObjectNode output = validOutput();
         String cvFact = com.jobseekercopilot.cvcoverletter
                 .GenerationInputFixtures.CV_SKILL_FACT_ID.toString();
+        String projectTitleFact = com.jobseekercopilot.cvcoverletter
+                .GenerationInputFixtures.CV_PROJECT_TITLE_FACT_ID
+                .toString();
+        String projectDescriptionFact = com.jobseekercopilot.cvcoverletter
+                .GenerationInputFixtures.CV_PROJECT_FACT_ID
+                .toString();
         String coverFact = com.jobseekercopilot.cvcoverletter
                 .GenerationInputFixtures.COVER_EXPERIENCE_FACT_ID
                 .toString();
-        ((ArrayNode) output.at("/claims/1/evidenceIds"))
-                .set(
-                        0,
-                        objectMapper.getNodeFactory().textNode(cvFact));
+        ObjectNode skill = objectMapper.createObjectNode();
+        skill.put("name", "Java");
+        skill.put("evidence", "");
+        ((ArrayNode) output.at("/cv/coreSkills")).add(skill);
+        ObjectNode project = objectMapper.createObjectNode();
+        project.put("title", "Job Seeker Copilot");
+        project.put("role", "");
+        project.put("context", "");
+        project.put("startDate", "");
+        project.put("endDate", "");
+        project.put("description", "Built useful services.");
+        project.putArray("highlights");
+        ((ArrayNode) output.at("/cv/projects")).add(project);
+        ArrayNode cvEvidence =
+                (ArrayNode) output.at("/claims/1/evidenceIds");
+        cvEvidence.set(
+                0,
+                objectMapper.getNodeFactory().textNode(cvFact));
+        cvEvidence.add(projectTitleFact);
+        cvEvidence.add(projectDescriptionFact);
+        ((ArrayNode) output.at("/claims/1/contentPaths"))
+                .add("/cv/coreSkills/0/name")
+                .add("/cv/projects/0/title")
+                .add("/cv/projects/0/description");
         for (int claimIndex : List.of(5, 6, 7, 8)) {
             ArrayNode evidence =
                     (ArrayNode) output.at(

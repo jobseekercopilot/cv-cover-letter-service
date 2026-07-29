@@ -28,7 +28,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.3.0";
+    static final String POLICY_VERSION = "2.4.0";
     private static final int MAX_CLAIMS = 40;
     private static final int MAX_CLAIM_REFERENCES = 30;
     private static final int MAX_REVIEW_TEXT_LENGTH = 500;
@@ -98,7 +98,7 @@ public class ClaimEvidenceValidator {
                         claimBearingPaths(output)),
                 evidenceById);
         canonicalizeOptionalAtomicContent(output, evidenceById);
-        normalizeCoreSkillEvidence(output, catalog.records());
+        canonicalizeDocumentIdentity(output, evidenceById);
         pruneUnsupportedWorkHistory(output, evidenceById);
         Set<String> expectedPaths = claimBearingPaths(output);
         List<GeneratedClaim> claims = normalizeDuplicateClaimIds(
@@ -108,11 +108,6 @@ public class ClaimEvidenceValidator {
                                         documents.getClaims(),
                                         expectedPaths),
                                 evidenceById)));
-        applyExactFallbackContent(
-                output,
-                claims,
-                catalog.records(),
-                expectedPaths);
         claims = addExactCoverageClaims(
                 output,
                 claims,
@@ -233,7 +228,39 @@ public class ClaimEvidenceValidator {
         return contentPath.matches(
                         "/cv/qualifications/\\d+/"
                                 + "(issuingBody|status|grade|dateAchieved|expectedCompletion)")
-                || contentPath.matches("/cv/workHistory/\\d+/endDate");
+                || contentPath.matches("/cv/workHistory/\\d+/endDate")
+                || contentPath.matches(
+                        "/cv/projects/\\d+/(title|role|context|startDate|endDate)");
+    }
+
+    private void canonicalizeDocumentIdentity(
+            JsonNode output,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById
+    ) {
+        String jobTitle = exactEvidenceValue(evidenceById, "JOB.TITLE");
+        String companyName = exactEvidenceValue(evidenceById, "JOB.COMPANY");
+        if (StringUtils.hasText(jobTitle)) {
+            replaceText(output, "/cv/title", jobTitle + " CV");
+            replaceText(output, "/cv/targetRole", jobTitle);
+            replaceText(output, "/coverLetter/title", jobTitle + " Cover Letter");
+            replaceText(output, "/coverLetter/jobTitle", jobTitle);
+        }
+        if (StringUtils.hasText(companyName)) {
+            replaceText(output, "/coverLetter/companyName", companyName);
+        }
+        replaceText(output, "/coverLetter/greeting", "Dear Hiring Manager");
+        replaceText(output, "/coverLetter/signOff", "Yours faithfully");
+    }
+
+    private String exactEvidenceValue(
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            String evidenceId
+    ) {
+        return evidenceById.getOrDefault(evidenceId, List.of()).stream()
+                .map(ApprovedEvidenceRecord::value)
+                .filter(StringUtils::hasText)
+                .findFirst()
+                .orElse("");
     }
 
     private void canonicalizeOptionalAtomicContent(
@@ -325,64 +352,6 @@ public class ClaimEvidenceValidator {
                                         && candidateEvidence(record.source())
                                         && atomicEvidence.test(record)
                                         && equalText(value, record.value()));
-    }
-
-    private void applyExactFallbackContent(
-            JsonNode output,
-            List<GeneratedClaim> claims,
-            List<ApprovedEvidenceRecord> records,
-            Set<String> expectedPaths
-    ) {
-        Set<String> covered = claims.stream()
-                .filter(java.util.Objects::nonNull)
-                .filter(claim -> isFinalContent(claim.getDisposition()))
-                .flatMap(claim -> safe(claim.getContentPaths()).stream())
-                .collect(java.util.stream.Collectors.toSet());
-        for (String contentPath : expectedPaths) {
-            if (covered.contains(contentPath)) {
-                continue;
-            }
-            EvidencePurpose purpose = contentPath.startsWith("/cv/")
-                    ? EvidencePurpose.CV
-                    : EvidencePurpose.COVER_LETTER;
-            ApprovedEvidenceRecord fallback = fallbackEvidence(
-                    contentPath,
-                    purpose,
-                    records);
-            if (fallback != null) {
-                replaceText(output, contentPath, fallback.value());
-            }
-        }
-    }
-
-    private ApprovedEvidenceRecord fallbackEvidence(
-            String contentPath,
-            EvidencePurpose purpose,
-            List<ApprovedEvidenceRecord> records
-    ) {
-        if (contentPath.equals("/cv/title")
-                || contentPath.equals("/coverLetter/title")) {
-            return records.stream()
-                    .filter(record -> record.evidenceId().equals("JOB.TITLE"))
-                    .findFirst()
-                    .orElse(null);
-        }
-        if (!requiresConfirmedCandidateEvidence(contentPath)) {
-            return null;
-        }
-        return records.stream()
-                .filter(record -> record.purpose().supports(purpose))
-                .filter(record -> candidateEvidence(record.source()))
-                .filter(record -> record.factType() == null
-                        || factType(
-                                record,
-                                "DESCRIPTION",
-                                "RESPONSIBILITIES",
-                                "ACHIEVEMENT",
-                                "HEADING",
-                                "DEMONSTRATED_SKILL"))
-                .findFirst()
-                .orElse(null);
     }
 
     private void replaceText(
@@ -499,57 +468,6 @@ public class ClaimEvidenceValidator {
             normalized.add(generated);
         }
         return List.copyOf(normalized);
-    }
-
-    private void normalizeCoreSkillEvidence(
-            JsonNode output,
-            List<ApprovedEvidenceRecord> records
-    ) {
-        JsonNode skills = output.at("/cv/coreSkills");
-        for (int index = 0; index < skills.size(); index++) {
-            JsonNode skill = skills.get(index);
-            if (!(skill instanceof ObjectNode skillObject)) {
-                continue;
-            }
-            String skillName = skill.path("name").asText();
-            ApprovedEvidenceRecord skillEvidence = records.stream()
-                    .filter(record -> record.purpose().supports(EvidencePurpose.CV))
-                    .filter(record -> candidateEvidence(record.source()))
-                    .filter(record -> factType(record, "DEMONSTRATED_SKILL")
-                            || record.evidenceId().startsWith("PROFILE.SKILL."))
-                    .filter(record -> equalText(skillName, record.value()))
-                    .findFirst()
-                    .orElse(null);
-            if (skillEvidence == null) {
-                continue;
-            }
-            String selectionPath = evidenceSelectionPath(
-                    skillEvidence.sourcePath());
-            ApprovedEvidenceRecord explanatoryEvidence = records.stream()
-                    .filter(record -> record.purpose().supports(EvidencePurpose.CV))
-                    .filter(record -> candidateEvidence(record.source()))
-                    .filter(record -> selectionPath != null
-                            && selectionPath.equals(
-                                    evidenceSelectionPath(
-                                            record.sourcePath())))
-                    .filter(record -> factType(
-                            record,
-                            "ACHIEVEMENT",
-                            "DESCRIPTION",
-                            "RESPONSIBILITIES",
-                            "HEADING"))
-                    .findFirst()
-                    .orElse(skillEvidence);
-            skillObject.put("evidence", explanatoryEvidence.value());
-        }
-    }
-
-    private String evidenceSelectionPath(String sourcePath) {
-        if (sourcePath == null) {
-            return null;
-        }
-        int facts = sourcePath.indexOf("/facts/");
-        return facts < 0 ? sourcePath : sourcePath.substring(0, facts);
     }
 
     private List<GeneratedClaim> enrichAtomicEvidenceReferences(
@@ -991,6 +909,26 @@ public class ClaimEvidenceValidator {
             return record -> record.evidenceId().startsWith("PROFILE.SKILL.")
                     || factType(record, "DEMONSTRATED_SKILL");
         }
+        if (path.matches("/cv/projects/\\d+/title")) {
+            return record -> projectEvidence(record)
+                    && factType(record, "HEADING");
+        }
+        if (path.matches("/cv/projects/\\d+/role")) {
+            return record -> projectEvidence(record)
+                    && factType(record, "PROJECT_ROLE", "ROLE_TITLE");
+        }
+        if (path.matches("/cv/projects/\\d+/context")) {
+            return record -> projectEvidence(record)
+                    && factType(record, "ORGANISATION_CONTEXT");
+        }
+        if (path.matches("/cv/projects/\\d+/startDate")) {
+            return record -> projectEvidence(record)
+                    && factType(record, "START_DATE");
+        }
+        if (path.matches("/cv/projects/\\d+/endDate")) {
+            return record -> projectEvidence(record)
+                    && factType(record, "END_DATE");
+        }
         if (path.matches("/cv/qualifications/\\d+/qualificationName")) {
             return record -> suffix(".NAME").test(record)
                     || factType(
@@ -1027,27 +965,26 @@ public class ClaimEvidenceValidator {
         }
         if (path.matches("/cv/workHistory/\\d+/jobTitle")) {
             return record -> employmentSuffix(".JOB_TITLE").test(record)
-                    || factType(
-                            record,
-                            "ROLE_TITLE",
-                            "PROJECT_ROLE",
-                            "HEADING");
+                    || employmentEvidence(record)
+                            && factType(record, "ROLE_TITLE", "HEADING");
         }
         if (path.matches("/cv/workHistory/\\d+/employer")) {
             return record -> employmentSuffix(".EMPLOYER").test(record)
-                    || factType(
-                            record,
-                            "ORGANISATION",
-                            "ORGANISATION_CONTEXT",
-                            "INSTITUTION");
+                    || employmentEvidence(record)
+                            && factType(
+                                    record,
+                                    "ORGANISATION",
+                                    "ORGANISATION_CONTEXT");
         }
         if (path.matches("/cv/workHistory/\\d+/startDate")) {
             return record -> employmentSuffix(".START_DATE").test(record)
-                    || factType(record, "START_DATE");
+                    || employmentEvidence(record)
+                            && factType(record, "START_DATE");
         }
         if (path.matches("/cv/workHistory/\\d+/endDate")) {
             return record -> employmentSuffix(".END_DATE").test(record)
-                    || factType(record, "END_DATE");
+                    || employmentEvidence(record)
+                            && factType(record, "END_DATE");
         }
         if (path.equals("/coverLetter/jobTitle")) {
             return record -> record.evidenceId().equals("JOB.TITLE");
@@ -1108,6 +1045,14 @@ public class ClaimEvidenceValidator {
                 && record.evidenceId().endsWith(suffix);
     }
 
+    private boolean projectEvidence(ApprovedEvidenceRecord record) {
+        return "PROJECT".equals(record.category());
+    }
+
+    private boolean employmentEvidence(ApprovedEvidenceRecord record) {
+        return "EMPLOYMENT".equals(record.category());
+    }
+
     private void requireMatchesAreSupported(
             Matcher matcher,
             String evidenceText,
@@ -1131,6 +1076,14 @@ public class ClaimEvidenceValidator {
         addText(paths, output, "/cv/targetRole");
         addText(paths, output, "/cv/personalSummary");
         addObjectArrayText(paths, output, "/cv/coreSkills", List.of("name", "evidence"));
+        addObjectArrayText(paths, output, "/cv/projects", List.of(
+                "title",
+                "role",
+                "context",
+                "startDate",
+                "endDate",
+                "description"));
+        addNestedTextArray(paths, output, "/cv/projects", "highlights");
         addObjectArrayText(paths, output, "/cv/qualifications", List.of(
                 "qualificationName",
                 "issuingBody",
