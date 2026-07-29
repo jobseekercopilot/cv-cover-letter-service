@@ -28,7 +28,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.2.0";
+    static final String POLICY_VERSION = "2.3.0";
     private static final int MAX_CLAIMS = 40;
     private static final int MAX_CLAIM_REFERENCES = 30;
     private static final int MAX_REVIEW_TEXT_LENGTH = 500;
@@ -993,7 +993,10 @@ public class ClaimEvidenceValidator {
         }
         if (path.matches("/cv/qualifications/\\d+/qualificationName")) {
             return record -> suffix(".NAME").test(record)
-                    || factType(record, "QUALIFICATION_TITLE");
+                    || factType(
+                            record,
+                            "QUALIFICATION_TITLE",
+                            "PROGRAMME_OR_SUBJECT");
         }
         if (path.matches("/cv/qualifications/\\d+/issuingBody")) {
             return record -> suffix(".ISSUING_BODY").test(record)

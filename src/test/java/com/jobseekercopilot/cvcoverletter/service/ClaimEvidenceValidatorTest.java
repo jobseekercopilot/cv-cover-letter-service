@@ -13,7 +13,10 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedApplicationDocuments;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidLlmResponseException;
+import com.jobseekercopilot.cvcoverletter.model.ApprovedEvidenceRecord;
 import com.jobseekercopilot.cvcoverletter.model.ClaimEvidenceCatalog;
+import com.jobseekercopilot.cvcoverletter.model.EvidencePurpose;
+import com.jobseekercopilot.cvcoverletter.model.EvidenceSource;
 import java.io.InputStream;
 import java.time.Clock;
 import java.time.Instant;
@@ -575,6 +578,100 @@ class ClaimEvidenceValidatorTest {
         GeneratedApplicationDocuments accepted = parse(output);
 
         assertTrue(accepted.getCv().getWorkHistory().isEmpty());
+    }
+
+    @Test
+    void acceptsEducationProgrammeAsAnExactQualificationNameFact()
+            throws Exception {
+        String educationNameId = "EVIDENCE.EDUCATION.NAME";
+        addSnapshotFact(
+                educationNameId,
+                "PROGRAMME_OR_SUBJECT",
+                "Music Technology",
+                "EDUCATION");
+        ObjectNode output = validOutput();
+        addQualification(output, "Music Technology", "2024");
+        ((ArrayNode) output.at("/claims/10/evidenceIds"))
+                .set(
+                        0,
+                        objectMapper.getNodeFactory().textNode(
+                                educationNameId));
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertEquals(
+                "Music Technology",
+                accepted.getCv().getQualifications().get(0)
+                        .getQualificationName());
+    }
+
+    @Test
+    void acceptsPresentOnlyWhenGroundedByAnExactOngoingEndDateFact()
+            throws Exception {
+        String presentId = "EVIDENCE.EMPLOYMENT.PRESENT";
+        addSnapshotFact(
+                presentId,
+                "END_DATE",
+                "Present",
+                "EMPLOYMENT");
+        ObjectNode output = validOutput();
+        ObjectNode history = objectMapper.createObjectNode();
+        history.put("jobTitle", "Software Engineer");
+        history.put("employer", "Example Ltd");
+        history.put("startDate", "2022-03");
+        history.put("endDate", "Present");
+        history.putArray("responsibilities")
+                .add("Built and maintained Java services.");
+        history.put(
+                "tailoredDescription",
+                "Built and maintained Java services.");
+        ((ArrayNode) output.at("/cv/workHistory")).add(history);
+
+        ObjectNode claim = objectMapper.createObjectNode();
+        claim.put("claimId", "CLAIM-011");
+        claim.put("disposition", "SUPPORTED");
+        claim.putArray("evidenceIds")
+                .add("PROFILE.EMPLOYMENT.1.JOB_TITLE")
+                .add("PROFILE.EMPLOYMENT.1.EMPLOYER")
+                .add("PROFILE.EMPLOYMENT.1.START_DATE")
+                .add(presentId)
+                .add("PROFILE.EMPLOYMENT.1.RESPONSIBILITIES");
+        claim.putArray("contentPaths")
+                .add("/cv/workHistory/0/jobTitle")
+                .add("/cv/workHistory/0/employer")
+                .add("/cv/workHistory/0/startDate")
+                .add("/cv/workHistory/0/endDate")
+                .add("/cv/workHistory/0/responsibilities/0")
+                .add("/cv/workHistory/0/tailoredDescription");
+        claim.put("reviewText", "");
+        ((ArrayNode) output.path("claims")).add(claim);
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertEquals(
+                "Present",
+                accepted.getCv().getWorkHistory().get(0).getEndDate());
+    }
+
+    private void addSnapshotFact(
+            String evidenceId,
+            String factType,
+            String value,
+            String category) {
+        List<ApprovedEvidenceRecord> records =
+                new java.util.ArrayList<>(catalog.records());
+        records.add(new ApprovedEvidenceRecord(
+                evidenceId,
+                EvidenceSource.EVIDENCE_SNAPSHOT,
+                "/evidenceSnapshots/cv/selections/0/facts/0",
+                value,
+                factType,
+                category,
+                EvidencePurpose.CV));
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                List.copyOf(records),
+                catalog.sectionOrder());
     }
 
     private void assertUnsafePersonalSummary(String value, String reason) throws Exception {
