@@ -97,6 +97,7 @@ public class ClaimEvidenceValidator {
                         documents.getClaims(),
                         claimBearingPaths(output)),
                 evidenceById);
+        canonicalizeOptionalAtomicContent(output, evidenceById);
         normalizeCoreSkillEvidence(output, catalog.records());
         pruneUnsupportedWorkHistory(output, evidenceById);
         Set<String> expectedPaths = claimBearingPaths(output);
@@ -233,6 +234,51 @@ public class ClaimEvidenceValidator {
                         "/cv/qualifications/\\d+/"
                                 + "(issuingBody|status|grade|dateAchieved|expectedCompletion)")
                 || contentPath.matches("/cv/workHistory/\\d+/endDate");
+    }
+
+    private void canonicalizeOptionalAtomicContent(
+            JsonNode output,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById
+    ) {
+        for (String contentPath : claimBearingPaths(output)) {
+            if (!mayBeEmptyWhenUnsupported(contentPath)) {
+                continue;
+            }
+            JsonNode current = output.at(contentPath);
+            Predicate<ApprovedEvidenceRecord> atomicEvidence =
+                    atomicEvidenceFor(contentPath);
+            if (!current.isTextual()
+                    || !StringUtils.hasText(current.textValue())
+                    || atomicEvidence == null) {
+                continue;
+            }
+            Map<String, ApprovedEvidenceRecord> uniqueFacts =
+                    new LinkedHashMap<>();
+            evidenceById.values().stream()
+                    .flatMap(List::stream)
+                    .filter(record ->
+                            record.purpose().supports(EvidencePurpose.CV))
+                    .filter(record -> candidateEvidence(record.source()))
+                    .filter(atomicEvidence)
+                    .forEach(record -> uniqueFacts.putIfAbsent(
+                            normalise(record.value()),
+                            record));
+            if (uniqueFacts.values().stream().anyMatch(
+                    record -> equalText(
+                            current.textValue(),
+                            record.value()))) {
+                continue;
+            }
+            replaceText(
+                    output,
+                    contentPath,
+                    uniqueFacts.size() == 1
+                            ? uniqueFacts.values()
+                                    .iterator()
+                                    .next()
+                                    .value()
+                            : "");
+        }
     }
 
     private void pruneUnsupportedWorkHistory(

@@ -231,7 +231,57 @@ class ClaimEvidenceValidatorTest {
                 .anyMatch(path ->
                         path.equals("/cv/qualifications/0/status")
                                 || path.equals(
-                                        "/cv/qualifications/0/grade")));
+                                    "/cv/qualifications/0/grade")));
+    }
+
+    @Test
+    void clearsUnsupportedOptionalAtomicContentMissingFromTheClaimLedger()
+            throws Exception {
+        ObjectNode output = validOutput();
+        addQualification(output, "BSc Computing", "2024");
+        ObjectNode qualification =
+                (ObjectNode) output.at("/cv/qualifications/0");
+        qualification.put("status", "Completed");
+        ObjectNode qualificationClaim =
+                (ObjectNode) output.at("/claims/10");
+        ArrayNode evidenceIds =
+                (ArrayNode) qualificationClaim.path("evidenceIds");
+        for (int index = evidenceIds.size() - 1;
+                index >= 0;
+                index--) {
+            if (evidenceIds.get(index).asText()
+                    .endsWith(".STATUS")) {
+                evidenceIds.remove(index);
+            }
+        }
+        ArrayNode contentPaths =
+                (ArrayNode) qualificationClaim.path("contentPaths");
+        for (int index = contentPaths.size() - 1;
+                index >= 0;
+                index--) {
+            if (contentPaths.get(index).asText()
+                    .equals("/cv/qualifications/0/status")) {
+                contentPaths.remove(index);
+            }
+        }
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                catalog.records().stream()
+                        .filter(record ->
+                                !record.evidenceId()
+                                        .endsWith(".STATUS"))
+                        .toList(),
+                catalog.sectionOrder());
+
+        GeneratedApplicationDocuments corrected = parse(output);
+
+        assertEquals(
+                "",
+                corrected.getCv().getQualifications().get(0)
+                        .getStatus());
+        assertFalse(corrected.getClaims().stream()
+                .flatMap(claim -> claim.getContentPaths().stream())
+                .anyMatch("/cv/qualifications/0/status"::equals));
     }
 
     @Test
