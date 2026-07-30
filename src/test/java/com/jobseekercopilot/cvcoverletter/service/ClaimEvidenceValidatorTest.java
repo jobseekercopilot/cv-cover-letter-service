@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jobseekercopilot.cvcoverletter.dto.ClaimDisposition;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedApplicationDocuments;
+import com.jobseekercopilot.cvcoverletter.dto.GeneratedClaim;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidLlmResponseException;
 import com.jobseekercopilot.cvcoverletter.model.ApprovedEvidenceRecord;
 import com.jobseekercopilot.cvcoverletter.model.ClaimEvidenceCatalog;
@@ -1764,6 +1765,282 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
+    void normalizesACompleteVersionedOneBasedBodyParagraphLedger()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        shiftBodyParagraphPathsOneBased(output);
+        List<String> firstClaimEvidence = jsonTextValues(
+                output.at("/claims/6/evidenceIds"));
+        List<String> secondClaimEvidence = jsonTextValues(
+                output.at("/claims/7/evidenceIds"));
+
+        GeneratedApplicationDocuments accepted = parse(output);
+        GeneratedClaim firstParagraphClaim =
+                claimById(accepted, "CLAIM-007");
+        GeneratedClaim remainingParagraphClaim =
+                claimById(accepted, "CLAIM-008");
+
+        assertEquals(
+                List.of("/coverLetter/bodyParagraphs/0"),
+                firstParagraphClaim.getContentPaths());
+        assertEquals(
+                List.of(
+                        "/coverLetter/bodyParagraphs/1",
+                        "/coverLetter/bodyParagraphs/2"),
+                remainingParagraphClaim.getContentPaths());
+        assertEquals(
+                firstClaimEvidence,
+                firstParagraphClaim.getEvidenceIds());
+        assertEquals(
+                secondClaimEvidence,
+                remainingParagraphClaim.getEvidenceIds());
+    }
+
+    @Test
+    void normalizesACompleteFiveParagraphOneBasedLedger()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        ArrayNode paragraphs =
+                (ArrayNode) output.at("/coverLetter/bodyParagraphs");
+        paragraphs.add("I contribute clear communication.");
+        paragraphs.add("I focus on dependable delivery.");
+        ((ArrayNode) output.at("/claims/7/contentPaths"))
+                .add("/coverLetter/bodyParagraphs/3")
+                .add("/coverLetter/bodyParagraphs/4");
+        shiftBodyParagraphPathsOneBased(output);
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertEquals(
+                List.of(
+                        "/coverLetter/bodyParagraphs/0",
+                        "/coverLetter/bodyParagraphs/1",
+                        "/coverLetter/bodyParagraphs/2",
+                        "/coverLetter/bodyParagraphs/3",
+                        "/coverLetter/bodyParagraphs/4"),
+                accepted.getClaims().stream()
+                        .flatMap(claim ->
+                                claim.getContentPaths().stream())
+                        .filter(path -> path.startsWith(
+                                "/coverLetter/bodyParagraphs/"))
+                        .sorted()
+                        .toList());
+    }
+
+    @Test
+    void rejectsIncompleteOrAmbiguousOneBasedBodyParagraphLedgers()
+            throws Exception {
+        useVersionedCatalog();
+
+        ObjectNode partial = versionedOutput();
+        shiftBodyParagraphPathsOneBased(partial);
+        removeContentPath(
+                partial,
+                7,
+                "/coverLetter/bodyParagraphs/3");
+        assertRejected(
+                partial,
+                "final content contains unaccounted claim paths");
+
+        ObjectNode duplicate = versionedOutput();
+        shiftBodyParagraphPathsOneBased(duplicate);
+        ((ArrayNode) duplicate.at("/claims/7/contentPaths"))
+                .set(
+                        1,
+                        objectMapper.getNodeFactory().textNode(
+                                "/coverLetter/bodyParagraphs/2"));
+        assertRejected(
+                duplicate,
+                "final content contains unaccounted claim paths");
+
+        ObjectNode mixed = versionedOutput();
+        shiftBodyParagraphPathsOneBased(mixed);
+        ((ArrayNode) mixed.at("/claims/6/contentPaths"))
+                .set(
+                        0,
+                        objectMapper.getNodeFactory().textNode(
+                                "/coverLetter/bodyParagraphs/0"));
+        assertRejected(
+                mixed,
+                "content path is not an approved final claim path");
+
+        ObjectNode containerAndLeaf = versionedOutput();
+        ((ArrayNode) containerAndLeaf.at(
+                        "/claims/6/contentPaths"))
+                .set(
+                        0,
+                        objectMapper.getNodeFactory().textNode(
+                                "/coverLetter/bodyParagraphs"));
+        assertRejected(
+                containerAndLeaf,
+                "body paragraph claims mix container and leaf paths");
+    }
+
+    @Test
+    void rejectsMalformedOneBasedBodyParagraphPointers()
+            throws Exception {
+        useVersionedCatalog();
+
+        for (String malformedPath : List.of(
+                "/coverLetter/bodyParagraphs/4",
+                "/coverLetter/bodyParagraphs/01",
+                "/coverLetter/bodyParagraphs/1/text")) {
+            ObjectNode output = versionedOutput();
+            shiftBodyParagraphPathsOneBased(output);
+            ((ArrayNode) output.at("/claims/6/contentPaths"))
+                    .set(
+                            0,
+                            objectMapper.getNodeFactory().textNode(
+                                    malformedPath));
+            assertRejected(
+                    output,
+                    "content path is not an approved final claim path");
+        }
+    }
+
+    @Test
+    void rejectsReviewOnlyBodyParagraphPointersWithoutRepairingThem()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode zeroBased = versionedOutput();
+        ObjectNode review = reviewOnlyClaim(
+                "CLAIM-011",
+                "CONFIRMATION_REQUIRED",
+                "Please confirm this paragraph.");
+        review.withArray("contentPaths")
+                .add("/coverLetter/bodyParagraphs/0");
+        ((ArrayNode) zeroBased.path("claims")).add(review);
+
+        assertRejected(
+                zeroBased,
+                "review-only claim points at final content");
+
+        ObjectNode oneBased = versionedOutput();
+        shiftBodyParagraphPathsOneBased(oneBased);
+        ObjectNode paragraphOwner =
+                (ObjectNode) oneBased.at("/claims/6");
+        paragraphOwner.put(
+                "disposition",
+                "CONFIRMATION_REQUIRED");
+        paragraphOwner.put(
+                "reviewText",
+                "Please confirm this paragraph.");
+
+        assertRejected(
+                oneBased,
+                "content path is not an approved final claim path");
+    }
+
+    @Test
+    void leavesValidZeroBasedAndContainerOnlyLedgersUnchanged()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode zeroBased = versionedOutput();
+        GeneratedApplicationDocuments zeroBasedAccepted =
+                parse(zeroBased);
+        assertEquals(
+                List.of("/coverLetter/bodyParagraphs/0"),
+                claimById(
+                                zeroBasedAccepted,
+                                "CLAIM-007")
+                        .getContentPaths());
+
+        ObjectNode containerOnly = versionedOutput();
+        ArrayNode claims =
+                (ArrayNode) containerOnly.path("claims");
+        ObjectNode owner = (ObjectNode) claims.get(6);
+        owner.withArray("contentPaths")
+                .removeAll()
+                .add("/coverLetter/bodyParagraphs");
+        claims.remove(7);
+
+        GeneratedApplicationDocuments containerAccepted =
+                parse(containerOnly);
+
+        assertEquals(
+                List.of(
+                        "/coverLetter/bodyParagraphs/0",
+                        "/coverLetter/bodyParagraphs/1",
+                        "/coverLetter/bodyParagraphs/2"),
+                claimById(
+                                containerAccepted,
+                                "CLAIM-007")
+                        .getContentPaths());
+    }
+
+    @Test
+    void doesNotApplyOneBasedRecoveryToLegacyEvidence()
+            throws Exception {
+        ObjectNode output = validOutput();
+        shiftBodyParagraphPathsOneBased(output);
+
+        assertRejected(
+                output,
+                "content path is not an approved final claim path");
+    }
+
+    @Test
+    void rejectsInvalidEvidenceAfterOneBasedParagraphRecovery()
+            throws Exception {
+        useVersionedCatalog();
+
+        ObjectNode unknown = versionedOutput();
+        shiftBodyParagraphPathsOneBased(unknown);
+        ((ArrayNode) unknown.at("/claims/6/evidenceIds"))
+                .add("UNKNOWN.EVIDENCE");
+        assertRejected(unknown, "evidence ID is not approved");
+
+        ObjectNode duplicate = versionedOutput();
+        shiftBodyParagraphPathsOneBased(duplicate);
+        ArrayNode duplicateEvidence =
+                (ArrayNode) duplicate.at("/claims/6/evidenceIds");
+        duplicateEvidence.add(duplicateEvidence.get(0).asText());
+        assertRejected(duplicate, "evidence ID is duplicated");
+
+        ObjectNode wrongPurpose = versionedOutput();
+        shiftBodyParagraphPathsOneBased(wrongPurpose);
+        ((ArrayNode) wrongPurpose.at("/claims/6/evidenceIds"))
+                .removeAll()
+                .add(com.jobseekercopilot.cvcoverletter
+                        .GenerationInputFixtures
+                        .CV_SKILL_FACT_ID
+                        .toString());
+        assertRejected(
+                wrongPurpose,
+                "evidence ID is not approved for this document purpose");
+
+        ObjectNode unsupported = versionedOutput();
+        shiftBodyParagraphPathsOneBased(unsupported);
+        ((ArrayNode) unsupported.at(
+                        "/coverLetter/bodyParagraphs"))
+                .set(
+                        0,
+                        objectMapper.getNodeFactory().textNode(
+                                "I improved delivery by 99%."));
+        assertRejected(
+                unsupported,
+                "numeric claim is absent from approved evidence");
+    }
+
+    @Test
+    void doesNotNormalizeOneBasedPointersForOtherArrays()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        replaceContentPath(
+                output,
+                1,
+                "/cv/projects/0/title",
+                "/cv/projects/1/title");
+
+        assertRejected(
+                output,
+                "content path is not an approved final claim path");
+    }
+
+    @Test
     void rejectsSkillListsAboveTheGovernedQualityLimit()
             throws Exception {
         ObjectNode output = validOutput();
@@ -2083,6 +2360,79 @@ class ClaimEvidenceValidatorTest {
                 contentPaths.remove(index);
             }
         }
+    }
+
+    private void replaceContentPath(
+            ObjectNode output,
+            int claimIndex,
+            String existingPath,
+            String replacementPath
+    ) {
+        ArrayNode contentPaths =
+                (ArrayNode) output.at(
+                        "/claims/" + claimIndex + "/contentPaths");
+        for (int index = 0;
+                index < contentPaths.size();
+                index++) {
+            if (contentPaths.get(index)
+                    .asText()
+                    .equals(existingPath)) {
+                contentPaths.set(
+                        index,
+                        objectMapper.getNodeFactory()
+                                .textNode(replacementPath));
+            }
+        }
+    }
+
+    private void shiftBodyParagraphPathsOneBased(
+            ObjectNode output
+    ) {
+        int paragraphCount =
+                output.at("/coverLetter/bodyParagraphs").size();
+        java.util.Map<String, String> shifts =
+                new java.util.LinkedHashMap<>();
+        for (int index = 0;
+                index < paragraphCount;
+                index++) {
+            shifts.put(
+                    "/coverLetter/bodyParagraphs/" + index,
+                    "/coverLetter/bodyParagraphs/" + (index + 1));
+        }
+        for (JsonNode claim : output.path("claims")) {
+            ArrayNode contentPaths =
+                    (ArrayNode) claim.path("contentPaths");
+            for (int index = 0;
+                    index < contentPaths.size();
+                    index++) {
+                String shifted =
+                        shifts.get(contentPaths.get(index).asText());
+                if (shifted != null) {
+                    contentPaths.set(
+                            index,
+                            objectMapper.getNodeFactory()
+                                    .textNode(shifted));
+                }
+            }
+        }
+    }
+
+    private List<String> jsonTextValues(JsonNode values) {
+        java.util.ArrayList<String> result =
+                new java.util.ArrayList<>();
+        values.forEach(value -> result.add(value.asText()));
+        return List.copyOf(result);
+    }
+
+    private GeneratedClaim claimById(
+            GeneratedApplicationDocuments documents,
+            String claimId
+    ) {
+        return documents.getClaims().stream()
+                .filter(claim ->
+                        claimId.equals(claim.getClaimId()))
+                .findFirst()
+                .orElseThrow();
     }
 
     private void removeEvidenceId(

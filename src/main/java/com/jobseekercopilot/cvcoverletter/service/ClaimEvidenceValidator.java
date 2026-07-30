@@ -28,7 +28,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.8.0";
+    static final String POLICY_VERSION = "2.9.0";
     private static final int MAX_CLAIMS = 40;
     private static final int MAX_CLAIM_REFERENCES = 30;
     private static final int MAX_REVIEW_TEXT_LENGTH = 500;
@@ -40,6 +40,8 @@ public class ClaimEvidenceValidator {
             "/coverLetter/openingParagraph";
     private static final String CLOSING_PARAGRAPH_PATH =
             "/coverLetter/closingParagraph";
+    private static final String BODY_PARAGRAPHS_PATH =
+            "/coverLetter/bodyParagraphs";
 
     private static final Pattern NUMERIC_CLAIM =
             Pattern.compile("(?<![\\p{L}\\p{N}])\\d+(?:[.,]\\d+)?%?(?![\\p{L}\\p{N}])");
@@ -103,12 +105,20 @@ public class ClaimEvidenceValidator {
                             ignored -> new ArrayList<>())
                     .add(record);
         }
-        Set<String> submittedPaths = claimBearingPaths(output);
-        validateSubmittedClaims(
+        validateSubmittedEvidence(
                 documents.getClaims(),
-                submittedPaths,
-                claimContentTopologyPaths(output),
                 evidenceById);
+        List<GeneratedClaim> submittedClaims =
+                normalizeCompleteOneBasedBodyParagraphPaths(
+                        output,
+                        documents.getClaims(),
+                        versionedEvidence);
+        documents.setClaims(submittedClaims);
+        Set<String> submittedPaths = claimBearingPaths(output);
+        validateSubmittedContentPaths(
+                submittedClaims,
+                submittedPaths,
+                claimContentTopologyPaths(output));
         canonicalizeCitedAtomicContent(
                 output,
                 expandContainerContentPaths(
@@ -180,10 +190,8 @@ public class ClaimEvidenceValidator {
         }
     }
 
-    private void validateSubmittedClaims(
+    private void validateSubmittedEvidence(
             List<GeneratedClaim> claims,
-            Set<String> submittedPaths,
-            Set<String> contentPathTopology,
             Map<String, List<ApprovedEvidenceRecord>> evidenceById
     ) {
         for (int claimIndex = 0;
@@ -221,7 +229,21 @@ public class ClaimEvidenceValidator {
                         evidencePath,
                         "evidence ID is not approved");
             }
+        }
+    }
 
+    private void validateSubmittedContentPaths(
+            List<GeneratedClaim> claims,
+            Set<String> submittedPaths,
+            Set<String> contentPathTopology
+    ) {
+        for (int claimIndex = 0;
+                claimIndex < claims.size();
+                claimIndex++) {
+            GeneratedClaim claim = claims.get(claimIndex);
+            if (claim == null) {
+                continue;
+            }
             List<String> contentPaths =
                     safe(claim.getContentPaths());
             boolean coversPopulatedContent = false;
@@ -259,6 +281,113 @@ public class ClaimEvidenceValidator {
                         "final claim has no populated content path");
             }
         }
+    }
+
+    private List<GeneratedClaim> normalizeCompleteOneBasedBodyParagraphPaths(
+            JsonNode output,
+            List<GeneratedClaim> claims,
+            boolean versionedEvidence
+    ) {
+        if (!versionedEvidence) {
+            return claims;
+        }
+        JsonNode bodyParagraphs = output.at(BODY_PARAGRAPHS_PATH);
+        if (!bodyParagraphs.isArray() || bodyParagraphs.isEmpty()) {
+            return claims;
+        }
+
+        Map<String, Integer> submittedCounts = new LinkedHashMap<>();
+        boolean allParagraphPointersAreFinal = true;
+        boolean hasContainerPointer = false;
+        boolean hasLeafPointer = false;
+        for (GeneratedClaim claim : claims) {
+            if (claim == null) {
+                continue;
+            }
+            for (String contentPath : safe(claim.getContentPaths())) {
+                if (contentPath == null
+                        || (!contentPath.equals(BODY_PARAGRAPHS_PATH)
+                                && !contentPath.startsWith(
+                                        BODY_PARAGRAPHS_PATH + "/"))) {
+                    continue;
+                }
+                submittedCounts.merge(contentPath, 1, Integer::sum);
+                allParagraphPointersAreFinal =
+                        allParagraphPointersAreFinal
+                                && isFinalContent(
+                                        claim.getDisposition());
+                hasContainerPointer =
+                        hasContainerPointer
+                                || contentPath.equals(
+                                        BODY_PARAGRAPHS_PATH);
+                hasLeafPointer =
+                        hasLeafPointer
+                                || !contentPath.equals(
+                                        BODY_PARAGRAPHS_PATH);
+            }
+        }
+
+        require(
+                !hasContainerPointer || !hasLeafPointer,
+                "$.claims",
+                "cover-letter body paragraph claims mix container and leaf paths");
+        if (!allParagraphPointersAreFinal) {
+            return claims;
+        }
+
+        Map<String, Integer> expectedOneBasedCounts =
+                new LinkedHashMap<>();
+        Map<String, String> oneBasedToZeroBased =
+                new LinkedHashMap<>();
+        for (int index = 0;
+                index < bodyParagraphs.size();
+                index++) {
+            String oneBased =
+                    BODY_PARAGRAPHS_PATH + "/" + (index + 1);
+            expectedOneBasedCounts.put(oneBased, 1);
+            oneBasedToZeroBased.put(
+                    oneBased,
+                    BODY_PARAGRAPHS_PATH + "/" + index);
+        }
+        if (!submittedCounts.equals(expectedOneBasedCounts)) {
+            return claims;
+        }
+
+        List<GeneratedClaim> normalized =
+                new ArrayList<>(claims.size());
+        for (GeneratedClaim claim : claims) {
+            if (claim == null
+                    || !isFinalContent(
+                            claim.getDisposition())) {
+                normalized.add(claim);
+                continue;
+            }
+            List<String> contentPaths =
+                    safe(claim.getContentPaths());
+            List<String> shiftedPaths =
+                    new ArrayList<>(contentPaths.size());
+            boolean shifted = false;
+            for (String contentPath : contentPaths) {
+                String shiftedPath =
+                        oneBasedToZeroBased.get(contentPath);
+                shiftedPaths.add(
+                        shiftedPath == null
+                                ? contentPath
+                                : shiftedPath);
+                shifted = shifted || shiftedPath != null;
+            }
+            if (!shifted) {
+                normalized.add(claim);
+                continue;
+            }
+            GeneratedClaim copy =
+                    copyWithClaimId(
+                            claim,
+                            claim.getClaimId());
+            copy.setContentPaths(List.copyOf(shiftedPaths));
+            normalized.add(copy);
+        }
+        return List.copyOf(normalized);
     }
 
     private Set<String> claimContentTopologyPaths(

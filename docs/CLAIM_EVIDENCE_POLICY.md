@@ -1,13 +1,13 @@
 # Claim evidence policy
 
 Prompt release `cv-cover-letter-1.5.1`, output schema `3.2.0`, claim policy
-`2.8.0` and deterministic quality policy `1.1.0` establish the current
+`2.9.0` and deterministic quality policy `1.1.0` establish the current
 claim-provenance and document-quality boundary.
 
 Release `1.5.1` makes the provider perform an explicit final-pointer coverage
 audit, including generic narrative and each populated array index, before it
 returns the claim ledger. Local validation remains fail-closed. If the model
-omits only a required project-description pointer, policy `2.8.0` replaces
+omits only a required project-description pointer, policy `2.9.0` replaces
 that prose with the unique exact `DESCRIPTION` fact from the PROJECT selection
 anchored by the same project's exact claimed `HEADING`; it then creates exact
 claim coverage. If a versioned response omits only an opening or closing
@@ -21,7 +21,7 @@ confirmed claimant evidence follows the ordinary evidence rules. Claimed
 unsafe prose, missing claimant evidence outside the exact exception, ambiguous
 project evidence and every other omitted narrative still reject.
 
-Policy `2.8.0` also isolates each versioned project claim after evidence
+Policy `2.9.0` also isolates each versioned project claim after evidence
 enrichment. The project paths retain snapshot facts only from their unique,
 exact-title-anchored PROJECT selection; paths outside that project are split
 into separate claims. This prevents a qualification or another project
@@ -36,6 +36,22 @@ non-claim field, missing, unknown or out-of-range pointer rejects. Submitted
 evidence IDs are validated as approved and unique before empty pointers can
 be removed. Exact-once coverage of all populated final content remains
 mandatory after canonicalisation.
+
+Policy `2.9.0` also repairs one narrowly identifiable structural provider
+error for versioned evidence: when every submitted final cover-letter body
+pointer, as an exact multiset, is the complete canonical one-based sequence
+`/coverLetter/bodyParagraphs/1` through the actual paragraph count, each
+pointer is shifted to its corresponding zero-based JSON Pointer. The pointer
+shift itself leaves claim ownership, disposition and submitted evidence IDs
+unchanged; ordinary deterministic evidence enrichment and the complete
+topology, evidence-purpose, content-alignment and exact-once checks still run.
+The repair never shifts legacy evidence, another array, a partial, duplicate,
+mixed, leading-zero, malformed or review-only sequence, or a container mixed
+with leaf paths. Malformed and out-of-range paths reject at topology
+validation; otherwise structurally valid unchanged paths continue through the
+ordinary evidence, canonicalisation and exact-coverage policy. A valid
+zero-based ledger and the existing container-only compatibility form are
+unchanged.
 
 ## Approved evidence
 
