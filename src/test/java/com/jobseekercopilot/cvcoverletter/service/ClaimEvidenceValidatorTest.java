@@ -519,6 +519,239 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
+    void isolatesProjectClaimsFromAGroupedQualificationSelection()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        String qualificationFactId =
+                "81000000-0000-4000-8000-000000000001";
+        List<ApprovedEvidenceRecord> records =
+                new java.util.ArrayList<>(catalog.records());
+        records.add(new ApprovedEvidenceRecord(
+                qualificationFactId,
+                EvidenceSource.EVIDENCE_SNAPSHOT,
+                "/evidenceSnapshots/cv/selections/1/facts/0",
+                "Level 3 Software Development",
+                "QUALIFICATION_TITLE",
+                "QUALIFICATION_TRAINING",
+                EvidencePurpose.CV));
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                List.copyOf(records),
+                catalog.sectionOrder());
+
+        ObjectNode qualification = objectMapper.createObjectNode();
+        qualification.put(
+                "qualificationName",
+                "Level 3 Software Development");
+        qualification.put("issuingBody", "");
+        qualification.put("status", "");
+        qualification.put("grade", "");
+        qualification.put("dateAchieved", "");
+        qualification.put("expectedCompletion", "");
+        ((ArrayNode) output.at("/cv/qualifications"))
+                .add(qualification);
+        ((ArrayNode) output.at("/claims/1/evidenceIds"))
+                .add(qualificationFactId);
+        ((ArrayNode) output.at("/claims/1/contentPaths"))
+                .add("/cv/qualifications/0/qualificationName");
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        var projectClaims = accepted.getClaims().stream()
+                .filter(claim ->
+                        claim.getContentPaths().stream()
+                                .anyMatch(path ->
+                                        path.startsWith(
+                                                "/cv/projects/0/")))
+                .toList();
+        assertFalse(projectClaims.isEmpty());
+        assertTrue(projectClaims.stream()
+                .noneMatch(claim ->
+                        claim.getEvidenceIds()
+                                .contains(qualificationFactId)));
+        assertTrue(accepted.getClaims().stream()
+                .filter(claim ->
+                        claim.getContentPaths().contains(
+                                "/cv/qualifications/0/qualificationName"))
+                .anyMatch(claim ->
+                        claim.getEvidenceIds()
+                                .contains(qualificationFactId)));
+    }
+
+    @Test
+    void splitsTwoSelectedProjectsIntoExactOnceProjectClaims()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        String secondTitleFactId =
+                "81100000-0000-4000-8000-000000000001";
+        String secondDescriptionFactId =
+                "81100000-0000-4000-8000-000000000002";
+        List<ApprovedEvidenceRecord> records =
+                new java.util.ArrayList<>(catalog.records());
+        records.add(new ApprovedEvidenceRecord(
+                secondTitleFactId,
+                EvidenceSource.EVIDENCE_SNAPSHOT,
+                "/evidenceSnapshots/cv/selections/1/facts/0",
+                "Evidence Library",
+                "HEADING",
+                "PROJECT",
+                EvidencePurpose.CV));
+        records.add(new ApprovedEvidenceRecord(
+                secondDescriptionFactId,
+                EvidenceSource.EVIDENCE_SNAPSHOT,
+                "/evidenceSnapshots/cv/selections/1/facts/1",
+                "Built a versioned evidence library.",
+                "DESCRIPTION",
+                "PROJECT",
+                EvidencePurpose.CV));
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                List.copyOf(records),
+                catalog.sectionOrder());
+
+        ObjectNode secondProject = objectMapper.createObjectNode();
+        secondProject.put("title", "Evidence Library");
+        secondProject.put("role", "");
+        secondProject.put("context", "");
+        secondProject.put("startDate", "");
+        secondProject.put("endDate", "");
+        secondProject.put(
+                "description",
+                "Built a versioned evidence library.");
+        secondProject.putArray("highlights");
+        ((ArrayNode) output.at("/cv/projects"))
+                .add(secondProject);
+        ((ArrayNode) output.at("/claims/1/evidenceIds"))
+                .add(secondTitleFactId)
+                .add(secondDescriptionFactId);
+        ((ArrayNode) output.at("/claims/1/contentPaths"))
+                .add("/cv/projects/1/title")
+                .add("/cv/projects/1/description");
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        for (String path : List.of(
+                "/cv/projects/0/title",
+                "/cv/projects/0/description",
+                "/cv/projects/1/title",
+                "/cv/projects/1/description")) {
+            assertEquals(
+                    1,
+                    accepted.getClaims().stream()
+                            .flatMap(claim ->
+                                    claim.getContentPaths().stream())
+                            .filter(path::equals)
+                            .count());
+        }
+        assertEquals(
+                accepted.getClaims().size(),
+                accepted.getClaims().stream()
+                        .map(claim -> claim.getClaimId())
+                        .distinct()
+                        .count());
+        accepted.getClaims().stream()
+                .filter(claim ->
+                        claim.getContentPaths().stream()
+                                .anyMatch(path ->
+                                        path.startsWith(
+                                                "/cv/projects/0/")))
+                .forEach(claim -> {
+                    assertFalse(claim.getEvidenceIds()
+                            .contains(secondTitleFactId));
+                    assertFalse(claim.getEvidenceIds()
+                            .contains(secondDescriptionFactId));
+                });
+    }
+
+    @Test
+    void rejectsSpecificTermEvidenceLaunderedFromAnotherProject()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        String otherProjectFactId =
+                "81200000-0000-4000-8000-000000000001";
+        List<ApprovedEvidenceRecord> records =
+                new java.util.ArrayList<>(catalog.records());
+        records.add(new ApprovedEvidenceRecord(
+                otherProjectFactId,
+                EvidenceSource.EVIDENCE_SNAPSHOT,
+                "/evidenceSnapshots/cv/selections/1/facts/0",
+                "Kubernetes",
+                "DESCRIPTION",
+                "PROJECT",
+                EvidencePurpose.CV));
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                List.copyOf(records),
+                catalog.sectionOrder());
+        ((ObjectNode) output.at("/cv/projects/0"))
+                .put(
+                        "description",
+                        "Built Kubernetes services.");
+        ((ArrayNode) output.at("/claims/1/evidenceIds"))
+                .add(otherProjectFactId);
+
+        assertRejected(
+                output,
+                "sensitive or specific claim is absent from approved evidence");
+    }
+
+    @Test
+    void leavesAmbiguousProjectTitleSelectionsToFailClosedValidation()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        String ambiguousTitleFactId =
+                "82000000-0000-4000-8000-000000000001";
+        List<ApprovedEvidenceRecord> records =
+                new java.util.ArrayList<>(catalog.records());
+        records.add(new ApprovedEvidenceRecord(
+                ambiguousTitleFactId,
+                EvidenceSource.EVIDENCE_SNAPSHOT,
+                "/evidenceSnapshots/cv/selections/1/facts/0",
+                "Job Seeker Copilot",
+                "HEADING",
+                "PROJECT",
+                EvidencePurpose.CV));
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                List.copyOf(records),
+                catalog.sectionOrder());
+        ((ArrayNode) output.at("/claims/1/evidenceIds"))
+                .add(ambiguousTitleFactId);
+
+        assertRejected(
+                output,
+                "project fields must come from one selected project entry");
+    }
+
+    @Test
+    void projectIsolationNeverHidesAnUnknownEvidenceId()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        ((ArrayNode) output.at("/claims/1/evidenceIds"))
+                .add("83000000-0000-4000-8000-000000000099");
+
+        assertRejected(output, "evidence ID is not approved");
+    }
+
+    @Test
+    void rejectsAnOverflowingProjectIndexAsAnUnapprovedContentPath()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        ((ArrayNode) output.at("/claims/1/contentPaths"))
+                .add("/cv/projects/9999999999/title");
+
+        assertRejected(
+                output,
+                "content path is not an approved final claim path");
+    }
+
+    @Test
     void rejectsAnUnclaimedProjectDescriptionWhenItsSelectionHasNoDescriptionFact()
             throws Exception {
         useVersionedCatalog();
@@ -1237,7 +1470,7 @@ class ClaimEvidenceValidatorTest {
         ObjectNode output = versionedOutput();
 
         GeneratedApplicationDocuments accepted = parse(output);
-        assertEquals(10, accepted.getClaims().size());
+        assertEquals(11, accepted.getClaims().size());
 
         ((ArrayNode) output.at("/claims/1/evidenceIds"))
                 .set(
@@ -1268,7 +1501,7 @@ class ClaimEvidenceValidatorTest {
 
         GeneratedApplicationDocuments accepted = parse(output);
 
-        assertEquals(10, accepted.getClaims().size());
+        assertEquals(11, accepted.getClaims().size());
         assertTrue(accepted.getClaims().stream()
                 .anyMatch(claim -> "CLAIM-1000".equals(claim.getClaimId())));
         accepted.getClaims().stream()

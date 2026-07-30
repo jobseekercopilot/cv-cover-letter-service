@@ -28,7 +28,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.6.0";
+    static final String POLICY_VERSION = "2.7.0";
     private static final int MAX_CLAIMS = 40;
     private static final int MAX_CLAIM_REFERENCES = 30;
     private static final int MAX_REVIEW_TEXT_LENGTH = 500;
@@ -51,6 +51,8 @@ public class ClaimEvidenceValidator {
                     + "|phd|doctorate|mba|master'?s degree"
                     + "|aws|amazon web services|azure|gcp|google cloud"
                     + "|docker|kubernetes|terraform|react|angular|python|java|spring)\\b");
+    private static final Pattern PROJECT_CONTENT_PATH =
+            Pattern.compile("^/cv/projects/(\\d+)/.+$");
 
     public void validate(
             JsonNode output,
@@ -101,11 +103,15 @@ public class ClaimEvidenceValidator {
                             ignored -> new ArrayList<>())
                     .add(record);
         }
+        Set<String> submittedPaths = claimBearingPaths(output);
+        validateSubmittedContentPaths(
+                documents.getClaims(),
+                submittedPaths);
         canonicalizeCitedAtomicContent(
                 output,
                 expandContainerContentPaths(
                         documents.getClaims(),
-                        claimBearingPaths(output)),
+                        submittedPaths),
                 evidenceById);
         canonicalizeOptionalAtomicContent(output, evidenceById);
         canonicalizeDocumentIdentity(output, evidenceById);
@@ -138,7 +144,12 @@ public class ClaimEvidenceValidator {
                 claims,
                 evidenceById);
         claims = normalizeDuplicateClaimIds(
-                splitOversizedContentPathClaims(claims));
+                splitOversizedContentPathClaims(
+                        isolateStructuredProjectClaims(
+                                output,
+                                claims,
+                                evidenceById,
+                                versionedEvidence)));
         documents.setClaims(claims);
 
         require(claims.size() <= MAX_CLAIMS,
@@ -164,6 +175,37 @@ public class ClaimEvidenceValidator {
                     "$.claims",
                     "final content contains unaccounted claim paths "
                             + unaccounted);
+        }
+    }
+
+    private void validateSubmittedContentPaths(
+            List<GeneratedClaim> claims,
+            Set<String> submittedPaths
+    ) {
+        for (int claimIndex = 0;
+                claimIndex < claims.size();
+                claimIndex++) {
+            GeneratedClaim claim = claims.get(claimIndex);
+            if (claim == null) {
+                continue;
+            }
+            for (String contentPath :
+                    safe(claim.getContentPaths())) {
+                boolean recognized =
+                        contentPath != null
+                                && (submittedPaths.contains(contentPath)
+                                        || submittedPaths.stream()
+                                                .anyMatch(path ->
+                                                        path.startsWith(
+                                                                contentPath
+                                                                        + "/")));
+                require(
+                        recognized,
+                        "$.claims["
+                                + claimIndex
+                                + "].contentPaths",
+                        "content path is not an approved final claim path");
+            }
         }
     }
 
@@ -519,11 +561,47 @@ public class ClaimEvidenceValidator {
             Map<String, List<ApprovedEvidenceRecord>> evidenceById,
             int projectIndex
     ) {
+        String titleSelection = uniqueProjectSelection(
+                output,
+                claims,
+                evidenceById,
+                projectIndex);
+        if (!StringUtils.hasText(titleSelection)) {
+            return null;
+        }
+        List<ApprovedEvidenceRecord> descriptions =
+                evidenceById.values().stream()
+                        .flatMap(List::stream)
+                        .filter(record ->
+                                record.source()
+                                        == EvidenceSource.EVIDENCE_SNAPSHOT)
+                        .filter(record ->
+                                record.purpose()
+                                        .supports(EvidencePurpose.CV))
+                        .filter(record ->
+                                "PROJECT".equals(record.category()))
+                        .filter(record ->
+                                "DESCRIPTION".equals(record.factType()))
+                        .filter(record ->
+                                titleSelection.equals(
+                                        evidenceSelection(record)))
+                        .toList();
+        return descriptions.size() == 1
+                ? descriptions.get(0)
+                : null;
+    }
+
+    private String uniqueProjectSelection(
+            JsonNode output,
+            List<GeneratedClaim> claims,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            int projectIndex
+    ) {
         String titlePath = "/cv/projects/" + projectIndex + "/title";
         JsonNode title = output.at(titlePath);
         if (!title.isTextual()
                 || !StringUtils.hasText(title.textValue())) {
-            return null;
+            return "";
         }
         Set<String> titleSelections = claims.stream()
                 .filter(java.util.Objects::nonNull)
@@ -555,31 +633,9 @@ public class ClaimEvidenceValidator {
                 .map(this::evidenceSelection)
                 .filter(StringUtils::hasText)
                 .collect(java.util.stream.Collectors.toSet());
-        if (titleSelections.size() != 1) {
-            return null;
-        }
-        String titleSelection =
-                titleSelections.iterator().next();
-        List<ApprovedEvidenceRecord> descriptions =
-                evidenceById.values().stream()
-                        .flatMap(List::stream)
-                        .filter(record ->
-                                record.source()
-                                        == EvidenceSource.EVIDENCE_SNAPSHOT)
-                        .filter(record ->
-                                record.purpose()
-                                        .supports(EvidencePurpose.CV))
-                        .filter(record ->
-                                "PROJECT".equals(record.category()))
-                        .filter(record ->
-                                "DESCRIPTION".equals(record.factType()))
-                        .filter(record ->
-                                titleSelection.equals(
-                                        evidenceSelection(record)))
-                        .toList();
-        return descriptions.size() == 1
-                ? descriptions.get(0)
-                : null;
+        return titleSelections.size() == 1
+                ? titleSelections.iterator().next()
+                : "";
     }
 
     private String evidenceSelection(
@@ -831,6 +887,179 @@ public class ClaimEvidenceValidator {
             normalized.add(copy);
         }
         return List.copyOf(normalized);
+    }
+
+    private List<GeneratedClaim> isolateStructuredProjectClaims(
+            JsonNode output,
+            List<GeneratedClaim> claims,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            boolean versionedEvidence
+    ) {
+        if (!versionedEvidence) {
+            return claims;
+        }
+        List<GeneratedClaim> normalized = new ArrayList<>(claims.size());
+        for (GeneratedClaim claim : claims) {
+            if (claim == null
+                    || !isFinalContent(claim.getDisposition())) {
+                normalized.add(claim);
+                continue;
+            }
+            Map<Integer, List<String>> projectPaths =
+                    new LinkedHashMap<>();
+            List<String> otherPaths = new ArrayList<>();
+            for (String contentPath : safe(claim.getContentPaths())) {
+                Integer projectIndex =
+                        projectIndex(contentPath);
+                if (projectIndex != null) {
+                    projectPaths.computeIfAbsent(
+                                    projectIndex,
+                                    ignored -> new ArrayList<>())
+                            .add(contentPath);
+                } else {
+                    otherPaths.add(contentPath);
+                }
+            }
+            if (projectPaths.isEmpty()) {
+                normalized.add(claim);
+                continue;
+            }
+
+            Map<Integer, String> selectionByProject =
+                    new LinkedHashMap<>();
+            for (Integer projectIndex : projectPaths.keySet()) {
+                String selection = uniqueProjectSelection(
+                        output,
+                        claims,
+                        evidenceById,
+                        projectIndex);
+                if (!StringUtils.hasText(selection)) {
+                    selectionByProject.clear();
+                    break;
+                }
+                selectionByProject.put(projectIndex, selection);
+            }
+            if (selectionByProject.size() != projectPaths.size()) {
+                normalized.add(claim);
+                continue;
+            }
+            boolean isolationRequired =
+                    !otherPaths.isEmpty()
+                            || projectPaths.size() > 1
+                            || hasIrrelevantCvSnapshotEvidence(
+                                    claim.getEvidenceIds(),
+                                    evidenceById,
+                                    selectionByProject.values()
+                                            .iterator()
+                                            .next());
+            if (!isolationRequired) {
+                normalized.add(claim);
+                continue;
+            }
+
+            if (!otherPaths.isEmpty()) {
+                GeneratedClaim nonProject = copyWithClaimId(
+                        claim,
+                        claim.getClaimId());
+                nonProject.setContentPaths(List.copyOf(otherPaths));
+                normalized.add(nonProject);
+            }
+            for (Map.Entry<Integer, List<String>> entry :
+                    projectPaths.entrySet()) {
+                String selection =
+                        selectionByProject.get(entry.getKey());
+                GeneratedClaim project = copyWithClaimId(
+                        claim,
+                        claim.getClaimId());
+                project.setContentPaths(
+                        List.copyOf(entry.getValue()));
+                project.setEvidenceIds(
+                        projectEvidenceIdsForSelection(
+                                claim.getEvidenceIds(),
+                                evidenceById,
+                                selection));
+                normalized.add(project);
+            }
+        }
+        return List.copyOf(normalized);
+    }
+
+    private Integer projectIndex(String contentPath) {
+        if (contentPath == null) {
+            return null;
+        }
+        Matcher matcher =
+                PROJECT_CONTENT_PATH.matcher(contentPath);
+        if (!matcher.matches()) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(matcher.group(1));
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private boolean hasIrrelevantCvSnapshotEvidence(
+            List<String> evidenceIds,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            String selection
+    ) {
+        return safe(evidenceIds).stream()
+                .flatMap(evidenceId ->
+                        evidenceById
+                                .getOrDefault(evidenceId, List.of())
+                                .stream())
+                .filter(record ->
+                        record.source()
+                                == EvidenceSource.EVIDENCE_SNAPSHOT)
+                .filter(record ->
+                        record.purpose()
+                                .supports(EvidencePurpose.CV))
+                .anyMatch(record ->
+                        !"PROJECT".equals(record.category())
+                                || !selection.equals(
+                                        evidenceSelection(record)));
+    }
+
+    private List<String> projectEvidenceIdsForSelection(
+            List<String> evidenceIds,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            String selection
+    ) {
+        return safe(evidenceIds).stream()
+                .filter(evidenceId -> {
+                    List<ApprovedEvidenceRecord> candidates =
+                            evidenceById.get(evidenceId);
+                    if (candidates == null) {
+                        return true;
+                    }
+                    boolean hasCvSnapshot = candidates.stream()
+                            .anyMatch(record ->
+                                    record.source()
+                                            == EvidenceSource
+                                                    .EVIDENCE_SNAPSHOT
+                                            && record.purpose()
+                                                    .supports(
+                                                            EvidencePurpose
+                                                                    .CV));
+                    return !hasCvSnapshot
+                            || candidates.stream()
+                                    .anyMatch(record ->
+                                            record.source()
+                                                    == EvidenceSource
+                                                            .EVIDENCE_SNAPSHOT
+                                                    && record.purpose()
+                                                            .supports(
+                                                                    EvidencePurpose
+                                                                            .CV)
+                                                    && "PROJECT".equals(
+                                                            record.category())
+                                                    && selection.equals(
+                                                            evidenceSelection(
+                                                                    record)));
+                })
+                .toList();
     }
 
     private boolean supportsAnySpecificTerm(
