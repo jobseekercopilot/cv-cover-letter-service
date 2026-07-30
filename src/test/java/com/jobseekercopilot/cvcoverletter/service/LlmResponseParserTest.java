@@ -29,7 +29,7 @@ class LlmResponseParserTest {
                 new ClaimEvidenceValidator(),
                 new GeneratedDocumentQualityValidator());
         try (InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.5.2/output-schema.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.3/output-schema.json")) {
             if (input == null) {
                 throw new IllegalStateException("Active output schema fixture is missing.");
             }
@@ -80,6 +80,34 @@ class LlmResponseParserTest {
         ((ObjectNode) terminalLineSeparator.at("/claims/0"))
                 .put("reviewText", "\n");
         assertRejectedAt(terminalLineSeparator, "$.claims[0].reviewText");
+    }
+
+    @Test
+    void rejectsNonCanonicalApplicationBookendsAtTheActiveSchemaBoundary()
+            throws Exception {
+        for (String opening : new String[] {
+                "I am keen to apply for this role.",
+                "Please consider my application for this role. ",
+                "Please consider my application for this role.\n"
+        }) {
+            JsonNode output =
+                    objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+            ((ObjectNode) output.path("coverLetter"))
+                    .put("openingParagraph", opening);
+            assertRejectedAt(output, "$.coverLetter.openingParagraph");
+        }
+
+        for (String closing : new String[] {
+                "Thank you for considering my application at Example Ltd.",
+                "Thank you for considering my application. ",
+                "Thank you for considering my application.\n"
+        }) {
+            JsonNode output =
+                    objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+            ((ObjectNode) output.path("coverLetter"))
+                    .put("closingParagraph", closing);
+            assertRejectedAt(output, "$.coverLetter.closingParagraph");
+        }
     }
 
     @Test

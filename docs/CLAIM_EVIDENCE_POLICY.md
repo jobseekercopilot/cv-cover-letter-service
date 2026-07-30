@@ -1,19 +1,19 @@
 # Claim evidence policy
 
-Prompt release `cv-cover-letter-1.5.2`, output schema `3.3.0`, claim policy
-`2.9.0` and deterministic quality policy `1.1.0` establish the current
-claim-provenance and document-quality boundary.
+Prompt release `cv-cover-letter-1.5.3`, output schema `3.4.0`, evaluation
+policy `1.5.1`, claim policy `2.10.0` and deterministic quality policy `1.1.0`
+establish the current claim-provenance and document-quality boundary.
 
 Release `1.5.1` makes the provider perform an explicit final-pointer coverage
 audit, including generic narrative and each populated array index, before it
-returns the claim ledger. Release `1.5.2` makes the active provider ledger
+returns the claim ledger. Release `1.5.2` makes the provider ledger
 final-content-only: every entry is `SUPPORTED` or `REWORDED`, has at least one
 approved evidence ID and final content path, and has empty review text.
 Unsupported and unconfirmed material is omitted from the documents and ledger;
 only a neutral missing-information note may remain. The broader four-
 disposition local and published contract is unchanged for historical and
 rollback output. Local validation remains fail-closed. If the model
-omits only a required project-description pointer, policy `2.9.0` replaces
+omits only a required project-description pointer, policy `2.10.0` replaces
 that prose with the unique exact `DESCRIPTION` fact from the PROJECT selection
 anchored by the same project's exact claimed `HEADING`; it then creates exact
 claim coverage. If a versioned response omits only an opening or closing
@@ -22,12 +22,26 @@ uses fixed, server-owned application correspondence without interpolating
 untrusted job text. This narrow local recovery is accepted without claimant
 evidence only when the final path and complete text match exactly and the
 ledger cites exactly the canonical generation-intent, job-title and company
-records. The fixed text is not reserved: a model-authored claim with additional
-confirmed claimant evidence follows the ordinary evidence rules. Claimed
-unsafe prose, missing claimant evidence outside the exact exception, ambiguous
-project evidence and every other omitted narrative still reject.
+records. Under approved rollback and historical schemas, the fixed text is not
+reserved: a model-authored claim with additional confirmed claimant evidence
+follows the ordinary evidence rules. The active `1.5.3` schema and provider
+contract instead require the isolated canonical claims described below.
+Claimed unsafe prose, missing claimant evidence outside the exact exception,
+ambiguous project evidence and every other omitted narrative still reject.
 
-Policy `2.9.0` also isolates each versioned project claim after evidence
+Release `1.5.3` makes that exception explicit at both provider boundaries.
+`/coverLetter/openingParagraph` must be exactly `Please consider my application
+for this role.` and `/coverLetter/closingParagraph` must be exactly `Thank you
+for considering my application.`. Each canonical bookend must be covered by
+its own `SUPPORTED` claim: `evidenceIds` is exactly
+`["REQUEST.GENERATION_INTENT", "JOB.TITLE", "JOB.COMPANY"]`, `contentPaths`
+contains only that bookend's pointer, and `reviewText` is empty. Neither
+bookend claim may include another final path or claimant evidence. Canonical
+job and request evidence may supplement ordinary claims but, outside the
+bounded identity fields and these two isolated bookends, at least one
+purpose-compatible confirmed claimant snapshot fact is mandatory.
+
+Policy `2.10.0` also isolates each versioned project claim after evidence
 enrichment. The project paths retain snapshot facts only from their unique,
 exact-title-anchored PROJECT selection; paths outside that project are split
 into separate claims. This prevents a qualification or another project
@@ -43,7 +57,7 @@ evidence IDs are validated as approved and unique before empty pointers can
 be removed. Exact-once coverage of all populated final content remains
 mandatory after canonicalisation.
 
-Policy `2.9.0` also repairs one narrowly identifiable structural provider
+Policy `2.10.0` also repairs one narrowly identifiable structural provider
 error for versioned evidence: when every submitted final cover-letter body
 pointer, as an exact multiset, is the complete canonical one-based sequence
 `/coverLetter/bodyParagraphs/1` through the actual paragraph count, each
@@ -81,7 +95,7 @@ The published and local claim-ledger contract retains four dispositions:
 - `CONFIRMATION_REQUIRED`: useful candidate material that requires user review;
 - `REJECTED`: unsupported material excluded from the documents.
 
-The active `1.5.2` provider schema emits only supported and reworded entries.
+The active `1.5.3` provider schema emits only supported and reworded entries.
 They require approved evidence IDs and one or more exact JSON Pointer paths
 into final CV or cover-letter text, and their `reviewText` must be empty.
 Confirmation-required and rejected entries remain accepted only through
@@ -104,10 +118,13 @@ external write, `ClaimEvidenceValidator`:
    the appropriate approved record;
 6. rejects uncited numeric claims and unsupported high-risk terms covering
    tools, qualifications, motivation, availability, salary and right-to-work;
-7. revalidates the complete schema and plain-text policy after every trusted
+7. accepts the fixed opening and closing without claimant evidence only as
+   separate exact canonical-evidence claims, and requires confirmed claimant
+   evidence for every other non-identity versioned claim;
+8. revalidates the complete schema and plain-text policy after every trusted
    canonicalisation.
 
-For the project-aware `3.2.0` and `3.3.0` schemas,
+For the project-aware `3.2.0`, `3.3.0` and `3.4.0` schemas,
 `GeneratedDocumentQualityValidator` runs only after the grounding ledger is
 normalised and accepted. It:
 

@@ -22,7 +22,7 @@ class PromptBuilderServiceTest {
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBuilderService service = new PromptBuilderService(
                 objectMapper,
-                registry(objectMapper, "cv-cover-letter-1.5.2"),
+                registry(objectMapper, "cv-cover-letter-1.5.3"),
                 properties,
                 new ClaimEvidenceCatalogFactory());
         GenerationInputNormalizer normalizer = new GenerationInputNormalizer(
@@ -35,7 +35,7 @@ class PromptBuilderServiceTest {
         assertTrue(result.getTrustedInstructions().contains("UK English"));
         assertTrue(result.getTrustedInstructions().contains("Aim for 5 to 7 concise paragraphs"));
         assertTrue(result.getTrustedInstructions().contains("specific to the job"));
-        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.5.2"));
+        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.5.3"));
         assertTrue(result.getTrustedInstructions().contains(
                 "Generic, professional and application prose is"));
         assertTrue(result.getTrustedInstructions().contains(
@@ -76,9 +76,17 @@ class PromptBuilderServiceTest {
                 "/properties/claims/items/properties/contentPaths/minItems").asInt() == 1);
         assertTrue(result.getOutputSchema().at(
                 "/properties/claims/items/properties/reviewText/enum/0").asText().isEmpty());
+        assertTrue(result.getOutputSchema().at(
+                "/properties/coverLetter/properties/openingParagraph/enum/0")
+                .asText()
+                .equals("Please consider my application for this role."));
+        assertTrue(result.getOutputSchema().at(
+                "/properties/coverLetter/properties/closingParagraph/enum/0")
+                .asText()
+                .equals("Thank you for considering my application."));
         assertFalse(result.getOutputSchema().toString().contains("CONFIRMATION_REQUIRED"));
         assertFalse(result.getOutputSchema().toString().contains("REJECTED"));
-        assertTrue(result.getGenerationMetadata().schemaVersion().equals("3.3.0"));
+        assertTrue(result.getGenerationMetadata().schemaVersion().equals("3.4.0"));
         assertTrue(result.getEvidenceCatalog().records().stream()
                 .anyMatch(record -> record.evidenceId().equals("JOB.TITLE")));
         assertFalse(result.getTrustedInstructions().contains("Build useful and reliable services."));

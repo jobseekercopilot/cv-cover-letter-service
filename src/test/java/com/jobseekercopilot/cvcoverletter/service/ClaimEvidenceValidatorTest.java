@@ -356,6 +356,82 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
+    void activeSchemaRequiresSupportedIsolatedCanonicalBookendClaims()
+            throws Exception {
+        useVersionedCatalog();
+        useSchemaFixture("cv-cover-letter-1.5.3");
+
+        GeneratedApplicationDocuments accepted =
+                parse(activeVersionedOutput());
+        assertEquals(
+                "Please consider my application for this role.",
+                accepted.getCoverLetter().getOpeningParagraph());
+
+        ObjectNode claimantEvidence = activeVersionedOutput();
+        ((ArrayNode) claimantEvidence.at(
+                        "/claims/5/evidenceIds"))
+                .add(com.jobseekercopilot.cvcoverletter
+                        .GenerationInputFixtures
+                        .COVER_EXPERIENCE_FACT_ID.toString());
+        assertRejected(
+                claimantEvidence,
+                "canonical application bookend must cite exactly canonical evidence");
+
+        ObjectNode groupedBookend = activeVersionedOutput();
+        ((ObjectNode) groupedBookend.at("/claims/5"))
+                .withArray("contentPaths")
+                .add("/coverLetter/bodyParagraphs/0");
+        assertRejected(
+                groupedBookend,
+                "canonical application bookend claim must be isolated");
+
+        ObjectNode rewordedBookend = activeVersionedOutput();
+        ((ObjectNode) rewordedBookend.at("/claims/5"))
+                .put("disposition", "REWORDED");
+        assertRejected(
+                rewordedBookend,
+                "canonical application bookend must be supported");
+    }
+
+    @Test
+    void activeSchemaEnforcesCanonicalBookendsForLegacyCatalogs()
+            throws Exception {
+        useSchemaFixture("cv-cover-letter-1.5.3");
+        ObjectNode output = validOutput();
+        ((ObjectNode) output.at("/claims/5"))
+                .put("disposition", "REWORDED");
+
+        assertRejected(
+                output,
+                "canonical application bookend must be supported");
+    }
+
+    @Test
+    void rollbackSchemaKeepsVersionedCanonicalTextAsAnOrdinaryClaim()
+            throws Exception {
+        useVersionedCatalog();
+        useSchemaFixture("cv-cover-letter-1.5.2");
+        ObjectNode output = activeVersionedOutput();
+        ((ArrayNode) output.at("/claims/5/evidenceIds"))
+                .add(com.jobseekercopilot.cvcoverletter
+                        .GenerationInputFixtures
+                        .COVER_EXPERIENCE_FACT_ID.toString());
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertTrue(accepted.getClaims().stream()
+                .filter(claim -> claim.getContentPaths()
+                        .equals(List.of(
+                                "/coverLetter/openingParagraph")))
+                .findFirst()
+                .orElseThrow()
+                .getEvidenceIds()
+                .contains(com.jobseekercopilot.cvcoverletter
+                        .GenerationInputFixtures
+                        .COVER_EXPERIENCE_FACT_ID.toString()));
+    }
+
+    @Test
     void fixedTextDoesNotChangeLegacyEvidenceHandling()
             throws Exception {
         ObjectNode output = validOutput();
@@ -363,6 +439,9 @@ class ClaimEvidenceValidatorTest {
                 .put(
                         "closingParagraph",
                         "Thank you for considering my application.");
+        ((ArrayNode) output.at("/claims/8/evidenceIds"))
+                .removeAll()
+                .add("JOB.DESCRIPTION");
 
         GeneratedApplicationDocuments accepted = parse(output);
 
@@ -2284,7 +2363,10 @@ class ClaimEvidenceValidatorTest {
     }
 
     private GeneratedApplicationDocuments parse(ObjectNode output) throws Exception {
-        return parser.parse(objectMapper.writeValueAsString(output), schema, catalog);
+        return parser.parse(
+                objectMapper.writeValueAsString(output),
+                schema,
+                catalog);
     }
 
     private void useVersionedCatalog() {
@@ -2296,6 +2378,23 @@ class ClaimEvidenceValidatorTest {
                         .normalize(
                                 "owner-secret",
                                 validVersionedRequest()));
+    }
+
+    private void useSchemaFixture(
+            String releaseId
+    ) throws Exception {
+        try (InputStream input = getClass().getResourceAsStream(
+                "/prompts/bundles/"
+                        + releaseId
+                        + "/output-schema.json")) {
+            if (input == null) {
+                throw new IllegalStateException(
+                        "Output schema fixture is missing for "
+                                + releaseId
+                                + ".");
+            }
+            schema = objectMapper.readTree(input);
+        }
     }
 
     private ObjectNode validOutput() throws Exception {
@@ -2352,6 +2451,22 @@ class ClaimEvidenceValidatorTest {
                 (ArrayNode) output.at("/claims/9/evidenceIds");
         cvTitleEvidence.removeAll();
         cvTitleEvidence.add("JOB.TITLE");
+        return output;
+    }
+
+    private ObjectNode activeVersionedOutput() throws Exception {
+        ObjectNode output = versionedOutput();
+        for (int claimIndex : List.of(5, 8)) {
+            ObjectNode claim =
+                    (ObjectNode) output.at(
+                            "/claims/" + claimIndex);
+            claim.put("disposition", "SUPPORTED");
+            claim.withArray("evidenceIds")
+                    .removeAll()
+                    .add("REQUEST.GENERATION_INTENT")
+                    .add("JOB.TITLE")
+                    .add("JOB.COMPANY");
+        }
         return output;
     }
 

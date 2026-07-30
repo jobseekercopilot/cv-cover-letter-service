@@ -158,7 +158,7 @@ class CvCoverLetterServiceTest {
         assertEquals("trusted generation rules", llmRequest.getTrustedInstructions());
         assertEquals("{\"job\":\"input-secret-sentinel\"}", llmRequest.getUntrustedInput());
         assertEquals("cv-cover-letter-output", llmRequest.getOutput().getSchemaId());
-        assertEquals("3.3.0", llmRequest.getOutput().getSchemaVersion());
+        assertEquals("3.4.0", llmRequest.getOutput().getSchemaVersion());
         assertEquals(0.25, llmRequest.getLimits().getTemperature());
         assertEquals(2500, llmRequest.getLimits().getMaxOutputTokens());
 
@@ -183,9 +183,9 @@ class CvCoverLetterServiceTest {
         assertEquals("Java Developer CV", actual.getCvTitle());
         assertEquals("Java Developer CV", actual.getCvContent().lines().findFirst().orElseThrow());
         assertEquals("1.0", actual.getInputSchemaVersion());
-        assertEquals("cv-cover-letter-1.5.2", actual.getGenerationMetadata().releaseId());
-        assertEquals("1.5.2", actual.getGenerationMetadata().rulesVersion());
-        assertEquals("3.3.0", actual.getGenerationMetadata().schemaVersion());
+        assertEquals("cv-cover-letter-1.5.3", actual.getGenerationMetadata().releaseId());
+        assertEquals("1.5.3", actual.getGenerationMetadata().rulesVersion());
+        assertEquals("3.4.0", actual.getGenerationMetadata().schemaVersion());
         assertEquals(normalizedInput.warnings(), actual.getInputWarnings());
         org.junit.jupiter.api.Assertions.assertTrue(
                 actual.getCoverLetterContent().contains("Dear Hiring Manager,"));
@@ -214,13 +214,13 @@ class CvCoverLetterServiceTest {
         org.junit.jupiter.api.Assertions.assertTrue(
                 output.getAll().contains("pricingVersion=openai-standard-2026-07-25"));
         org.junit.jupiter.api.Assertions.assertTrue(
-                output.getAll().contains("promptRelease=cv-cover-letter-1.5.2"));
+                output.getAll().contains("promptRelease=cv-cover-letter-1.5.3"));
         org.junit.jupiter.api.Assertions.assertTrue(
                 output.getAll().contains("templateVersion=1.2.0"));
         org.junit.jupiter.api.Assertions.assertTrue(
-                output.getAll().contains("rulesVersion=1.5.2"));
+                output.getAll().contains("rulesVersion=1.5.3"));
         org.junit.jupiter.api.Assertions.assertTrue(
-                output.getAll().contains("schemaVersion=3.3.0"));
+                output.getAll().contains("schemaVersion=3.4.0"));
         org.junit.jupiter.api.Assertions.assertTrue(
                 output.getAll().contains("parserVersion=3.2.0"));
         assertFalse(output.getAll().contains("input-secret-sentinel"));
@@ -381,7 +381,7 @@ class CvCoverLetterServiceTest {
                 .output(output)
                 .finishReason(GenerationResponse.FinishReasonEnum.COMPLETED)
                 .schemaId("cv-cover-letter-output")
-                .schemaVersion("3.3.0")
+                .schemaVersion("3.4.0")
                 .audit(generationAudit())
                 .usage(usage());
     }
@@ -405,6 +405,9 @@ class CvCoverLetterServiceTest {
                 validJson().replace(
                         "A Java developer focused on useful services.",
                         "<script>response-secret-sentinel</script>"),
+                validJson().replace(
+                        "Please consider my application for this role.",
+                        "I am keen to apply for this role."),
                 validJson().replace("\"JOB.TITLE\"", "\"JOB.UNKNOWN\""),
                 "```json\n" + validJson() + "\n```");
     }
@@ -434,18 +437,18 @@ class CvCoverLetterServiceTest {
 
     private PromptGenerationMetadata promptMetadata() {
         return new PromptGenerationMetadata(
-                "cv-cover-letter-1.5.2",
+                "cv-cover-letter-1.5.3",
                 "cv-cover-letter",
-                "1.5.2",
+                "1.5.3",
                 "a".repeat(64),
                 "1.2.0",
                 "b".repeat(64),
-                "1.5.2",
+                "1.5.3",
                 "c".repeat(64),
                 "cv-cover-letter-output",
-                "3.3.0",
+                "3.4.0",
                 "d".repeat(64),
-                "1.5.0",
+                "1.5.1",
                 "e".repeat(64)
         );
     }
@@ -467,9 +470,9 @@ class CvCoverLetterServiceTest {
                     "jobTitle": "Java Developer",
                     "companyName": "Example Ltd",
                     "greeting": "Dear Hiring Manager",
-                    "openingParagraph": "I am applying for the role.",
+                    "openingParagraph": "Please consider my application for this role.",
                     "bodyParagraphs": ["My experience is a strong match.", "I build useful services.", "The role calls for useful services."],
-                    "closingParagraph": "Thank you for your consideration.",
+                    "closingParagraph": "Thank you for considering my application.",
                     "signOff": "Yours faithfully"
                   },
                   "generationNotes": {"assumptionsMade":[],"missingInformation":[],"tailoringSummary":"Focused on Java."},
@@ -479,10 +482,10 @@ class CvCoverLetterServiceTest {
                     {"claimId":"CLAIM-003","disposition":"REWORDED","evidenceIds":["JOB.TITLE"],"contentPaths":["/coverLetter/title"],"reviewText":""},
                     {"claimId":"CLAIM-004","disposition":"SUPPORTED","evidenceIds":["JOB.TITLE"],"contentPaths":["/coverLetter/jobTitle"],"reviewText":""},
                     {"claimId":"CLAIM-005","disposition":"SUPPORTED","evidenceIds":["JOB.COMPANY"],"contentPaths":["/coverLetter/companyName"],"reviewText":""},
-                    {"claimId":"CLAIM-006","disposition":"REWORDED","evidenceIds":["REQUEST.GENERATION_INTENT","JOB.TITLE"],"contentPaths":["/coverLetter/openingParagraph"],"reviewText":""},
+                    {"claimId":"CLAIM-006","disposition":"SUPPORTED","evidenceIds":["REQUEST.GENERATION_INTENT","JOB.TITLE","JOB.COMPANY"],"contentPaths":["/coverLetter/openingParagraph"],"reviewText":""},
                     {"claimId":"CLAIM-007","disposition":"REWORDED","evidenceIds":["PROFILE.EMPLOYMENT.1.RESPONSIBILITIES","PROFILE.SKILL.1"],"contentPaths":["/coverLetter/bodyParagraphs/0"],"reviewText":""},
                     {"claimId":"CLAIM-008","disposition":"REWORDED","evidenceIds":["JOB.DESCRIPTION"],"contentPaths":["/coverLetter/bodyParagraphs/1","/coverLetter/bodyParagraphs/2"],"reviewText":""},
-                    {"claimId":"CLAIM-009","disposition":"SUPPORTED","evidenceIds":["JOB.DESCRIPTION"],"contentPaths":["/coverLetter/closingParagraph"],"reviewText":""},
+                    {"claimId":"CLAIM-009","disposition":"SUPPORTED","evidenceIds":["REQUEST.GENERATION_INTENT","JOB.TITLE","JOB.COMPANY"],"contentPaths":["/coverLetter/closingParagraph"],"reviewText":""},
                     {"claimId":"CLAIM-010","disposition":"REWORDED","evidenceIds":["PROFILE.TARGET_ROLE.1"],"contentPaths":["/cv/title"],"reviewText":""}
                   ]
                 }
@@ -491,7 +494,7 @@ class CvCoverLetterServiceTest {
 
     private com.fasterxml.jackson.databind.JsonNode activeOutputSchema() throws Exception {
         try (java.io.InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.5.2/output-schema.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.3/output-schema.json")) {
             if (input == null) {
                 throw new IllegalStateException("Active output schema fixture is missing.");
             }

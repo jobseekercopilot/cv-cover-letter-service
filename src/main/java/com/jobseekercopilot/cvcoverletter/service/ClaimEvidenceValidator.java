@@ -28,7 +28,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.9.0";
+    static final String POLICY_VERSION = "2.10.0";
     private static final int MAX_CLAIMS = 40;
     private static final int MAX_CLAIM_REFERENCES = 30;
     private static final int MAX_REVIEW_TEXT_LENGTH = 500;
@@ -60,6 +60,15 @@ public class ClaimEvidenceValidator {
             JsonNode output,
             GeneratedApplicationDocuments documents,
             ClaimEvidenceCatalog catalog
+    ) {
+        validate(output, documents, catalog, false);
+    }
+
+    public void validate(
+            JsonNode output,
+            GeneratedApplicationDocuments documents,
+            ClaimEvidenceCatalog catalog,
+            boolean enforceCanonicalApplicationBookends
     ) {
         if (catalog == null || catalog.records() == null || catalog.records().isEmpty()) {
             throw new IllegalStateException("Approved claim evidence catalogue is missing.");
@@ -178,7 +187,8 @@ public class ClaimEvidenceValidator {
                     coveredPaths,
                     claimIds,
                     evidenceById,
-                    versionedEvidence);
+                    versionedEvidence,
+                    enforceCanonicalApplicationBookends);
         }
         if (!coveredPaths.equals(expectedPaths)) {
             Set<String> unaccounted = new LinkedHashSet<>(expectedPaths);
@@ -1610,7 +1620,8 @@ public class ClaimEvidenceValidator {
             Set<String> coveredPaths,
             Set<String> claimIds,
             Map<String, List<ApprovedEvidenceRecord>> evidenceById,
-            boolean versionedEvidence
+            boolean versionedEvidence,
+            boolean enforceCanonicalApplicationBookends
     ) {
         String claimPath = "$.claims[" + index + "]";
         require(claim != null, claimPath, "claim is missing");
@@ -1675,6 +1686,13 @@ public class ClaimEvidenceValidator {
         require(!evidence.isEmpty(),
                 claimPath + ".evidenceIds",
                 "final claim has no approved evidence");
+        validateCanonicalBookendClaim(
+                output,
+                claim.getDisposition(),
+                contentPaths,
+                evidence,
+                claimPath,
+                enforceCanonicalApplicationBookends);
         for (String contentPath : contentPaths) {
             require(expectedPaths.contains(contentPath),
                     claimPath + ".contentPaths", "content path is not an approved final claim path");
@@ -1690,6 +1708,45 @@ public class ClaimEvidenceValidator {
                     claimPath,
                     versionedEvidence);
         }
+    }
+
+    private void validateCanonicalBookendClaim(
+            JsonNode output,
+            ClaimDisposition disposition,
+            List<String> contentPaths,
+            List<ApprovedEvidenceRecord> evidence,
+            String claimPath,
+            boolean enforceCanonicalApplicationBookends
+    ) {
+        if (!enforceCanonicalApplicationBookends) {
+            return;
+        }
+        List<String> canonicalBookendPaths = contentPaths.stream()
+                .filter(contentPath -> {
+                    JsonNode value = output.at(contentPath);
+                    return value.isTextual()
+                            && isCanonicalApplicationBookendText(
+                                    contentPath,
+                                    value.textValue());
+                })
+                .toList();
+        if (canonicalBookendPaths.isEmpty()) {
+            return;
+        }
+        require(disposition == ClaimDisposition.SUPPORTED,
+                claimPath + ".disposition",
+                "canonical application bookend must be supported");
+        require(canonicalBookendPaths.size() == 1
+                        && contentPaths.size() == 1,
+                claimPath + ".contentPaths",
+                "canonical application bookend claim must be isolated");
+        String contentPath = canonicalBookendPaths.get(0);
+        require(isCanonicalApplicationBookend(
+                        contentPath,
+                        output.at(contentPath).textValue(),
+                        evidence),
+                claimPath + ".evidenceIds",
+                "canonical application bookend must cite exactly canonical evidence");
     }
 
     private void validateEvidenceAlignment(

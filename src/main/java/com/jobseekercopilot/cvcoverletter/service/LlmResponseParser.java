@@ -80,7 +80,12 @@ public class LlmResponseParser {
                     objectMapper.treeToValue(output, GeneratedApplicationDocuments.class);
             if (evidenceCatalog != null
                     && schema.path("properties").path("claims").isObject()) {
-                claimEvidenceValidator.validate(output, documents, evidenceCatalog);
+                claimEvidenceValidator.validate(
+                        output,
+                        documents,
+                        evidenceCatalog,
+                        usesCanonicalApplicationBookendPolicy(
+                                schema));
                 validateSchema(output, schema, "$");
                 validatePlainText(output, "$");
                 var normalizedClaims = documents.getClaims();
@@ -106,6 +111,30 @@ public class LlmResponseParser {
         return schema.at(
                         "/properties/cv/properties/projects")
                 .isObject();
+    }
+
+    private boolean usesCanonicalApplicationBookendPolicy(
+            JsonNode schema
+    ) {
+        return isExactSingletonEnum(
+                        schema.at(
+                                "/properties/coverLetter/properties/openingParagraph"),
+                        "Please consider my application for this role.")
+                && isExactSingletonEnum(
+                        schema.at(
+                                "/properties/coverLetter/properties/closingParagraph"),
+                        "Thank you for considering my application.");
+    }
+
+    private boolean isExactSingletonEnum(
+            JsonNode propertySchema,
+            String expected
+    ) {
+        JsonNode values = propertySchema.path("enum");
+        return values.isArray()
+                && values.size() == 1
+                && values.get(0).isTextual()
+                && expected.equals(values.get(0).textValue());
     }
 
     private void validateSchema(JsonNode value, JsonNode schema, String path) {

@@ -36,7 +36,7 @@ class PromptBundleEvaluationTest {
     void setUp() throws IOException {
         objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBundleProperties bundleProperties = new PromptBundleProperties();
-        bundleProperties.setSelectedReleaseId("cv-cover-letter-1.5.2");
+        bundleProperties.setSelectedReleaseId("cv-cover-letter-1.5.3");
         PromptBundleRegistry registry =
                 new PromptBundleRegistry(objectMapper, new DefaultResourceLoader(), bundleProperties);
         registry.initialize();
@@ -48,7 +48,7 @@ class PromptBundleEvaluationTest {
         normalizer = new GenerationInputNormalizer(
                 Clock.fixed(Instant.parse("2026-07-24T13:00:00Z"), ZoneOffset.UTC));
         try (InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.5.2/evaluation-policy.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.3/evaluation-policy.json")) {
             if (input == null) {
                 throw new IllegalStateException("Prompt evaluation policy fixture is missing.");
             }
@@ -62,7 +62,7 @@ class PromptBundleEvaluationTest {
 
         assertEquals(policy.policyVersion(), prompt.getGenerationMetadata().evaluationPolicyVersion());
         assertEquals(
-                "e95e0b7cf5dafa15cae81d4ca08a2790d690b5f504ef775ac1ab386d188a5075",
+                "cf35d51a107fc84e785c7372234d9e1d9ec11c8472893dcb060f77cc567cb47f",
                 sha256(boundaryMaterial(prompt)),
                 "The golden LLM boundary changed; review the trusted instructions, untrusted envelope, "
                         + "output schema and rollback metadata together.");
@@ -146,7 +146,32 @@ class PromptBundleEvaluationTest {
         assertTrue(trustedInstructions.contains(
                 "are never sufficient alone"));
         assertTrue(trustedInstructions.contains(
-                "including for\ngeneric application prose"));
+                "except for each\nexact isolated canonical bookend"));
+    }
+
+    @Test
+    void activeBundlePinsEvidenceSafeCanonicalApplicationBookends() {
+        CvCoverLetterPrompt prompt =
+                buildForJob("Build useful and reliable services.");
+        JsonNode coverLetter = prompt.getOutputSchema()
+                .at("/properties/coverLetter/properties");
+
+        assertEquals(
+                "[\"Please consider my application for this role.\"]",
+                coverLetter.path("openingParagraph").path("enum").toString());
+        assertEquals(
+                "[\"Thank you for considering my application.\"]",
+                coverLetter.path("closingParagraph").path("enum").toString());
+        assertTrue(prompt.getTrustedInstructions().contains(
+                "Each bookend needs its own SUPPORTED claim"));
+        assertTrue(prompt.getTrustedInstructions().contains(
+                "evidenceIds exactly [\"REQUEST.GENERATION_INTENT\""));
+        assertTrue(prompt.getTrustedInstructions().contains(
+                "\"JOB.TITLE\", \"JOB.COMPANY\"]"));
+        assertTrue(prompt.getTrustedInstructions().contains(
+                "Never group it or cite claimant"));
+        assertTrue(prompt.getTrustedInstructions().contains(
+                "Tailor only bodyParagraphs"));
     }
 
     @Test

@@ -2,10 +2,12 @@
 
 CV and Cover Letter Service treats model output as untrusted until it passes
 the exact reviewed schema and local safe-content policy. The active prompt
-release is `cv-cover-letter-1.5.2`; it owns output schema `3.3.0` at
-`src/main/resources/prompts/bundles/cv-cover-letter-1.5.2/output-schema.json`.
+release is `cv-cover-letter-1.5.3`; it owns output schema `3.4.0` and
+evaluation policy `1.5.1` at
+`src/main/resources/prompts/bundles/cv-cover-letter-1.5.3/`.
 Its reviewed SHA-256 is
-`18a35af6776a0d1c2bdb7035ed3ddc1f789cac285d5dd45899f2db02bb52b0d6`.
+`60a19e9857cfc6b7d130dc41aababeb1d7b5291fbc2e0f4225d5d559e04e303e`
+for `output-schema.json`.
 
 ## One contract at both boundaries
 
@@ -38,13 +40,22 @@ service's deliberately smaller subset.
 | Generation-note lists | 20 items; 500 characters per item |
 | Claim ledger | 1–40 claims; 30 evidence IDs and final paths per claim |
 
-The active provider ledger contains only `SUPPORTED` and `REWORDED`
+The active `1.5.3` provider ledger contains only `SUPPORTED` and `REWORDED`
 final-content claims. Each claim requires at least one approved evidence ID and
 one final path, and `reviewText` is exactly empty. Unsupported or unconfirmed
 material is omitted from both the documents and claims; a neutral
 `generationNotes.missingInformation` item may describe genuinely absent
 information. The published ledger DTO and local rollback validator retain all
 four dispositions for historical compatibility.
+
+Schema `3.4.0` fixes `/coverLetter/openingParagraph` to exactly `Please consider
+my application for this role.` and `/coverLetter/closingParagraph` to exactly
+`Thank you for considering my application.`. Each must have a separate
+`SUPPORTED` claim whose only content path is that exact bookend pointer and
+whose evidence IDs are exactly `REQUEST.GENERATION_INTENT`, `JOB.TITLE` and
+`JOB.COMPANY`. Every other non-identity versioned final claim must cite
+purpose-compatible confirmed claimant evidence; job and request facts alone
+cannot support candidate or narrative content.
 
 The local parser also caps every text node at 4,000 characters and every array
 at 40 items. These parser-wide limits are defence in depth and keep approved
@@ -67,16 +78,19 @@ billing commit:
 6. require every non-empty final claim-bearing path exactly once in the claim
    ledger and validate its disposition, approved evidence IDs, atomic facts,
    numeric claims and high-risk claim categories;
-7. for project-aware schemas `3.2.0` and `3.3.0`, enforce canonical titles and
-   correspondence boilerplate, unique skills and narrative,
+7. for project-aware schemas `3.2.0`, `3.3.0` and `3.4.0`, enforce canonical
+   titles and correspondence boilerplate, unique skills and narrative,
    qualification-once, selected-entry coverage, category-correct structured
-   projects and employment-only work history.
+   projects and employment-only work history;
+8. for schema `3.4.0`, require the exact canonical opening and closing as
+   isolated canonical-evidence claims and require confirmed claimant evidence
+   for every other non-identity versioned claim.
 
 The renderer then omits empty sections, presents project-only CVs as Technical
 Profile, Projects, Technical Skills and Education and Qualifications, and adds
 a deterministic visible application line built from the ledger-owned canonical
-job title and company. Generic correspondence always uses `Dear Hiring Manager`
-and `Yours faithfully`.
+job title and company. Generic correspondence always uses `Dear Hiring
+Manager`, the two exact canonical application bookends and `Yours faithfully`.
 
 Failure messages contain only a JSON path and policy reason. They do not retain
 parser exceptions that may contain model-output fragments. Any failure
@@ -87,7 +101,7 @@ application creation or charge commit after invalid output.
 
 Successful response metadata and structured logs record the prompt release,
 template, rules and schema versions and their hashes. Request/response logs
-also record LLM contract `2.0`, parser `3.2.0`, claim policy `2.9.0`, the
+also record LLM contract `2.0`, parser `3.2.0`, claim policy `2.10.0`, the
 actual model ID and the gateway-owned deployment, admission and pricing-policy
 versions. The consumer accepts those fields only from the mandatory audit block
 in the reviewed gateway contract pinned at `c0a2eb1`; missing or malformed
@@ -104,7 +118,7 @@ no live or paid provider request and use no real job-seeker data or production
 credentials.
 
 See [`CLAIM_EVIDENCE_POLICY.md`](CLAIM_EVIDENCE_POLICY.md) for the catalogue,
-disposition and fail-closed rules. Prompt release `1.5.1` remains the immediate
+disposition and fail-closed rules. Prompt release `1.5.2` remains the immediate
 approved emergency rollback. Claim-ledger validation is applied when the
 selected schema contains `claims`; the `1.5.x` quality policy is applied only
 when the selected schema also contains the governed `cv.projects` shape.
