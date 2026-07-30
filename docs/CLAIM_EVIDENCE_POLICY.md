@@ -1,13 +1,13 @@
 # Claim evidence policy
 
 Prompt release `cv-cover-letter-1.5.1`, output schema `3.2.0`, claim policy
-`2.7.0` and deterministic quality policy `1.1.0` establish the current
+`2.8.0` and deterministic quality policy `1.1.0` establish the current
 claim-provenance and document-quality boundary.
 
 Release `1.5.1` makes the provider perform an explicit final-pointer coverage
 audit, including generic narrative and each populated array index, before it
 returns the claim ledger. Local validation remains fail-closed. If the model
-omits only a required project-description pointer, policy `2.7.0` replaces
+omits only a required project-description pointer, policy `2.8.0` replaces
 that prose with the unique exact `DESCRIPTION` fact from the PROJECT selection
 anchored by the same project's exact claimed `HEADING`; it then creates exact
 claim coverage. If a versioned response omits only an opening or closing
@@ -21,16 +21,21 @@ confirmed claimant evidence follows the ordinary evidence rules. Claimed
 unsafe prose, missing claimant evidence outside the exact exception, ambiguous
 project evidence and every other omitted narrative still reject.
 
-Policy `2.7.0` also isolates each versioned project claim after evidence
+Policy `2.8.0` also isolates each versioned project claim after evidence
 enrichment. The project paths retain snapshot facts only from their unique,
 exact-title-anchored PROJECT selection; paths outside that project are split
 into separate claims. This prevents a qualification or another project
 selection from lending facts to the rendered project. Unknown evidence IDs
 and non-snapshot request or job context are retained for ordinary fail-closed
 validation. Missing or ambiguous title anchors are never guessed. Submitted
-claim paths must identify a populated final-content leaf or one of its
-containers; unmatched paths are rejected before canonicalisation rather than
-being silently discarded.
+claim paths must identify the known claim-bearing topology in the
+schema-validated output tree. A pointer to an existing but empty optional
+field or empty container may accompany a populated pointer and is discarded
+because it cannot cover final content. An empty-only final claim, server-owned
+non-claim field, missing, unknown or out-of-range pointer rejects. Submitted
+evidence IDs are validated as approved and unique before empty pointers can
+be removed. Exact-once coverage of all populated final content remains
+mandatory after canonicalisation.
 
 ## Approved evidence
 

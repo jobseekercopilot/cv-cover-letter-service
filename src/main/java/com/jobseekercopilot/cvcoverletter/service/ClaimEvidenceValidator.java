@@ -28,7 +28,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.7.0";
+    static final String POLICY_VERSION = "2.8.0";
     private static final int MAX_CLAIMS = 40;
     private static final int MAX_CLAIM_REFERENCES = 30;
     private static final int MAX_REVIEW_TEXT_LENGTH = 500;
@@ -104,9 +104,11 @@ public class ClaimEvidenceValidator {
                     .add(record);
         }
         Set<String> submittedPaths = claimBearingPaths(output);
-        validateSubmittedContentPaths(
+        validateSubmittedClaims(
                 documents.getClaims(),
-                submittedPaths);
+                submittedPaths,
+                claimContentTopologyPaths(output),
+                evidenceById);
         canonicalizeCitedAtomicContent(
                 output,
                 expandContainerContentPaths(
@@ -178,9 +180,11 @@ public class ClaimEvidenceValidator {
         }
     }
 
-    private void validateSubmittedContentPaths(
+    private void validateSubmittedClaims(
             List<GeneratedClaim> claims,
-            Set<String> submittedPaths
+            Set<String> submittedPaths,
+            Set<String> contentPathTopology,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById
     ) {
         for (int claimIndex = 0;
                 claimIndex < claims.size();
@@ -189,24 +193,217 @@ public class ClaimEvidenceValidator {
             if (claim == null) {
                 continue;
             }
-            for (String contentPath :
-                    safe(claim.getContentPaths())) {
-                boolean recognized =
-                        contentPath != null
-                                && (submittedPaths.contains(contentPath)
-                                        || submittedPaths.stream()
-                                                .anyMatch(path ->
-                                                        path.startsWith(
-                                                                contentPath
-                                                                        + "/")));
+            Set<String> uniqueEvidenceIds =
+                    new HashSet<>();
+            List<String> evidenceIds =
+                    safe(claim.getEvidenceIds());
+            for (int evidenceIndex = 0;
+                    evidenceIndex < evidenceIds.size();
+                    evidenceIndex++) {
+                String evidenceId =
+                        evidenceIds.get(evidenceIndex);
+                String evidencePath =
+                        "$.claims["
+                                + claimIndex
+                                + "].evidenceIds["
+                                + evidenceIndex
+                                + "]";
                 require(
-                        recognized,
+                        StringUtils.hasText(evidenceId),
+                        evidencePath,
+                        "evidence ID is blank");
+                require(
+                        uniqueEvidenceIds.add(evidenceId),
+                        evidencePath,
+                        "evidence ID is duplicated");
+                require(
+                        evidenceById.containsKey(evidenceId),
+                        evidencePath,
+                        "evidence ID is not approved");
+            }
+
+            List<String> contentPaths =
+                    safe(claim.getContentPaths());
+            boolean coversPopulatedContent = false;
+            for (int contentPathIndex = 0;
+                    contentPathIndex < contentPaths.size();
+                    contentPathIndex++) {
+                String contentPath =
+                        contentPaths.get(contentPathIndex);
+                require(
+                        contentPath != null
+                                && contentPathTopology
+                                        .contains(contentPath),
+                        "$.claims["
+                                + claimIndex
+                                + "].contentPaths["
+                                + contentPathIndex
+                                + "]",
+                        "content path is not an approved final claim path: "
+                                + boundedStructuralPath(contentPath));
+                coversPopulatedContent =
+                        coversPopulatedContent
+                                || submittedPaths.contains(contentPath)
+                                || submittedPaths.stream()
+                                        .anyMatch(path ->
+                                                path.startsWith(
+                                                        contentPath + "/"));
+            }
+            if (isFinalContent(claim.getDisposition())
+                    && !contentPaths.isEmpty()) {
+                require(
+                        coversPopulatedContent,
                         "$.claims["
                                 + claimIndex
                                 + "].contentPaths",
-                        "content path is not an approved final claim path");
+                        "final claim has no populated content path");
             }
         }
+    }
+
+    private Set<String> claimContentTopologyPaths(
+            JsonNode output
+    ) {
+        Set<String> paths = new LinkedHashSet<>();
+        for (String path : List.of(
+                "/cv/title",
+                "/cv/targetRole",
+                "/cv/personalSummary",
+                "/coverLetter/title",
+                "/coverLetter/jobTitle",
+                "/coverLetter/companyName",
+                "/coverLetter/openingParagraph",
+                "/coverLetter/closingParagraph")) {
+            addExistingPath(paths, output, path);
+        }
+        addObjectArrayTopology(
+                paths,
+                output,
+                "/cv/coreSkills",
+                List.of("name", "evidence"));
+        addObjectArrayTopology(
+                paths,
+                output,
+                "/cv/projects",
+                List.of(
+                        "title",
+                        "role",
+                        "context",
+                        "startDate",
+                        "endDate",
+                        "description"));
+        addNestedTextArrayTopology(
+                paths,
+                output,
+                "/cv/projects",
+                "highlights");
+        addObjectArrayTopology(
+                paths,
+                output,
+                "/cv/qualifications",
+                List.of(
+                        "qualificationName",
+                        "issuingBody",
+                        "status",
+                        "grade",
+                        "dateAchieved",
+                        "expectedCompletion"));
+        addObjectArrayTopology(
+                paths,
+                output,
+                "/cv/workHistory",
+                List.of(
+                        "jobTitle",
+                        "employer",
+                        "startDate",
+                        "endDate",
+                        "tailoredDescription"));
+        addNestedTextArrayTopology(
+                paths,
+                output,
+                "/cv/workHistory",
+                "responsibilities");
+        addTextArrayTopology(
+                paths,
+                output,
+                "/coverLetter/bodyParagraphs");
+        return Set.copyOf(paths);
+    }
+
+    private void addObjectArrayTopology(
+            Set<String> paths,
+            JsonNode output,
+            String arrayPath,
+            List<String> fields
+    ) {
+        addExistingPath(paths, output, arrayPath);
+        JsonNode array = output.at(arrayPath);
+        for (int index = 0; index < array.size(); index++) {
+            String itemPath = arrayPath + "/" + index;
+            addExistingPath(paths, output, itemPath);
+            for (String field : fields) {
+                addExistingPath(
+                        paths,
+                        output,
+                        itemPath + "/" + field);
+            }
+        }
+    }
+
+    private void addNestedTextArrayTopology(
+            Set<String> paths,
+            JsonNode output,
+            String parentArrayPath,
+            String field
+    ) {
+        JsonNode parents = output.at(parentArrayPath);
+        for (int index = 0;
+                index < parents.size();
+                index++) {
+            addTextArrayTopology(
+                    paths,
+                    output,
+                    parentArrayPath
+                            + "/"
+                            + index
+                            + "/"
+                            + field);
+        }
+    }
+
+    private void addTextArrayTopology(
+            Set<String> paths,
+            JsonNode output,
+            String arrayPath
+    ) {
+        addExistingPath(paths, output, arrayPath);
+        JsonNode array = output.at(arrayPath);
+        for (int index = 0; index < array.size(); index++) {
+            addExistingPath(
+                    paths,
+                    output,
+                    arrayPath + "/" + index);
+        }
+    }
+
+    private void addExistingPath(
+            Set<String> paths,
+            JsonNode output,
+            String path
+    ) {
+        if (!output.at(path).isMissingNode()) {
+            paths.add(path);
+        }
+    }
+
+    private String boundedStructuralPath(String path) {
+        if (path == null) {
+            return "<null>";
+        }
+        int limit = 200;
+        return path.length() <= limit
+                ? path
+                : path.substring(0, limit) + "...";
     }
 
     private void canonicalizeCitedAtomicContent(

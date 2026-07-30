@@ -743,12 +743,227 @@ class ClaimEvidenceValidatorTest {
             throws Exception {
         useVersionedCatalog();
         ObjectNode output = versionedOutput();
+        String invalidPath =
+                "/cv/projects/9999999999/title";
         ((ArrayNode) output.at("/claims/1/contentPaths"))
-                .add("/cv/projects/9999999999/title");
+                .add(invalidPath);
+
+        InvalidLlmResponseException error = assertRejected(
+                output,
+                "content path is not an approved final claim path");
+        assertTrue(error.getMessage().contains(invalidPath));
+    }
+
+    @Test
+    void boundsAnUnapprovedContentPathInTheValidationError()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        String invalidPath =
+                "/cv/" + "unexpected/".repeat(30) + "field";
+        ((ArrayNode) output.at("/claims/1/contentPaths"))
+                .add(invalidPath);
+
+        InvalidLlmResponseException error = assertRejected(
+                output,
+                "content path is not an approved final claim path");
+        assertTrue(error.getMessage().contains("..."));
+        assertFalse(error.getMessage().contains(invalidPath));
+    }
+
+    @Test
+    void discardsPointersToExistingEmptyProjectContent()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        ArrayNode contentPaths =
+                (ArrayNode) output.at("/claims/1/contentPaths");
+        contentPaths.add("/cv/projects/0/endDate");
+        contentPaths.add("/cv/projects/0/highlights");
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertTrue(accepted.getClaims().stream()
+                .flatMap(claim ->
+                        claim.getContentPaths().stream())
+                .noneMatch(path ->
+                        path.equals("/cv/projects/0/endDate")
+                                || path.equals(
+                                        "/cv/projects/0/highlights")));
+    }
+
+    @Test
+    void discardsAnExistingEmptyQualificationLeafAlongsidePopulatedContent()
+            throws Exception {
+        useVersionedCatalog();
+        String qualificationFactId =
+                "84000000-0000-4000-8000-000000000001";
+        addSnapshotFact(
+                qualificationFactId,
+                "QUALIFICATION_TITLE",
+                "BSc Computing",
+                "QUALIFICATION");
+        ObjectNode output = versionedOutput();
+        ObjectNode qualification = objectMapper.createObjectNode();
+        qualification.put("qualificationName", "BSc Computing");
+        qualification.put("issuingBody", "");
+        qualification.put("status", "");
+        qualification.put("grade", "");
+        qualification.put("dateAchieved", "");
+        qualification.put("expectedCompletion", "");
+        ((ArrayNode) output.at("/cv/qualifications"))
+                .add(qualification);
+        ObjectNode claim = objectMapper.createObjectNode();
+        claim.put("claimId", "CLAIM-099");
+        claim.put("disposition", "SUPPORTED");
+        claim.putArray("evidenceIds").add(qualificationFactId);
+        claim.putArray("contentPaths")
+                .add("/cv/qualifications/0/qualificationName")
+                .add("/cv/qualifications/0/expectedCompletion");
+        claim.put("reviewText", "");
+        ((ArrayNode) output.path("claims")).add(claim);
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertTrue(accepted.getClaims().stream()
+                .flatMap(acceptedClaim ->
+                        acceptedClaim.getContentPaths().stream())
+                .noneMatch(
+                        "/cv/qualifications/0/expectedCompletion"::equals));
+        assertEquals(
+                "BSc Computing",
+                accepted.getCv()
+                        .getQualifications()
+                        .get(0)
+                        .getQualificationName());
+    }
+
+    @Test
+    void rejectsAStandaloneFinalClaimForOnlyEmptyContent()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        ObjectNode claim = objectMapper.createObjectNode();
+        claim.put("claimId", "CLAIM-099");
+        claim.put("disposition", "SUPPORTED");
+        claim.putArray("evidenceIds")
+                .add(com.jobseekercopilot.cvcoverletter
+                        .GenerationInputFixtures
+                        .CV_PROJECT_TITLE_FACT_ID.toString());
+        claim.putArray("contentPaths")
+                .add("/cv/projects/0/endDate")
+                .add("/cv/projects/0/highlights");
+        claim.put("reviewText", "");
+        ((ArrayNode) output.path("claims")).add(claim);
 
         assertRejected(
                 output,
+                "final claim has no populated content path");
+    }
+
+    @Test
+    void anEmptyOnlyClaimCannotHideUnknownEvidence()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        ObjectNode claim = objectMapper.createObjectNode();
+        claim.put("claimId", "CLAIM-099");
+        claim.put("disposition", "SUPPORTED");
+        claim.putArray("evidenceIds")
+                .add("83000000-0000-4000-8000-000000000099");
+        claim.putArray("contentPaths")
+                .add("/cv/projects/0/endDate");
+        claim.put("reviewText", "");
+        ((ArrayNode) output.path("claims")).add(claim);
+
+        assertRejected(
+                output,
+                "evidence ID is not approved");
+    }
+
+    @Test
+    void anEmptyOnlyClaimCannotHideDuplicateEvidence()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        ObjectNode claim = objectMapper.createObjectNode();
+        String evidenceId =
+                com.jobseekercopilot.cvcoverletter
+                        .GenerationInputFixtures
+                        .CV_PROJECT_TITLE_FACT_ID.toString();
+        claim.put("claimId", "CLAIM-099");
+        claim.put("disposition", "SUPPORTED");
+        claim.putArray("evidenceIds")
+                .add(evidenceId)
+                .add(evidenceId);
+        claim.putArray("contentPaths")
+                .add("/cv/projects/0/endDate");
+        claim.put("reviewText", "");
+        ((ArrayNode) output.path("claims")).add(claim);
+
+        assertRejected(
+                output,
+                "evidence ID is duplicated");
+    }
+
+    @Test
+    void rejectsServerOwnedNonClaimContent()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode greeting = versionedOutput();
+        ((ArrayNode) greeting.at("/claims/5/contentPaths"))
+                .add("/coverLetter/greeting");
+
+        assertRejected(
+                greeting,
                 "content path is not an approved final claim path");
+
+        ObjectNode signOff = versionedOutput();
+        ((ArrayNode) signOff.at("/claims/5/contentPaths"))
+                .add("/coverLetter/signOff");
+
+        assertRejected(
+                signOff,
+                "content path is not an approved final claim path");
+    }
+
+    @Test
+    void rejectsUnknownOutOfRangeAndScalarDescendantContentPaths()
+            throws Exception {
+        useVersionedCatalog();
+        for (String invalidPath : List.of(
+                "/cv/projects/0/unknownField",
+                "/cv/projects/1/title",
+                "/cv/projects/0/title/0")) {
+            ObjectNode output = versionedOutput();
+            ((ArrayNode) output.at("/claims/1/contentPaths"))
+                    .add(invalidPath);
+
+            InvalidLlmResponseException error = assertRejected(
+                    output,
+                    "content path is not an approved final claim path");
+            assertTrue(
+                    error.getMessage().contains(invalidPath),
+                    error.getMessage());
+        }
+    }
+
+    @Test
+    void anEmptyPathOnAReviewOnlyClaimStillRejectsAsFinalContent()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        ObjectNode claim = reviewOnlyClaim(
+                "CLAIM-099",
+                "CONFIRMATION_REQUIRED",
+                "Please confirm the project end date.");
+        claim.withArray("contentPaths")
+                .add("/cv/projects/0/endDate");
+        ((ArrayNode) output.path("claims")).add(claim);
+
+        assertRejected(
+                output,
+                "review-only claim points at final content");
     }
 
     @Test
