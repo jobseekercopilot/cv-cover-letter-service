@@ -29,7 +29,7 @@ class LlmResponseParserTest {
                 new ClaimEvidenceValidator(),
                 new GeneratedDocumentQualityValidator());
         try (InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.5.1/output-schema.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.2/output-schema.json")) {
             if (input == null) {
                 throw new IllegalStateException("Active output schema fixture is missing.");
             }
@@ -45,6 +45,41 @@ class LlmResponseParserTest {
         assertEquals("Tailored Developer CV", result.getCv().getTitle());
         assertEquals("Developer Cover Letter", result.getCoverLetter().getTitle());
         assertEquals("Focused on Java.", result.getGenerationNotes().getTailoringSummary());
+    }
+
+    @Test
+    void rejectsReviewOnlyOrStructurallyEmptyClaimsAtTheActiveSchemaBoundary()
+            throws Exception {
+        for (String disposition :
+                new String[] {"CONFIRMATION_REQUIRED", "REJECTED"}) {
+            JsonNode reviewOnly =
+                    objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+            ((ObjectNode) reviewOnly.at("/claims/0"))
+                    .put("disposition", disposition);
+            assertRejectedAt(reviewOnly, "$.claims[0].disposition");
+        }
+
+        JsonNode emptyEvidence =
+                objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+        ((ArrayNode) emptyEvidence.at("/claims/0/evidenceIds")).removeAll();
+        assertRejectedAt(emptyEvidence, "$.claims[0].evidenceIds");
+
+        JsonNode emptyPaths =
+                objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+        ((ArrayNode) emptyPaths.at("/claims/0/contentPaths")).removeAll();
+        assertRejectedAt(emptyPaths, "$.claims[0].contentPaths");
+
+        JsonNode reviewText =
+                objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+        ((ObjectNode) reviewText.at("/claims/0"))
+                .put("reviewText", "Please confirm this claim.");
+        assertRejectedAt(reviewText, "$.claims[0].reviewText");
+
+        JsonNode terminalLineSeparator =
+                objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+        ((ObjectNode) terminalLineSeparator.at("/claims/0"))
+                .put("reviewText", "\n");
+        assertRejectedAt(terminalLineSeparator, "$.claims[0].reviewText");
     }
 
     @Test

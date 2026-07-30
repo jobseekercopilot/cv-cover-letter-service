@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobseekercopilot.cvcoverletter.config.LlmProperties;
 import com.jobseekercopilot.cvcoverletter.config.PromptBundleProperties;
@@ -35,7 +36,7 @@ class PromptBundleEvaluationTest {
     void setUp() throws IOException {
         objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBundleProperties bundleProperties = new PromptBundleProperties();
-        bundleProperties.setSelectedReleaseId("cv-cover-letter-1.5.1");
+        bundleProperties.setSelectedReleaseId("cv-cover-letter-1.5.2");
         PromptBundleRegistry registry =
                 new PromptBundleRegistry(objectMapper, new DefaultResourceLoader(), bundleProperties);
         registry.initialize();
@@ -47,7 +48,7 @@ class PromptBundleEvaluationTest {
         normalizer = new GenerationInputNormalizer(
                 Clock.fixed(Instant.parse("2026-07-24T13:00:00Z"), ZoneOffset.UTC));
         try (InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.5.1/evaluation-policy.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.2/evaluation-policy.json")) {
             if (input == null) {
                 throw new IllegalStateException("Prompt evaluation policy fixture is missing.");
             }
@@ -61,7 +62,7 @@ class PromptBundleEvaluationTest {
 
         assertEquals(policy.policyVersion(), prompt.getGenerationMetadata().evaluationPolicyVersion());
         assertEquals(
-                "593a4d8f776a40e229555d3beef5ba29f1c3f040c542d0eb07761c6da761d1ae",
+                "e95e0b7cf5dafa15cae81d4ca08a2790d690b5f504ef775ac1ab386d188a5075",
                 sha256(boundaryMaterial(prompt)),
                 "The golden LLM boundary changed; review the trusted instructions, untrusted envelope, "
                         + "output schema and rollback metadata together.");
@@ -98,9 +99,27 @@ class PromptBundleEvaluationTest {
         assertTrue(trustedInstructions.contains(
                 "Generic, professional and application prose is"));
         assertTrue(trustedInstructions.contains(
-                "union of contentPaths from every SUPPORTED and"));
+                "take the union of contentPaths from every claim"));
         assertTrue(trustedInstructions.contains(
                 "no missing pointer, no duplicate pointer"));
+    }
+
+    @Test
+    void activeBundleEmitsOnlyCompleteFinalContentClaims() {
+        CvCoverLetterPrompt prompt =
+                buildForJob("Build useful and reliable services.");
+        JsonNode claims = prompt.getOutputSchema().at("/properties/claims/items/properties");
+
+        assertEquals(
+                "[\"SUPPORTED\",\"REWORDED\"]",
+                claims.path("disposition").path("enum").toString());
+        assertEquals(1, claims.path("evidenceIds").path("minItems").asInt());
+        assertEquals(1, claims.path("contentPaths").path("minItems").asInt());
+        assertEquals("[\"\"]", claims.path("reviewText").path("enum").toString());
+        assertTrue(prompt.getTrustedInstructions().contains(
+                "Omit unsupported or unconfirmed material from the final documents and claims."));
+        assertTrue(prompt.getTrustedInstructions().contains(
+                "generationNotes.missingInformation"));
     }
 
     @Test

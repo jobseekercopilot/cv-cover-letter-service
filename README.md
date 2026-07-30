@@ -53,15 +53,19 @@ evidence. See
 
 ## Prompt releases
 
-Prompt bundle `cv-cover-letter-1.5.1` and output schema `3.2.0` render projects
+Prompt bundle `cv-cover-letter-1.5.2` and output schema `3.3.0` render projects
 as projects, keep paid employment separate, cap the CV at 8–12 unique confirmed
 skills where available, omit unsupported empty sections, and use the correct
 UK generic greeting/sign-off pair. A post-grounding quality policy rejects
 repeated narrative, repeated qualifications, missing selected evidence and
 project fields assembled from different evidence entries. Release `1.5.1`
-also requires an explicit complete claim-path audit for every non-empty final
-field, including generic narrative and dynamic array indexes. The immutable
-`1.5.0` release remains packaged as the immediate emergency rollback.
+requires an explicit complete claim-path audit for every non-empty final field,
+including generic narrative and dynamic array indexes. Release `1.5.2` narrows
+the provider output ledger to complete `SUPPORTED` and `REWORDED` final-content
+claims; unsupported or unconfirmed material is omitted and may be described
+only as neutral missing information. The local four-disposition claim policy
+remains fail-closed for historical data and rollback. The immutable `1.5.1`
+release remains packaged as the immediate emergency rollback.
 
 Prompt template, rules, output schema and evaluation-policy versions are
 selected as one reviewed bundle. Checksums, an approved-release index and

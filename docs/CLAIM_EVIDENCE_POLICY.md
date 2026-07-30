@@ -1,12 +1,18 @@
 # Claim evidence policy
 
-Prompt release `cv-cover-letter-1.5.1`, output schema `3.2.0`, claim policy
+Prompt release `cv-cover-letter-1.5.2`, output schema `3.3.0`, claim policy
 `2.9.0` and deterministic quality policy `1.1.0` establish the current
 claim-provenance and document-quality boundary.
 
 Release `1.5.1` makes the provider perform an explicit final-pointer coverage
 audit, including generic narrative and each populated array index, before it
-returns the claim ledger. Local validation remains fail-closed. If the model
+returns the claim ledger. Release `1.5.2` makes the active provider ledger
+final-content-only: every entry is `SUPPORTED` or `REWORDED`, has at least one
+approved evidence ID and final content path, and has empty review text.
+Unsupported and unconfirmed material is omitted from the documents and ledger;
+only a neutral missing-information note may remain. The broader four-
+disposition local and published contract is unchanged for historical and
+rollback output. Local validation remains fail-closed. If the model
 omits only a required project-description pointer, policy `2.9.0` replaces
 that prose with the unique exact `DESCRIPTION` fact from the PROJECT selection
 anchored by the same project's exact claimed `HEADING`; it then creates exact
@@ -68,17 +74,19 @@ untrusted-input field, never interpolated into reviewed instructions.
 
 ## Claim dispositions
 
-Every claim-ledger entry has one disposition:
+The published and local claim-ledger contract retains four dispositions:
 
 - `SUPPORTED`: exact or directly composed from cited approved evidence;
 - `REWORDED`: wording changed without changing the cited evidence's meaning;
 - `CONFIRMATION_REQUIRED`: useful candidate material that requires user review;
 - `REJECTED`: unsupported material excluded from the documents.
 
-Supported and reworded entries require approved evidence IDs and one or more
-exact JSON Pointer paths into final CV or cover-letter text. Their `reviewText`
-must be empty. Confirmation-required and rejected entries may contain only
-review text; their final `contentPaths` must be empty.
+The active `1.5.2` provider schema emits only supported and reworded entries.
+They require approved evidence IDs and one or more exact JSON Pointer paths
+into final CV or cover-letter text, and their `reviewText` must be empty.
+Confirmation-required and rejected entries remain accepted only through
+approved rollback or historical local validation; they may contain only review
+text and their final `contentPaths` must be empty.
 
 ## Fail-closed validation
 
@@ -99,8 +107,9 @@ external write, `ClaimEvidenceValidator`:
 7. revalidates the complete schema and plain-text policy after every trusted
    canonicalisation.
 
-For schema `3.2.0`, `GeneratedDocumentQualityValidator` runs only after the
-grounding ledger is normalised and accepted. It:
+For the project-aware `3.2.0` and `3.3.0` schemas,
+`GeneratedDocumentQualityValidator` runs only after the grounding ledger is
+normalised and accepted. It:
 
 1. requires canonical job titles, company, generic greeting and UK sign-off;
 2. limits skills to 12, rejects normalised duplicates and requires up to 8

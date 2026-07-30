@@ -43,7 +43,7 @@ class ClaimEvidenceValidatorTest {
         try (InputStream input = getClass().getResourceAsStream(
                 "/prompts/bundles/cv-cover-letter-1.5.1/output-schema.json")) {
             if (input == null) {
-                throw new IllegalStateException("Claim evidence schema fixture is missing.");
+                throw new IllegalStateException("Rollback claim evidence schema fixture is missing.");
             }
             schema = objectMapper.readTree(input);
         }
@@ -135,6 +135,25 @@ class ClaimEvidenceValidatorTest {
 
         omittedPaths.forEach(path ->
                 assertTrue(error.getMessage().contains(path), error.getMessage()));
+    }
+
+    @Test
+    void doesNotTreatGenerationNotesAsFinalClaimCoverage()
+            throws Exception {
+        ObjectNode output = validOutput();
+        ArrayNode claims = (ArrayNode) output.path("claims");
+        JsonNode removedClaim = claims.remove(8);
+        String omittedPath =
+                removedClaim.path("contentPaths").get(0).asText();
+        ((ArrayNode) output.at("/generationNotes/missingInformation"))
+                .add(omittedPath);
+
+        InvalidLlmResponseException error =
+                assertRejected(
+                        output,
+                        "final content contains unaccounted claim paths");
+
+        assertTrue(error.getMessage().contains(omittedPath));
     }
 
     @Test

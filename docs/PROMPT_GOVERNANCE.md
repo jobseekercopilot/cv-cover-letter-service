@@ -5,12 +5,12 @@ Each approved release under `src/main/resources/prompts/bundles` packages the
 template, generation rules, output schema and synthetic evaluation policy with
 immutable component checksums. `index.json` is the only runtime allowlist.
 
-The active `cv-cover-letter-1.5.1` release converts the normalised profile and
+The active `cv-cover-letter-1.5.2` release converts the normalised profile and
 canonical job into a stable approved-evidence catalogue and treats that
 catalogue and normalisation warnings as untrusted data. It places the safety
 rules before that evidence and forbids direct, indirect, encoded, nested,
 Unicode-obfuscated and schema-escape instructions in source content from
-changing the task. The release also owns exact bounded JSON Schema `3.2.0`
+changing the task. The release also owns exact bounded JSON Schema `3.3.0`
 used at the provider boundary and by the local response parser. The domain
 bundle cannot name a model provider or transport API; provider mechanics
 belong behind LLM Gateway.
@@ -19,11 +19,17 @@ Release `1.5.0` adds a dedicated project structure, separates employment from
 project evidence, caps and deduplicates confirmed skills, requires the correct
 generic UK sign-off, and requires every selected evidence entry to appear in
 final content for its purpose. The deterministic quality policy is enabled
-only for the `3.2.0` schema shape containing `cv.projects`; selecting the
-approved `1.5.0` rollback retains the same strict schema and local validation.
+for the project-aware schema shape containing `cv.projects`; selecting an
+approved `1.5.x` rollback retains the same strict local grounding validation.
 Release `1.5.1` adds an exhaustive final-pointer checklist, dynamic-index
 instructions and a complete coverage exemplar so generic narrative is not
-silently omitted from the model-produced claim ledger.
+silently omitted from the model-produced claim ledger. Release `1.5.2` makes
+that provider ledger final-content-only: each claim is `SUPPORTED` or
+`REWORDED`, has evidence and final paths, and has empty review text. Missing or
+unsupported material is omitted from the documents and claims and may appear
+only as a neutral `generationNotes.missingInformation` item. The broader local
+and published four-disposition ledger remains compatible with historical and
+rollback output.
 
 Runtime assembly preserves those domains as separate LLM Gateway v2 fields:
 reviewed bundle text becomes `trustedInstructions`, normalised evidence becomes

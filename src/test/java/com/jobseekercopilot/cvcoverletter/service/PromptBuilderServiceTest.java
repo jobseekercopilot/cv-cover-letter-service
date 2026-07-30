@@ -22,7 +22,7 @@ class PromptBuilderServiceTest {
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBuilderService service = new PromptBuilderService(
                 objectMapper,
-                registry(objectMapper, "cv-cover-letter-1.5.1"),
+                registry(objectMapper, "cv-cover-letter-1.5.2"),
                 properties,
                 new ClaimEvidenceCatalogFactory());
         GenerationInputNormalizer normalizer = new GenerationInputNormalizer(
@@ -35,13 +35,17 @@ class PromptBuilderServiceTest {
         assertTrue(result.getTrustedInstructions().contains("UK English"));
         assertTrue(result.getTrustedInstructions().contains("Aim for 5 to 7 concise paragraphs"));
         assertTrue(result.getTrustedInstructions().contains("specific to the job"));
-        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.5.1"));
+        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.5.2"));
         assertTrue(result.getTrustedInstructions().contains(
                 "Generic, professional and application prose is"));
         assertTrue(result.getTrustedInstructions().contains(
                 "/coverLetter/bodyParagraphs/{i}"));
         assertTrue(result.getTrustedInstructions().contains(
                 "It must equal the complete claim-bearing checklist exactly"));
+        assertTrue(result.getTrustedInstructions().contains(
+                "The claims ledger is final-content provenance only."));
+        assertTrue(result.getTrustedInstructions().contains(
+                "Do not emit CONFIRMATION_REQUIRED or REJECTED ledger entries"));
         assertTrue(result.getTrustedInstructions().contains("UNTRUSTED CONTENT RULES"));
         assertTrue(result.getTrustedInstructions().contains(
                 "[CANONICAL JOB FACTS SUPPLIED THROUGH THE UNTRUSTED INPUT CHANNEL]"));
@@ -63,7 +67,18 @@ class PromptBuilderServiceTest {
         assertTrue(result.getOutputSchema().at(
                 "/properties/cv/properties/projects").isObject());
         assertTrue(result.getGenerationMetadata().bundleSha256().matches("[a-f0-9]{64}"));
-        assertTrue(result.getGenerationMetadata().schemaVersion().equals("3.2.0"));
+        assertTrue(result.getOutputSchema().at(
+                "/properties/claims/items/properties/disposition/enum").toString()
+                .equals("[\"SUPPORTED\",\"REWORDED\"]"));
+        assertTrue(result.getOutputSchema().at(
+                "/properties/claims/items/properties/evidenceIds/minItems").asInt() == 1);
+        assertTrue(result.getOutputSchema().at(
+                "/properties/claims/items/properties/contentPaths/minItems").asInt() == 1);
+        assertTrue(result.getOutputSchema().at(
+                "/properties/claims/items/properties/reviewText/enum/0").asText().isEmpty());
+        assertFalse(result.getOutputSchema().toString().contains("CONFIRMATION_REQUIRED"));
+        assertFalse(result.getOutputSchema().toString().contains("REJECTED"));
+        assertTrue(result.getGenerationMetadata().schemaVersion().equals("3.3.0"));
         assertTrue(result.getEvidenceCatalog().records().stream()
                 .anyMatch(record -> record.evidenceId().equals("JOB.TITLE")));
         assertFalse(result.getTrustedInstructions().contains("Build useful and reliable services."));
