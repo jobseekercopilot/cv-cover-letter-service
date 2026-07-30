@@ -28,10 +28,18 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.5.0";
+    static final String POLICY_VERSION = "2.6.0";
     private static final int MAX_CLAIMS = 40;
     private static final int MAX_CLAIM_REFERENCES = 30;
     private static final int MAX_REVIEW_TEXT_LENGTH = 500;
+    private static final String GENERATION_INTENT_EVIDENCE_ID =
+            "REQUEST.GENERATION_INTENT";
+    private static final String JOB_TITLE_EVIDENCE_ID = "JOB.TITLE";
+    private static final String JOB_COMPANY_EVIDENCE_ID = "JOB.COMPANY";
+    private static final String OPENING_PARAGRAPH_PATH =
+            "/coverLetter/openingParagraph";
+    private static final String CLOSING_PARAGRAPH_PATH =
+            "/coverLetter/closingParagraph";
 
     private static final Pattern NUMERIC_CLAIM =
             Pattern.compile("(?<![\\p{L}\\p{N}])\\d+(?:[.,]\\d+)?%?(?![\\p{L}\\p{N}])");
@@ -58,6 +66,8 @@ public class ClaimEvidenceValidator {
         Map<String, List<ApprovedEvidenceRecord>> evidenceById =
                 new HashMap<>();
         Set<String> evidenceScopeKeys = new HashSet<>();
+        boolean versionedEvidence =
+                "2.0".equals(catalog.catalogVersion());
         for (ApprovedEvidenceRecord record : catalog.records()) {
             if (record == null
                     || !StringUtils.hasText(record.evidenceId())
@@ -69,7 +79,7 @@ public class ClaimEvidenceValidator {
                 throw new IllegalStateException(
                         "Approved evidence catalogue contains invalid or duplicate scoped IDs.");
             }
-            if ("2.0".equals(catalog.catalogVersion())) {
+            if (versionedEvidence) {
                 if (record.source() == EvidenceSource.PROFILE
                         || record.evidenceId().startsWith("PROFILE.")) {
                     throw new IllegalStateException(
@@ -104,6 +114,11 @@ public class ClaimEvidenceValidator {
                 output,
                 documents.getClaims(),
                 evidenceById);
+        canonicalizeUnclaimedApplicationBookends(
+                output,
+                documents.getClaims(),
+                evidenceById,
+                versionedEvidence);
         Set<String> expectedPaths = claimBearingPaths(output);
         List<GeneratedClaim> claims = normalizeDuplicateClaimIds(
                 normalizeDuplicateCoverage(
@@ -116,7 +131,8 @@ public class ClaimEvidenceValidator {
                 output,
                 claims,
                 evidenceById,
-                expectedPaths);
+                expectedPaths,
+                versionedEvidence);
         claims = enrichAtomicEvidenceReferences(
                 output,
                 claims,
@@ -139,7 +155,7 @@ public class ClaimEvidenceValidator {
                     coveredPaths,
                     claimIds,
                     evidenceById,
-                    "2.0".equals(catalog.catalogVersion()));
+                    versionedEvidence);
         }
         if (!coveredPaths.equals(expectedPaths)) {
             Set<String> unaccounted = new LinkedHashSet<>(expectedPaths);
@@ -374,6 +390,129 @@ public class ClaimEvidenceValidator {
         }
     }
 
+    private void canonicalizeUnclaimedApplicationBookends(
+            JsonNode output,
+            List<GeneratedClaim> claims,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            boolean versionedEvidence
+    ) {
+        if (!versionedEvidence) {
+            return;
+        }
+        List<ApprovedEvidenceRecord> canonicalEvidence =
+                canonicalApplicationEvidence(evidenceById);
+        if (canonicalEvidence.isEmpty()) {
+            return;
+        }
+        Set<String> currentPaths = claimBearingPaths(output);
+        Set<String> claimedPaths = expandContainerContentPaths(
+                        claims,
+                        currentPaths)
+                .stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(claim ->
+                        isFinalContent(claim.getDisposition()))
+                .flatMap(claim ->
+                        safe(claim.getContentPaths()).stream())
+                .collect(java.util.stream.Collectors.toSet());
+        for (String contentPath : List.of(
+                OPENING_PARAGRAPH_PATH,
+                CLOSING_PARAGRAPH_PATH)) {
+            if (currentPaths.contains(contentPath)
+                    && !claimedPaths.contains(contentPath)) {
+                replaceText(
+                        output,
+                        contentPath,
+                        canonicalApplicationBookend(contentPath));
+            }
+        }
+    }
+
+    private List<ApprovedEvidenceRecord> canonicalApplicationEvidence(
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById
+    ) {
+        ApprovedEvidenceRecord intent = uniqueEvidence(
+                evidenceById,
+                GENERATION_INTENT_EVIDENCE_ID,
+                EvidenceSource.REQUEST);
+        ApprovedEvidenceRecord jobTitle = uniqueEvidence(
+                evidenceById,
+                JOB_TITLE_EVIDENCE_ID,
+                EvidenceSource.JOB);
+        ApprovedEvidenceRecord company = uniqueEvidence(
+                evidenceById,
+                JOB_COMPANY_EVIDENCE_ID,
+                EvidenceSource.JOB);
+        if (intent == null
+                || jobTitle == null
+                || company == null) {
+            return List.of();
+        }
+        return List.of(intent, jobTitle, company);
+    }
+
+    private ApprovedEvidenceRecord uniqueEvidence(
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            String evidenceId,
+            EvidenceSource source
+    ) {
+        List<ApprovedEvidenceRecord> compatible =
+                evidenceById.getOrDefault(evidenceId, List.of())
+                        .stream()
+                        .filter(record -> record.source() == source)
+                        .filter(record -> record.purpose()
+                                .supports(EvidencePurpose.COVER_LETTER))
+                        .filter(record ->
+                                StringUtils.hasText(record.value()))
+                        .toList();
+        return compatible.size() == 1
+                ? compatible.get(0)
+                : null;
+    }
+
+    private String canonicalApplicationBookend(
+            String contentPath
+    ) {
+        if (OPENING_PARAGRAPH_PATH.equals(contentPath)) {
+            return "Please consider my application for this role.";
+        }
+        if (CLOSING_PARAGRAPH_PATH.equals(contentPath)) {
+            return "Thank you for considering my application.";
+        }
+        return "";
+    }
+
+    private boolean isCanonicalApplicationBookend(
+            JsonNode output,
+            String contentPath,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById
+    ) {
+        if (!OPENING_PARAGRAPH_PATH.equals(contentPath)
+                && !CLOSING_PARAGRAPH_PATH.equals(contentPath)) {
+            return false;
+        }
+        JsonNode value = output.at(contentPath);
+        List<ApprovedEvidenceRecord> canonicalEvidence =
+                canonicalApplicationEvidence(evidenceById);
+        return value.isTextual()
+                && !canonicalEvidence.isEmpty()
+                && isCanonicalApplicationBookendText(
+                        contentPath,
+                        value.textValue());
+    }
+
+    private boolean isCanonicalApplicationBookendText(
+            String contentPath,
+            String content
+    ) {
+        return content != null
+                && (OPENING_PARAGRAPH_PATH.equals(contentPath)
+                        || CLOSING_PARAGRAPH_PATH.equals(
+                                contentPath))
+                && content.equals(
+                        canonicalApplicationBookend(contentPath));
+    }
+
     private ApprovedEvidenceRecord uniqueProjectDescriptionEvidence(
             JsonNode output,
             List<GeneratedClaim> claims,
@@ -532,7 +671,8 @@ public class ClaimEvidenceValidator {
             JsonNode output,
             List<GeneratedClaim> claims,
             Map<String, List<ApprovedEvidenceRecord>> evidenceById,
-            Set<String> expectedPaths
+            Set<String> expectedPaths,
+            boolean versionedEvidence
     ) {
         Set<String> covered = claims.stream()
                 .filter(java.util.Objects::nonNull)
@@ -557,7 +697,16 @@ public class ClaimEvidenceValidator {
             Predicate<ApprovedEvidenceRecord> atomicEvidence =
                     atomicEvidenceFor(contentPath);
             List<String> matchingEvidenceIds;
-            if (contentPath.matches(
+            if (versionedEvidence
+                    && isCanonicalApplicationBookend(
+                            output,
+                            contentPath,
+                            evidenceById)) {
+                matchingEvidenceIds = List.of(
+                        GENERATION_INTENT_EVIDENCE_ID,
+                        JOB_TITLE_EVIDENCE_ID,
+                        JOB_COMPANY_EVIDENCE_ID);
+            } else if (contentPath.matches(
                     "/cv/projects/\\d+/description")) {
                 int projectIndex = Integer.parseInt(
                         contentPath.split("/")[3]);
@@ -995,6 +1144,11 @@ public class ClaimEvidenceValidator {
             String claimPath,
             boolean versionedEvidence
     ) {
+        boolean canonicalApplicationBookend =
+                isCanonicalApplicationBookend(
+                        contentPath,
+                        content,
+                        evidence);
         Predicate<ApprovedEvidenceRecord> atomicEvidence = atomicEvidenceFor(contentPath);
         if (atomicEvidence != null) {
             require(evidence.stream()
@@ -1018,7 +1172,8 @@ public class ClaimEvidenceValidator {
                         "candidate claim has no approved profile evidence");
             }
             if (versionedEvidence
-                    && requiresConfirmedCandidateEvidence(contentPath)) {
+                    && requiresConfirmedCandidateEvidence(contentPath)
+                    && !canonicalApplicationBookend) {
                 require(evidence.stream().anyMatch(
                                 record -> candidateEvidence(
                                         record.source())),
@@ -1043,6 +1198,58 @@ public class ClaimEvidenceValidator {
                 claimPath,
                 "sensitive or specific claim is absent from approved evidence at "
                         + contentPath);
+    }
+
+    private boolean isCanonicalApplicationBookend(
+            String contentPath,
+            String content,
+            List<ApprovedEvidenceRecord> evidence
+    ) {
+        if (!OPENING_PARAGRAPH_PATH.equals(contentPath)
+                && !CLOSING_PARAGRAPH_PATH.equals(contentPath)) {
+            return false;
+        }
+        Set<String> evidenceIds = evidence.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(ApprovedEvidenceRecord::evidenceId)
+                .collect(java.util.stream.Collectors.toSet());
+        if (!evidenceIds.equals(Set.of(
+                GENERATION_INTENT_EVIDENCE_ID,
+                JOB_TITLE_EVIDENCE_ID,
+                JOB_COMPANY_EVIDENCE_ID))) {
+            return false;
+        }
+        Map<String, ApprovedEvidenceRecord> canonicalEvidenceById =
+                new LinkedHashMap<>();
+        for (ApprovedEvidenceRecord record : evidence) {
+            if (record == null) {
+                continue;
+            }
+            if (GENERATION_INTENT_EVIDENCE_ID.equals(
+                            record.evidenceId())
+                    && record.source() == EvidenceSource.REQUEST) {
+                canonicalEvidenceById.put(
+                        record.evidenceId(),
+                        record);
+            } else if ((JOB_TITLE_EVIDENCE_ID.equals(
+                                    record.evidenceId())
+                            || JOB_COMPANY_EVIDENCE_ID.equals(
+                                    record.evidenceId()))
+                    && record.source() == EvidenceSource.JOB) {
+                canonicalEvidenceById.put(
+                        record.evidenceId(),
+                        record);
+            }
+        }
+        if (!canonicalEvidenceById.keySet().containsAll(Set.of(
+                GENERATION_INTENT_EVIDENCE_ID,
+                JOB_TITLE_EVIDENCE_ID,
+                JOB_COMPANY_EVIDENCE_ID))) {
+            return false;
+        }
+        return isCanonicalApplicationBookendText(
+                contentPath,
+                content);
     }
 
     private Predicate<ApprovedEvidenceRecord> atomicEvidenceFor(String path) {

@@ -78,7 +78,7 @@ application creation or charge commit after invalid output.
 
 Successful response metadata and structured logs record the prompt release,
 template, rules and schema versions and their hashes. Request/response logs
-also record LLM contract `2.0`, parser `3.2.0`, claim policy `2.5.0`, the
+also record LLM contract `2.0`, parser `3.2.0`, claim policy `2.6.0`, the
 actual model ID and the gateway-owned deployment, admission and pricing-policy
 versions. The consumer accepts those fields only from the mandatory audit block
 in the reviewed gateway contract pinned at `c0a2eb1`; missing or malformed

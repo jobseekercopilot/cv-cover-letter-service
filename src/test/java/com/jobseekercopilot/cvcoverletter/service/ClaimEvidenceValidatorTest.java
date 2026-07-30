@@ -189,6 +189,282 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
+    void replacesUnclaimedApplicationBookendsWithCanonicalGroundedText()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        removeClaimsCovering(
+                output,
+                java.util.Set.of(
+                        "/coverLetter/openingParagraph",
+                        "/coverLetter/closingParagraph"));
+        ((ObjectNode) output.at("/coverLetter"))
+                .put(
+                        "openingParagraph",
+                        "Model prose without ledger coverage.")
+                .put(
+                        "closingParagraph",
+                        "Another unaccounted model sentence.");
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertEquals(
+                "Please consider my application for this role.",
+                accepted.getCoverLetter().getOpeningParagraph());
+        assertEquals(
+                "Thank you for considering my application.",
+                accepted.getCoverLetter().getClosingParagraph());
+        for (String path : List.of(
+                "/coverLetter/openingParagraph",
+                "/coverLetter/closingParagraph")) {
+            var claim = accepted.getClaims().stream()
+                    .filter(candidate ->
+                            candidate.getContentPaths().contains(path))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals(
+                    ClaimDisposition.SUPPORTED,
+                    claim.getDisposition());
+            assertEquals(
+                    List.of(
+                            "REQUEST.GENERATION_INTENT",
+                            "JOB.TITLE",
+                            "JOB.COMPANY"),
+                    claim.getEvidenceIds());
+            assertEquals(List.of(path), claim.getContentPaths());
+            assertTrue(
+                    claim.getClaimId().startsWith("CLAIM-2"));
+        }
+    }
+
+    @Test
+    void canonicalBookendExceptionRequiresExactTextAndAllCanonicalEvidence()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode exact = versionedOutput();
+        ((ObjectNode) exact.at("/coverLetter"))
+                .put(
+                        "openingParagraph",
+                        "Please consider my application for this role.");
+        ArrayNode exactEvidence =
+                (ArrayNode) exact.at("/claims/5/evidenceIds");
+        exactEvidence.removeAll()
+                .add("REQUEST.GENERATION_INTENT")
+                .add("JOB.TITLE")
+                .add("JOB.COMPANY");
+
+        GeneratedApplicationDocuments accepted = parse(exact);
+
+        assertEquals(
+                "Please consider my application for this role.",
+                accepted.getCoverLetter().getOpeningParagraph());
+
+        for (String changed : List.of(
+                "I am ideally suited to Java Developer at Example Ltd.",
+                "please consider my application for this role.",
+                "Please  consider my application for this role.",
+                "Please consider my application for this role. ")) {
+            ObjectNode changedText = versionedOutput();
+            ((ObjectNode) changedText.at("/coverLetter"))
+                    .put("openingParagraph", changed);
+            ArrayNode changedTextEvidence =
+                    (ArrayNode) changedText.at(
+                            "/claims/5/evidenceIds");
+            changedTextEvidence.removeAll()
+                    .add("REQUEST.GENERATION_INTENT")
+                    .add("JOB.TITLE")
+                    .add("JOB.COMPANY");
+            assertRejected(
+                    changedText,
+                    "candidate claim has no confirmed claimant evidence");
+        }
+
+        ObjectNode missingEvidence = versionedOutput();
+        ((ObjectNode) missingEvidence.at("/coverLetter"))
+                .put(
+                        "openingParagraph",
+                        "Please consider my application for this role.");
+        ArrayNode incompleteEvidence =
+                (ArrayNode) missingEvidence.at("/claims/5/evidenceIds");
+        incompleteEvidence.removeAll()
+                .add("JOB.TITLE")
+                .add("JOB.COMPANY");
+        assertRejected(
+                missingEvidence,
+                "candidate claim has no confirmed claimant evidence");
+
+        ObjectNode surplusJobEvidence = versionedOutput();
+        ((ObjectNode) surplusJobEvidence.at("/coverLetter"))
+                .put(
+                        "openingParagraph",
+                        "Please consider my application for this role.");
+        ArrayNode surplusEvidence =
+                (ArrayNode) surplusJobEvidence.at(
+                        "/claims/5/evidenceIds");
+        surplusEvidence.removeAll()
+                .add("REQUEST.GENERATION_INTENT")
+                .add("JOB.TITLE")
+                .add("JOB.COMPANY")
+                .add("JOB.DESCRIPTION");
+        assertRejected(
+                surplusJobEvidence,
+                "candidate claim has no confirmed claimant evidence");
+
+        ObjectNode claimantEvidence = versionedOutput();
+        ((ObjectNode) claimantEvidence.at("/coverLetter"))
+                .put(
+                        "openingParagraph",
+                        "Please consider my application for this role.");
+        ArrayNode ordinaryEvidence =
+                (ArrayNode) claimantEvidence.at(
+                        "/claims/5/evidenceIds");
+        ordinaryEvidence.removeAll()
+                .add("REQUEST.GENERATION_INTENT")
+                .add("JOB.TITLE")
+                .add("JOB.COMPANY")
+                .add(com.jobseekercopilot.cvcoverletter
+                        .GenerationInputFixtures
+                        .COVER_EXPERIENCE_FACT_ID.toString());
+
+        GeneratedApplicationDocuments ordinarilyGrounded =
+                parse(claimantEvidence);
+
+        assertEquals(
+                "Please consider my application for this role.",
+                ordinarilyGrounded.getCoverLetter()
+                        .getOpeningParagraph());
+    }
+
+    @Test
+    void fixedTextDoesNotChangeLegacyEvidenceHandling()
+            throws Exception {
+        ObjectNode output = validOutput();
+        ((ObjectNode) output.at("/coverLetter"))
+                .put(
+                        "closingParagraph",
+                        "Thank you for considering my application.");
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertEquals(
+                "Thank you for considering my application.",
+                accepted.getCoverLetter().getClosingParagraph());
+        assertEquals(
+                List.of("JOB.DESCRIPTION"),
+                accepted.getClaims().stream()
+                        .filter(claim -> claim.getContentPaths()
+                                .contains(
+                                        "/coverLetter/closingParagraph"))
+                        .findFirst()
+                        .orElseThrow()
+                        .getEvidenceIds());
+    }
+
+    @Test
+    void missingCanonicalIntentLeavesAnOmittedBookendRejected()
+            throws Exception {
+        useVersionedCatalog();
+        catalog = withoutEvidence("REQUEST.GENERATION_INTENT");
+        ObjectNode output = versionedOutput();
+        removeClaimsCovering(
+                output,
+                java.util.Set.of(
+                        "/coverLetter/openingParagraph"));
+
+        InvalidLlmResponseException error = assertRejected(
+                output,
+                "final content contains unaccounted claim paths");
+
+        assertTrue(
+                error.getMessage().contains(
+                        "/coverLetter/openingParagraph"),
+                error.getMessage());
+    }
+
+    @Test
+    void recoveringOneBookendNeverChangesTheOtherClaimedBookend()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        removeClaimsCovering(
+                output,
+                java.util.Set.of(
+                        "/coverLetter/openingParagraph"));
+        ((ObjectNode) output.at("/coverLetter"))
+                .put(
+                        "openingParagraph",
+                        "Unclaimed model prose.")
+                .put(
+                        "closingParagraph",
+                        "A claimed closing remains unchanged.");
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertEquals(
+                "Please consider my application for this role.",
+                accepted.getCoverLetter().getOpeningParagraph());
+        assertEquals(
+                "A claimed closing remains unchanged.",
+                accepted.getCoverLetter().getClosingParagraph());
+    }
+
+    @Test
+    void neverInterpolatesUntrustedJobIdentityIntoRecoveredBookends()
+            throws Exception {
+        useVersionedCatalog();
+        replaceEvidenceValue(
+                "JOB.TITLE",
+                "Developer. I manage budgets");
+        replaceEvidenceValue(
+                "JOB.COMPANY",
+                "Example Ltd. I lead teams");
+        ObjectNode output = versionedOutput();
+        removeClaimsCovering(
+                output,
+                java.util.Set.of(
+                        "/coverLetter/openingParagraph",
+                        "/coverLetter/closingParagraph"));
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertEquals(
+                "Developer. I manage budgets",
+                accepted.getCoverLetter().getJobTitle());
+        assertEquals(
+                "Example Ltd. I lead teams",
+                accepted.getCoverLetter().getCompanyName());
+        assertEquals(
+                "Please consider my application for this role.",
+                accepted.getCoverLetter().getOpeningParagraph());
+        assertEquals(
+                "Thank you for considering my application.",
+                accepted.getCoverLetter().getClosingParagraph());
+        assertFalse(accepted.getCoverLetter()
+                .getOpeningParagraph().contains("I manage budgets"));
+        assertFalse(accepted.getCoverLetter()
+                .getOpeningParagraph().contains("I lead teams"));
+        assertFalse(accepted.getCoverLetter()
+                .getClosingParagraph().contains("I manage budgets"));
+        assertFalse(accepted.getCoverLetter()
+                .getClosingParagraph().contains("I lead teams"));
+    }
+
+    @Test
+    void neverReplacesClaimedUnsafeApplicationProse()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        ((ObjectNode) output.at("/coverLetter"))
+                .put(
+                        "openingParagraph",
+                        "I am a passionate Kubernetes expert.");
+
+        assertRejected(
+                output,
+                "sensitive or specific claim is absent from approved evidence");
+    }
+
+    @Test
     void leavesAClaimedGroundedProjectDescriptionUnchanged()
             throws Exception {
         useVersionedCatalog();
@@ -1372,6 +1648,28 @@ class ClaimEvidenceValidatorTest {
         for (int index = evidenceIds.size() - 1; index >= 0; index--) {
             if (evidenceIds.get(index).asText().equals(evidenceId)) {
                 evidenceIds.remove(index);
+            }
+        }
+    }
+
+    private void removeClaimsCovering(
+            ObjectNode output,
+            java.util.Set<String> contentPaths
+    ) {
+        ArrayNode claims = (ArrayNode) output.path("claims");
+        for (int claimIndex = claims.size() - 1;
+                claimIndex >= 0;
+                claimIndex--) {
+            boolean covered = false;
+            for (JsonNode contentPath :
+                    claims.get(claimIndex).path("contentPaths")) {
+                if (contentPaths.contains(contentPath.asText())) {
+                    covered = true;
+                    break;
+                }
+            }
+            if (covered) {
+                claims.remove(claimIndex);
             }
         }
     }

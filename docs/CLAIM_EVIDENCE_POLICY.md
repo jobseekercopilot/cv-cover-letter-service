@@ -1,16 +1,25 @@
 # Claim evidence policy
 
 Prompt release `cv-cover-letter-1.5.1`, output schema `3.2.0`, claim policy
-`2.5.0` and deterministic quality policy `1.1.0` establish the current
+`2.6.0` and deterministic quality policy `1.1.0` establish the current
 claim-provenance and document-quality boundary.
 
 Release `1.5.1` makes the provider perform an explicit final-pointer coverage
 audit, including generic narrative and each populated array index, before it
 returns the claim ledger. Local validation remains fail-closed. If the model
-omits only a required project-description pointer, policy `2.5.0` replaces
+omits only a required project-description pointer, policy `2.6.0` replaces
 that prose with the unique exact `DESCRIPTION` fact from the PROJECT selection
 anchored by the same project's exact claimed `HEADING`; it then creates exact
-claim coverage. Missing, ambiguous or cross-selection evidence still rejects.
+claim coverage. If a versioned response omits only an opening or closing
+cover-letter pointer, the same policy discards the unaccounted model prose and
+uses fixed, server-owned application correspondence without interpolating
+untrusted job text. This narrow local recovery is accepted without claimant
+evidence only when the final path and complete text match exactly and the
+ledger cites exactly the canonical generation-intent, job-title and company
+records. The fixed text is not reserved: a model-authored claim with additional
+confirmed claimant evidence follows the ordinary evidence rules. Claimed
+unsafe prose, missing claimant evidence outside the exact exception, ambiguous
+project evidence and every other omitted narrative still reject.
 
 ## Approved evidence
 
