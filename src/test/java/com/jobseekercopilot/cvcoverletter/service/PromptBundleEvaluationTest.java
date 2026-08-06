@@ -36,7 +36,7 @@ class PromptBundleEvaluationTest {
     void setUp() throws IOException {
         objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBundleProperties bundleProperties = new PromptBundleProperties();
-        bundleProperties.setSelectedReleaseId("cv-cover-letter-1.5.3");
+        bundleProperties.setSelectedReleaseId("cv-cover-letter-1.5.4");
         PromptBundleRegistry registry =
                 new PromptBundleRegistry(objectMapper, new DefaultResourceLoader(), bundleProperties);
         registry.initialize();
@@ -48,7 +48,7 @@ class PromptBundleEvaluationTest {
         normalizer = new GenerationInputNormalizer(
                 Clock.fixed(Instant.parse("2026-07-24T13:00:00Z"), ZoneOffset.UTC));
         try (InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.5.3/evaluation-policy.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.4/evaluation-policy.json")) {
             if (input == null) {
                 throw new IllegalStateException("Prompt evaluation policy fixture is missing.");
             }
@@ -62,7 +62,7 @@ class PromptBundleEvaluationTest {
 
         assertEquals(policy.policyVersion(), prompt.getGenerationMetadata().evaluationPolicyVersion());
         assertEquals(
-                "cf35d51a107fc84e785c7372234d9e1d9ec11c8472893dcb060f77cc567cb47f",
+                "fe5c28016164034b0f0faca0e6d620b653c562b7b6a598ee5b521cb538117e65",
                 sha256(boundaryMaterial(prompt)),
                 "The golden LLM boundary changed; review the trusted instructions, untrusted envelope, "
                         + "output schema and rollback metadata together.");
@@ -99,9 +99,9 @@ class PromptBundleEvaluationTest {
         assertTrue(trustedInstructions.contains(
                 "Generic, professional and application prose is"));
         assertTrue(trustedInstructions.contains(
-                "take the union of contentPaths from every claim"));
+                "ordinary claims[].contentPaths plus both sibling"));
         assertTrue(trustedInstructions.contains(
-                "no missing pointer, no duplicate pointer"));
+                "no missing, duplicate or\nwrong-purpose pointer"));
     }
 
     @Test
@@ -146,7 +146,7 @@ class PromptBundleEvaluationTest {
         assertTrue(trustedInstructions.contains(
                 "are never sufficient alone"));
         assertTrue(trustedInstructions.contains(
-                "except for each\nexact isolated canonical bookend"));
+                "except through\neach exact canonicalApplicationClaims sibling"));
     }
 
     @Test
@@ -162,14 +162,26 @@ class PromptBundleEvaluationTest {
         assertEquals(
                 "[\"Thank you for considering my application.\"]",
                 coverLetter.path("closingParagraph").path("enum").toString());
+        JsonNode canonicalClaims = prompt.getOutputSchema().at(
+                "/properties/canonicalApplicationClaims/properties");
+        assertEquals(
+                "[\"CLAIM-9001\"]",
+                canonicalClaims.path("opening").path("properties")
+                        .path("claimId").path("enum").toString());
+        assertEquals(
+                "[\"REQUEST.GENERATION_INTENT\"]",
+                canonicalClaims.path("closing").path("properties")
+                        .path("generationIntentEvidenceId").path("enum").toString());
         assertTrue(prompt.getTrustedInstructions().contains(
-                "Each bookend needs its own SUPPORTED claim"));
+                "Fill canonicalApplicationClaims.opening"));
         assertTrue(prompt.getTrustedInstructions().contains(
-                "evidenceIds exactly [\"REQUEST.GENERATION_INTENT\""));
+                "canonicalApplicationClaims.closing exactly as the schema"));
         assertTrue(prompt.getTrustedInstructions().contains(
-                "\"JOB.TITLE\", \"JOB.COMPANY\"]"));
+                "scalar generationIntentEvidenceId"));
         assertTrue(prompt.getTrustedInstructions().contains(
-                "Never group it or cite claimant"));
+                "Ordinary claims must never contain either bookend pointer"));
+        assertTrue(prompt.getTrustedInstructions().contains(
+                "group bookends or cite claimant evidence"));
         assertTrue(prompt.getTrustedInstructions().contains(
                 "Tailor only bodyParagraphs"));
     }

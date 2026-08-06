@@ -1,7 +1,7 @@
 # Claim evidence policy
 
-Prompt release `cv-cover-letter-1.5.3`, output schema `3.4.0`, evaluation
-policy `1.5.1`, claim policy `2.10.0` and deterministic quality policy `1.1.0`
+Prompt release `cv-cover-letter-1.5.4`, output schema `3.5.0`, evaluation
+policy `1.5.2`, claim policy `2.10.0` and deterministic quality policy `1.1.0`
 establish the current claim-provenance and document-quality boundary.
 
 Release `1.5.1` makes the provider perform an explicit final-pointer coverage
@@ -24,8 +24,9 @@ evidence only when the final path and complete text match exactly and the
 ledger cites exactly the canonical generation-intent, job-title and company
 records. Under approved rollback and historical schemas, the fixed text is not
 reserved: a model-authored claim with additional confirmed claimant evidence
-follows the ordinary evidence rules. The active `1.5.3` schema and provider
-contract instead require the isolated canonical claims described below.
+follows the ordinary evidence rules. The `1.5.3` rollback contract requires
+the isolated canonical claims described below; the active `1.5.4` provider
+contract additionally makes their isolation structural.
 Claimed unsafe prose, missing claimant evidence outside the exact exception,
 ambiguous project evidence and every other omitted narrative still reject.
 
@@ -40,6 +41,26 @@ bookend claim may include another final path or claimant evidence. Canonical
 job and request evidence may supplement ordinary claims but, outside the
 bounded identity fields and these two isolated bookends, at least one
 purpose-compatible confirmed claimant snapshot fact is mandatory.
+
+Release `1.5.4` moves those two claims out of the ordinary provider array and
+into the private `canonicalApplicationClaims.opening` and
+`canonicalApplicationClaims.closing` siblings. The schema fixes their IDs to
+`CLAIM-9001` and `CLAIM-9002`, their disposition to `SUPPORTED`, their
+`reviewText` to empty, and each `contentPath` to its one corresponding
+bookend. The canonical evidence is represented as three required singleton
+scalar fields: `generationIntentEvidenceId`, `jobTitleEvidenceId` and
+`companyEvidenceId`. Ordinary claims exclude both bookend paths and the 9xxx
+ID range and are capped at 38, reserving the two remaining entries within the
+existing 40-claim public bound.
+
+Parser `3.3.0` first validates the complete raw provider envelope against
+schema `3.5.0`, then deterministically projects the two dedicated siblings
+into the unchanged public claims ledger. The projection changes only the wire
+shape: it does not split or repair a grouped ordinary claim and it does not
+retry generation. Any absent, grouped, duplicated or malformed bookend claim
+fails closed before persistence. The `1.5.3` rollback continues to use its
+ordinary-array wire shape and records applied parser metadata `3.2.0`. Claim
+policy `2.10.0` is unchanged and validates the projected ledger normally.
 
 Policy `2.10.0` also isolates each versioned project claim after evidence
 enrichment. The project paths retain snapshot facts only from their unique,
@@ -95,8 +116,9 @@ The published and local claim-ledger contract retains four dispositions:
 - `CONFIRMATION_REQUIRED`: useful candidate material that requires user review;
 - `REJECTED`: unsupported material excluded from the documents.
 
-The active `1.5.3` provider schema emits only supported and reworded entries.
-They require approved evidence IDs and one or more exact JSON Pointer paths
+The active `1.5.4` provider schema emits only supported and reworded ordinary
+entries plus the two structurally fixed supported canonical siblings. Ordinary
+claims require approved evidence IDs and one or more exact JSON Pointer paths
 into final CV or cover-letter text, and their `reviewText` must be empty.
 Confirmation-required and rejected entries remain accepted only through
 approved rollback or historical local validation; they may contain only review
@@ -118,13 +140,14 @@ external write, `ClaimEvidenceValidator`:
    the appropriate approved record;
 6. rejects uncited numeric claims and unsupported high-risk terms covering
    tools, qualifications, motivation, availability, salary and right-to-work;
-7. accepts the fixed opening and closing without claimant evidence only as
-   separate exact canonical-evidence claims, and requires confirmed claimant
-   evidence for every other non-identity versioned claim;
+7. accepts the fixed opening and closing without claimant evidence only after
+   their exact dedicated provider siblings have been projected as separate
+   canonical-evidence claims, and requires confirmed claimant evidence for
+   every other non-identity versioned claim;
 8. revalidates the complete schema and plain-text policy after every trusted
    canonicalisation.
 
-For the project-aware `3.2.0`, `3.3.0` and `3.4.0` schemas,
+For the project-aware `3.2.0`, `3.3.0`, `3.4.0` and `3.5.0` schemas,
 `GeneratedDocumentQualityValidator` runs only after the grounding ledger is
 normalised and accepted. It:
 

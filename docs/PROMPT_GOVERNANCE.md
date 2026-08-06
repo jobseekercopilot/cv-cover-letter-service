@@ -5,13 +5,13 @@ Each approved release under `src/main/resources/prompts/bundles` packages the
 template, generation rules, output schema and synthetic evaluation policy with
 immutable component checksums. `index.json` is the only runtime allowlist.
 
-The active `cv-cover-letter-1.5.3` release converts the normalised profile and
+The active `cv-cover-letter-1.5.4` release converts the normalised profile and
 canonical job into a stable approved-evidence catalogue and treats that
 catalogue and normalisation warnings as untrusted data. It places the safety
 rules before that evidence and forbids direct, indirect, encoded, nested,
 Unicode-obfuscated and schema-escape instructions in source content from
-changing the task. The release also owns exact bounded JSON Schema `3.4.0` and
-evaluation policy `1.5.1`, used at the provider boundary and by the local
+changing the task. The release also owns exact bounded JSON Schema `3.5.0` and
+evaluation policy `1.5.2`, used at the provider boundary and by the local
 response parser and synthetic evaluation checks. The domain bundle cannot name
 a model provider or transport API; provider mechanics belong behind LLM
 Gateway.
@@ -37,6 +37,17 @@ consider my application for this role.` and the closing paragraph to exactly
 generation-intent, job-title and company evidence IDs. All other non-identity
 versioned claims require purpose-compatible confirmed claimant evidence; job
 or request evidence may supplement but cannot replace it.
+
+Release `1.5.4` makes bookend isolation structural in the private provider
+wire shape. Schema `3.5.0` requires
+`canonicalApplicationClaims.opening` and `.closing` with fixed IDs
+`CLAIM-9001` and `CLAIM-9002`, `SUPPORTED`, exact singleton scalar canonical
+evidence fields, one fixed scalar path and empty review text. Ordinary claims
+cannot use either bookend path or any 9xxx ID and are capped at 38. Parser
+`3.3.0` validates the complete raw envelope and then deterministically projects
+the two siblings into the unchanged public claims ledger. It never splits or
+repairs a grouped claim and does not retry generation; invalid output remains
+fail-closed under unchanged claim policy `2.10.0`.
 
 Runtime assembly preserves those domains as separate LLM Gateway v2 fields:
 reviewed bundle text becomes `trustedInstructions`, normalised evidence becomes
@@ -93,18 +104,22 @@ Rollback restores prompt construction only. The LLM Gateway v2 physical
 trusted/untrusted separation remains enforced for every approved release. It
 does not reverse documents already generated or stored, so operators must use
 the recorded release and component hashes when identifying affected outputs.
-Release `cv-cover-letter-1.5.2` is the immediate approved emergency rollback
-for `1.5.3`; its immutable files must not be edited to adopt the newer
-bookend/evidence rules.
+Release `cv-cover-letter-1.5.3` is the immediate approved emergency rollback
+for `1.5.4`; its immutable files must not be edited to adopt the newer private
+wire shape. It retains the ordinary claim-array contract and records applied
+parser metadata `3.2.0`.
 
 The oldest approved releases contain output exemplars rather than the active
 bounded schema. They are compiled into closed structural schemas at runtime and
-remain subject to parser `3.2.0` response, text, array and active-content
-limits. Releases from `1.2.0` onward have specific field-by-field bounds at
-both the provider and local validation boundaries; releases from `1.3.0`
-onward enable the claim evidence ledger. The `1.5.x` post-grounding quality
-policy is gated by the project-aware schema so approved rollback remains
-usable with an evidence catalogue.
+remain subject to the response, text, array and active-content limits associated
+with applied parser metadata `3.2.0`. Parser `3.3.0` applies only when the
+selected schema contains the exact dedicated canonical-claim structure; it
+projects that private structure only after raw schema validation. Releases
+from `1.2.0` onward have specific field-by-field bounds at both the provider
+and local validation boundaries; releases from `1.3.0` onward enable the claim
+evidence ledger. The `1.5.x` post-grounding quality policy is gated by the
+project-aware schema so approved rollback remains usable with an evidence
+catalogue.
 
 ## Verification
 

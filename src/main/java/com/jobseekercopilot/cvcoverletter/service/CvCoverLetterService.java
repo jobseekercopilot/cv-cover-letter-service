@@ -108,7 +108,9 @@ public class CvCoverLetterService {
                 prepared.input().inputSchemaVersion(),
                 prepared.input().warnings(),
                 claimLedgerFactory.create(
-                        operationId, draft.documents().getClaims()),
+                        operationId,
+                        draft.documents().getClaims(),
+                        prepared.parserVersion()),
                 new DraftGenerationResponse.DraftGenerationUsage(
                         usage == null ? null : usage.getInputTokens(),
                         usage == null ? null : usage.getOutputTokens(),
@@ -130,6 +132,8 @@ public class CvCoverLetterService {
         String jobId = input.jobProvenance().getResourceId();
         long startedAt = System.nanoTime();
         CvCoverLetterPrompt prompt = promptBuilderService.buildPrompt(input);
+        String parserVersion = responseParser.parserVersion(
+                prompt.getOutputSchema());
         log.info(
                 "Bounded prompt prepared jobId={} promptRelease={} bundleVersion={} schemaId={} schemaVersion={} estimatedTokens={} durationMs={}",
                 jobId,
@@ -153,7 +157,8 @@ public class CvCoverLetterService {
                 .limits(new GenerationLimits()
                         .temperature(llmProperties.getTemperature())
                         .maxOutputTokens(llmProperties.getMaxTokens()));
-        return new PreparedGeneration(input, prompt, llmRequest, jobId);
+        return new PreparedGeneration(
+                input, prompt, llmRequest, jobId, parserVersion);
     }
 
     private GenerationResponse invokeModel(
@@ -198,7 +203,8 @@ public class CvCoverLetterService {
             NormalizedGenerationInput input,
             CvCoverLetterPrompt prompt,
             GenerationRequest llmRequest,
-            String jobId) {
+            String jobId,
+            String parserVersion) {
     }
 
     private record DraftContent(
@@ -216,6 +222,8 @@ public class CvCoverLetterService {
         long promptStartedAt = System.nanoTime();
         log.info("Prompt build started userId={} jobId={}", userId, jobId);
         CvCoverLetterPrompt prompt = promptBuilderService.buildPrompt(input);
+        String parserVersion = responseParser.parserVersion(
+                prompt.getOutputSchema());
         log.info("Prompt build completed userId={} jobId={} llmContractVersion=2.0 promptRelease={} bundleVersion={} templateVersion={} rulesVersion={} schemaId={} schemaVersion={} evaluationPolicyVersion={} bundleSha256={} trustedInstructionCharacters={} untrustedInputCharacters={} estimatedTokens={} durationMs={}",
                 userId,
                 jobId,
@@ -288,7 +296,7 @@ public class CvCoverLetterService {
                     llmResponse == null ? null : llmResponse.getFinishReason(),
                     llmResponse == null ? null : llmResponse.getSchemaId(),
                     llmResponse == null ? null : llmResponse.getSchemaVersion(),
-                    LlmResponseParser.PARSER_VERSION,
+                    parserVersion,
                     usage == null ? null : usage.getInputTokens(),
                     usage == null ? null : usage.getOutputTokens(),
                     usage == null ? null : usage.getTotalTokens(),
@@ -341,7 +349,7 @@ public class CvCoverLetterService {
                     prompt.getGenerationMetadata().schemaId(),
                     prompt.getGenerationMetadata().schemaVersion(),
                     prompt.getGenerationMetadata().evaluationPolicyVersion(),
-                    LlmResponseParser.PARSER_VERSION);
+                    parserVersion);
             GeneratedApplicationDocuments documents =
                     responseParser.parse(
                             llmResponse.getOutput(),

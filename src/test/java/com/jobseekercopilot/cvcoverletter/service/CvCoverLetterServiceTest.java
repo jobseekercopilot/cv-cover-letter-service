@@ -2,7 +2,9 @@ package com.jobseekercopilot.cvcoverletter.service;
 
 import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validRequest;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jobseekercopilot.cvcoverletter.config.LlmProperties;
 import com.jobseekercopilot.cvcoverletter.dto.DraftGenerationResponse;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateCvCoverLetterResponse;
@@ -83,14 +85,8 @@ class CvCoverLetterServiceTest {
         normalizedInput = new GenerationInputNormalizer().normalize("user-123", request);
         when(inputNormalizer.normalize("user-123", request)).thenReturn(normalizedInput);
         when(promptBuilderService.buildPrompt(normalizedInput))
-                .thenReturn(CvCoverLetterPrompt.builder()
-                        .taskType("CV_COVER_LETTER_GENERATION")
-                        .trustedInstructions("trusted generation rules")
-                        .untrustedInput("{\"job\":\"input-secret-sentinel\"}")
-                        .outputSchema(activeOutputSchema())
-                        .generationMetadata(promptMetadata())
-                        .evidenceCatalog(new ClaimEvidenceCatalogFactory().create(normalizedInput))
-                        .build());
+                .thenReturn(prompt(
+                        activeOutputSchema(), promptMetadata()));
         lenient().when(paymentBillingClient.reserve(any(), any())).thenReturn(
                 new PaymentBillingClient.ReservationResponse(UUID.randomUUID(), "user-123", 5000, 40000, "RESERVED"));
     }
@@ -111,7 +107,7 @@ class CvCoverLetterServiceTest {
     void returnsBoundedDraftAndUsageWithoutPaymentStorageOrApplicationSideEffects() {
         UUID operationId = UUID.randomUUID();
         when(llmGatewayApi.generateV2(any())).thenReturn(
-                successfulResponse(validJson()));
+                successfulResponse(activeValidJson()));
 
         DraftGenerationResponse actual =
                 service.generateDraft("user-123", operationId, request);
@@ -136,9 +132,65 @@ class CvCoverLetterServiceTest {
     }
 
     @Test
+    void malformedDedicatedSchemaFailsBeforeBillingOrProviderInvocation()
+            throws Exception {
+        when(promptBuilderService.buildPrompt(normalizedInput))
+                .thenReturn(prompt(
+                        malformedActiveOutputSchema(), promptMetadata()));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> service.generate("user-123", request));
+
+        verifyNoInteractions(
+                llmGatewayApi,
+                paymentBillingClient,
+                documentStoreApi,
+                applicationTrackerApi);
+    }
+
+    @Test
+    void malformedDedicatedSchemaFailsBeforeDraftProviderInvocation()
+            throws Exception {
+        when(promptBuilderService.buildPrompt(normalizedInput))
+                .thenReturn(prompt(
+                        malformedActiveOutputSchema(), promptMetadata()));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> service.generateDraft(
+                        "user-123", UUID.randomUUID(), request));
+
+        verifyNoInteractions(
+                llmGatewayApi,
+                paymentBillingClient,
+                documentStoreApi,
+                applicationTrackerApi);
+    }
+
+    @Test
+    void draftLedgerRecordsRollbackParserProvenance() throws Exception {
+        when(promptBuilderService.buildPrompt(normalizedInput))
+                .thenReturn(prompt(
+                        rollbackOutputSchema(), rollbackPromptMetadata()));
+        when(llmGatewayApi.generateV2(any())).thenReturn(
+                successfulResponse(validJson()).schemaVersion("3.4.0"));
+
+        DraftGenerationResponse result = service.generateDraft(
+                "user-123", UUID.randomUUID(), request);
+
+        assertEquals("3.2.0", result.claimLedger().parserVersion());
+        assertEquals(10, result.claimLedger().claims().size());
+        verifyNoInteractions(
+                paymentBillingClient,
+                documentStoreApi,
+                applicationTrackerApi);
+    }
+
+    @Test
     void generatesStoresBothDocumentsCreatesApplicationAndReturnsContent(CapturedOutput output) {
         when(llmGatewayApi.generateV2(any())).thenReturn(successfulResponse(
-                validJson().replace("Focused on Java.", "response-secret-sentinel")));
+                activeValidJson().replace("Focused on Java.", "response-secret-sentinel")));
         UUID cvId = UUID.randomUUID();
         UUID letterId = UUID.randomUUID();
         UUID applicationId = UUID.randomUUID();
@@ -158,7 +210,7 @@ class CvCoverLetterServiceTest {
         assertEquals("trusted generation rules", llmRequest.getTrustedInstructions());
         assertEquals("{\"job\":\"input-secret-sentinel\"}", llmRequest.getUntrustedInput());
         assertEquals("cv-cover-letter-output", llmRequest.getOutput().getSchemaId());
-        assertEquals("3.4.0", llmRequest.getOutput().getSchemaVersion());
+        assertEquals("3.5.0", llmRequest.getOutput().getSchemaVersion());
         assertEquals(0.25, llmRequest.getLimits().getTemperature());
         assertEquals(2500, llmRequest.getLimits().getMaxOutputTokens());
 
@@ -183,9 +235,9 @@ class CvCoverLetterServiceTest {
         assertEquals("Java Developer CV", actual.getCvTitle());
         assertEquals("Java Developer CV", actual.getCvContent().lines().findFirst().orElseThrow());
         assertEquals("1.0", actual.getInputSchemaVersion());
-        assertEquals("cv-cover-letter-1.5.3", actual.getGenerationMetadata().releaseId());
-        assertEquals("1.5.3", actual.getGenerationMetadata().rulesVersion());
-        assertEquals("3.4.0", actual.getGenerationMetadata().schemaVersion());
+        assertEquals("cv-cover-letter-1.5.4", actual.getGenerationMetadata().releaseId());
+        assertEquals("1.5.4", actual.getGenerationMetadata().rulesVersion());
+        assertEquals("3.5.0", actual.getGenerationMetadata().schemaVersion());
         assertEquals(normalizedInput.warnings(), actual.getInputWarnings());
         org.junit.jupiter.api.Assertions.assertTrue(
                 actual.getCoverLetterContent().contains("Dear Hiring Manager,"));
@@ -214,15 +266,15 @@ class CvCoverLetterServiceTest {
         org.junit.jupiter.api.Assertions.assertTrue(
                 output.getAll().contains("pricingVersion=openai-standard-2026-07-25"));
         org.junit.jupiter.api.Assertions.assertTrue(
-                output.getAll().contains("promptRelease=cv-cover-letter-1.5.3"));
+                output.getAll().contains("promptRelease=cv-cover-letter-1.5.4"));
         org.junit.jupiter.api.Assertions.assertTrue(
                 output.getAll().contains("templateVersion=1.2.0"));
         org.junit.jupiter.api.Assertions.assertTrue(
-                output.getAll().contains("rulesVersion=1.5.3"));
+                output.getAll().contains("rulesVersion=1.5.4"));
         org.junit.jupiter.api.Assertions.assertTrue(
-                output.getAll().contains("schemaVersion=3.4.0"));
+                output.getAll().contains("schemaVersion=3.5.0"));
         org.junit.jupiter.api.Assertions.assertTrue(
-                output.getAll().contains("parserVersion=3.2.0"));
+                output.getAll().contains("parserVersion=3.3.0"));
         assertFalse(output.getAll().contains("input-secret-sentinel"));
         assertFalse(output.getAll().contains("response-secret-sentinel"));
     }
@@ -232,7 +284,7 @@ class CvCoverLetterServiceTest {
         UUID reservationId = UUID.randomUUID();
         when(paymentBillingClient.reserve(any(), any())).thenReturn(
                 new PaymentBillingClient.ReservationResponse(reservationId, "user-123", 5000, 40000, "RESERVED"));
-        when(llmGatewayApi.generateV2(any())).thenReturn(successfulResponse(validJson()));
+        when(llmGatewayApi.generateV2(any())).thenReturn(successfulResponse(activeValidJson()));
         when(documentStoreApi.createDocument(any(), any()))
                 .thenReturn(new GeneratedDocumentResponse().id(UUID.randomUUID()))
                 .thenThrow(new RestClientException("down"));
@@ -252,7 +304,7 @@ class CvCoverLetterServiceTest {
         when(paymentBillingClient.reserve(any(), any())).thenReturn(
                 new PaymentBillingClient.ReservationResponse(
                         reservationId, "user-123", 5000, 40000, "RESERVED"));
-        when(llmGatewayApi.generateV2(any())).thenReturn(successfulResponse(validJson()));
+        when(llmGatewayApi.generateV2(any())).thenReturn(successfulResponse(activeValidJson()));
         when(documentStoreApi.createDocument(any(), any())).thenReturn(
                 new GeneratedDocumentResponse().id(UUID.randomUUID()),
                 new GeneratedDocumentResponse().id(UUID.randomUUID()));
@@ -292,7 +344,7 @@ class CvCoverLetterServiceTest {
                 new PaymentBillingClient.ReservationResponse(
                         reservationId, "user-123", 5000, 40000, "RESERVED"));
         when(llmGatewayApi.generateV2(any())).thenReturn(
-                successfulResponse(validJson()).audit(invalidAudit));
+                successfulResponse(activeValidJson()).audit(invalidAudit));
 
         assertThrows(
                 InvalidLlmResponseException.class,
@@ -349,7 +401,7 @@ class CvCoverLetterServiceTest {
         when(paymentBillingClient.reserve(any(), any())).thenReturn(
                 new PaymentBillingClient.ReservationResponse(
                         reservationId, "user-123", 5000, 40000, "RESERVED"));
-        when(llmGatewayApi.generateV2(any())).thenReturn(successfulResponse(validJson())
+        when(llmGatewayApi.generateV2(any())).thenReturn(successfulResponse(activeValidJson())
                 .finishReason(GenerationResponse.FinishReasonEnum.FILTERED));
 
         assertThrows(InvalidLlmResponseException.class, () -> service.generate("user-123", request));
@@ -365,7 +417,7 @@ class CvCoverLetterServiceTest {
         when(paymentBillingClient.reserve(any(), any())).thenReturn(
                 new PaymentBillingClient.ReservationResponse(
                         reservationId, "user-123", 5000, 40000, "RESERVED"));
-        when(llmGatewayApi.generateV2(any())).thenReturn(successfulResponse(validJson())
+        when(llmGatewayApi.generateV2(any())).thenReturn(successfulResponse(activeValidJson())
                 .schemaVersion("unexpected"));
 
         assertThrows(InvalidLlmResponseException.class, () -> service.generate("user-123", request));
@@ -381,7 +433,7 @@ class CvCoverLetterServiceTest {
                 .output(output)
                 .finishReason(GenerationResponse.FinishReasonEnum.COMPLETED)
                 .schemaId("cv-cover-letter-output")
-                .schemaVersion("3.4.0")
+                .schemaVersion("3.5.0")
                 .audit(generationAudit())
                 .usage(usage());
     }
@@ -396,20 +448,20 @@ class CvCoverLetterServiceTest {
     private static Stream<String> invalidModelOutputs() {
         return Stream.of(
                 "not json",
-                validJson().replace(
+                activeValidJson().replace(
                         "\"cv\": {",
                         "\"unexpected\":\"response-secret-sentinel\",\"cv\": {"),
-                validJson().replace(
+                activeValidJson().replace(
                         "Tailored Developer CV",
                         "x".repeat(201)),
-                validJson().replace(
+                activeValidJson().replace(
                         "A Java developer focused on useful services.",
                         "<script>response-secret-sentinel</script>"),
-                validJson().replace(
+                activeValidJson().replace(
                         "Please consider my application for this role.",
                         "I am keen to apply for this role."),
-                validJson().replace("\"JOB.TITLE\"", "\"JOB.UNKNOWN\""),
-                "```json\n" + validJson() + "\n```");
+                activeValidJson().replace("\"JOB.TITLE\"", "\"JOB.UNKNOWN\""),
+                "```json\n" + activeValidJson() + "\n```");
     }
 
     private static Stream<GenerationAudit> invalidGenerationAudits() {
@@ -437,6 +489,24 @@ class CvCoverLetterServiceTest {
 
     private PromptGenerationMetadata promptMetadata() {
         return new PromptGenerationMetadata(
+                "cv-cover-letter-1.5.4",
+                "cv-cover-letter",
+                "1.5.4",
+                "a".repeat(64),
+                "1.2.0",
+                "b".repeat(64),
+                "1.5.4",
+                "c".repeat(64),
+                "cv-cover-letter-output",
+                "3.5.0",
+                "d".repeat(64),
+                "1.5.2",
+                "e".repeat(64)
+        );
+    }
+
+    private PromptGenerationMetadata rollbackPromptMetadata() {
+        return new PromptGenerationMetadata(
                 "cv-cover-letter-1.5.3",
                 "cv-cover-letter",
                 "1.5.3",
@@ -451,6 +521,22 @@ class CvCoverLetterServiceTest {
                 "1.5.1",
                 "e".repeat(64)
         );
+    }
+
+    private CvCoverLetterPrompt prompt(
+            JsonNode outputSchema,
+            PromptGenerationMetadata metadata
+    ) {
+        return CvCoverLetterPrompt.builder()
+                .taskType("CV_COVER_LETTER_GENERATION")
+                .trustedInstructions("trusted generation rules")
+                .untrustedInput("{\"job\":\"input-secret-sentinel\"}")
+                .outputSchema(outputSchema)
+                .generationMetadata(metadata)
+                .evidenceCatalog(
+                        new ClaimEvidenceCatalogFactory().create(
+                                normalizedInput))
+                .build();
     }
 
     static String validJson() {
@@ -492,13 +578,88 @@ class CvCoverLetterServiceTest {
                 """;
     }
 
+    static String activeValidJson() {
+        return """
+                {
+                  "cv": {
+                    "title": "Tailored Developer CV",
+                    "targetRole": "Java Developer",
+                    "personalSummary": "A Java developer focused on useful services.",
+                    "coreSkills": [],
+                    "projects": [],
+                    "qualifications": [],
+                    "workHistory": []
+                  },
+                  "coverLetter": {
+                    "title": "Developer Cover Letter",
+                    "jobTitle": "Java Developer",
+                    "companyName": "Example Ltd",
+                    "greeting": "Dear Hiring Manager",
+                    "openingParagraph": "Please consider my application for this role.",
+                    "bodyParagraphs": ["My experience is a strong match.", "I build useful services.", "The role calls for useful services."],
+                    "closingParagraph": "Thank you for considering my application.",
+                    "signOff": "Yours faithfully"
+                  },
+                  "generationNotes": {"assumptionsMade":[],"missingInformation":[],"tailoringSummary":"Focused on Java."},
+                  "claims": [
+                    {"claimId":"CLAIM-001","disposition":"SUPPORTED","evidenceIds":["JOB.TITLE"],"contentPaths":["/cv/targetRole"],"reviewText":""},
+                    {"claimId":"CLAIM-002","disposition":"REWORDED","evidenceIds":["PROFILE.SKILL.1","JOB.DESCRIPTION"],"contentPaths":["/cv/personalSummary"],"reviewText":""},
+                    {"claimId":"CLAIM-003","disposition":"REWORDED","evidenceIds":["JOB.TITLE"],"contentPaths":["/coverLetter/title"],"reviewText":""},
+                    {"claimId":"CLAIM-004","disposition":"SUPPORTED","evidenceIds":["JOB.TITLE"],"contentPaths":["/coverLetter/jobTitle"],"reviewText":""},
+                    {"claimId":"CLAIM-005","disposition":"SUPPORTED","evidenceIds":["JOB.COMPANY"],"contentPaths":["/coverLetter/companyName"],"reviewText":""},
+                    {"claimId":"CLAIM-007","disposition":"REWORDED","evidenceIds":["PROFILE.EMPLOYMENT.1.RESPONSIBILITIES","PROFILE.SKILL.1"],"contentPaths":["/coverLetter/bodyParagraphs/0"],"reviewText":""},
+                    {"claimId":"CLAIM-008","disposition":"REWORDED","evidenceIds":["JOB.DESCRIPTION"],"contentPaths":["/coverLetter/bodyParagraphs/1","/coverLetter/bodyParagraphs/2"],"reviewText":""},
+                    {"claimId":"CLAIM-010","disposition":"REWORDED","evidenceIds":["PROFILE.TARGET_ROLE.1"],"contentPaths":["/cv/title"],"reviewText":""}
+                  ],
+                  "canonicalApplicationClaims": {
+                    "opening": {
+                      "claimId": "CLAIM-9001",
+                      "disposition": "SUPPORTED",
+                      "generationIntentEvidenceId": "REQUEST.GENERATION_INTENT",
+                      "jobTitleEvidenceId": "JOB.TITLE",
+                      "companyEvidenceId": "JOB.COMPANY",
+                      "contentPath": "/coverLetter/openingParagraph",
+                      "reviewText": ""
+                    },
+                    "closing": {
+                      "claimId": "CLAIM-9002",
+                      "disposition": "SUPPORTED",
+                      "generationIntentEvidenceId": "REQUEST.GENERATION_INTENT",
+                      "jobTitleEvidenceId": "JOB.TITLE",
+                      "companyEvidenceId": "JOB.COMPANY",
+                      "contentPath": "/coverLetter/closingParagraph",
+                      "reviewText": ""
+                    }
+                  }
+                }
+                """;
+    }
+
     private com.fasterxml.jackson.databind.JsonNode activeOutputSchema() throws Exception {
         try (java.io.InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.5.3/output-schema.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.4/output-schema.json")) {
             if (input == null) {
                 throw new IllegalStateException("Active output schema fixture is missing.");
             }
             return new ObjectMapper().readTree(input);
         }
+    }
+
+    private JsonNode rollbackOutputSchema() throws Exception {
+        try (java.io.InputStream input = getClass().getResourceAsStream(
+                "/prompts/bundles/cv-cover-letter-1.5.3/output-schema.json")) {
+            if (input == null) {
+                throw new IllegalStateException("Rollback output schema fixture is missing.");
+            }
+            return new ObjectMapper().readTree(input);
+        }
+    }
+
+    private JsonNode malformedActiveOutputSchema() throws Exception {
+        JsonNode malformed = activeOutputSchema();
+        ((ObjectNode) malformed.at(
+                "/properties/claims/items/properties/claimId"))
+                .put("pattern", "^CLAIM-[0-9]{3,4}$");
+        return malformed;
     }
 }

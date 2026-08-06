@@ -53,8 +53,8 @@ evidence. See
 
 ## Prompt releases
 
-Prompt bundle `cv-cover-letter-1.5.3`, output schema `3.4.0` and evaluation
-policy `1.5.1` render projects as projects, keep paid employment separate, cap
+Prompt bundle `cv-cover-letter-1.5.4`, output schema `3.5.0` and evaluation
+policy `1.5.2` render projects as projects, keep paid employment separate, cap
 the CV at 8–12 unique confirmed skills where available, omit unsupported empty
 sections, and use the correct UK generic greeting/sign-off pair. A
 post-grounding quality policy rejects repeated narrative, repeated
@@ -73,9 +73,18 @@ claim containing only its exact final pointer and exactly the canonical
 generation-intent, job-title and company evidence IDs. Every other
 non-identity final claim must include purpose-compatible confirmed claimant
 evidence; canonical job or request evidence may supplement but cannot replace
-it. The local four-disposition claim policy remains fail-closed for historical
-data and rollback. The immutable `1.5.2` release remains packaged as the
-immediate emergency rollback.
+it. Release `1.5.4` makes that isolation structural in the private provider
+wire contract. Schema `3.5.0` requires
+`canonicalApplicationClaims.opening` and `.closing` with fixed IDs
+`CLAIM-9001` and `CLAIM-9002`, singleton scalar canonical evidence fields and
+one fixed bookend path each. Ordinary claims exclude both paths and all 9xxx
+IDs and are capped at 38. Parser `3.3.0` validates that raw envelope before it
+deterministically projects the two siblings into the unchanged public claims
+ledger. It does not split or repair a grouped claim and does not retry the
+provider; any mismatch still fails closed under claim policy `2.10.0`. The
+local four-disposition claim policy remains compatible with historical data.
+The immutable `1.5.3` release is the immediate emergency rollback and retains
+applied parser metadata `3.2.0`.
 
 Prompt template, rules, output schema and evaluation-policy versions are
 selected as one reviewed bundle. Checksums, an approved-release index and

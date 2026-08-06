@@ -22,7 +22,7 @@ class PromptBuilderServiceTest {
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBuilderService service = new PromptBuilderService(
                 objectMapper,
-                registry(objectMapper, "cv-cover-letter-1.5.3"),
+                registry(objectMapper, "cv-cover-letter-1.5.4"),
                 properties,
                 new ClaimEvidenceCatalogFactory());
         GenerationInputNormalizer normalizer = new GenerationInputNormalizer(
@@ -35,13 +35,13 @@ class PromptBuilderServiceTest {
         assertTrue(result.getTrustedInstructions().contains("UK English"));
         assertTrue(result.getTrustedInstructions().contains("Aim for 5 to 7 concise paragraphs"));
         assertTrue(result.getTrustedInstructions().contains("specific to the job"));
-        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.5.3"));
+        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.5.4"));
         assertTrue(result.getTrustedInstructions().contains(
                 "Generic, professional and application prose is"));
         assertTrue(result.getTrustedInstructions().contains(
                 "/coverLetter/bodyParagraphs/{i}"));
         assertTrue(result.getTrustedInstructions().contains(
-                "It must equal the complete claim-bearing checklist exactly"));
+                "ordinary claims[].contentPaths plus both sibling"));
         assertTrue(result.getTrustedInstructions().contains(
                 "The claims ledger is final-content provenance only."));
         assertTrue(result.getTrustedInstructions().contains(
@@ -84,9 +84,27 @@ class PromptBuilderServiceTest {
                 "/properties/coverLetter/properties/closingParagraph/enum/0")
                 .asText()
                 .equals("Thank you for considering my application."));
+        assertTrue(result.getOutputSchema().at(
+                "/properties/canonicalApplicationClaims/properties/opening/properties/claimId/enum/0")
+                .asText()
+                .equals("CLAIM-9001"));
+        assertTrue(result.getOutputSchema().at(
+                "/properties/canonicalApplicationClaims/properties/closing/properties/claimId/enum/0")
+                .asText()
+                .equals("CLAIM-9002"));
+        assertTrue(result.getOutputSchema().at(
+                "/properties/canonicalApplicationClaims/properties/opening/properties/generationIntentEvidenceId/enum/0")
+                .asText()
+                .equals("REQUEST.GENERATION_INTENT"));
+        assertTrue(result.getOutputSchema().at(
+                "/properties/claims/maxItems").asInt() == 38);
+        String ordinaryPathPattern = result.getOutputSchema().at(
+                "/properties/claims/items/properties/contentPaths/items/pattern").asText();
+        assertFalse("/coverLetter/openingParagraph".matches(ordinaryPathPattern));
+        assertFalse("/coverLetter/closingParagraph".matches(ordinaryPathPattern));
         assertFalse(result.getOutputSchema().toString().contains("CONFIRMATION_REQUIRED"));
         assertFalse(result.getOutputSchema().toString().contains("REJECTED"));
-        assertTrue(result.getGenerationMetadata().schemaVersion().equals("3.4.0"));
+        assertTrue(result.getGenerationMetadata().schemaVersion().equals("3.5.0"));
         assertTrue(result.getEvidenceCatalog().records().stream()
                 .anyMatch(record -> record.evidenceId().equals("JOB.TITLE")));
         assertFalse(result.getTrustedInstructions().contains("Build useful and reliable services."));
