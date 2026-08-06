@@ -26,11 +26,14 @@ import org.springframework.web.util.HtmlUtils;
 @Component
 public class LlmResponseParser {
 
-    static final String PARSER_VERSION = "3.3.0";
+    static final String PARSER_VERSION = "3.4.0";
+    static final String DEDICATED_CANONICAL_PARSER_VERSION = "3.3.0";
     static final String LEGACY_PARSER_VERSION = "3.2.0";
     static final int MAX_RAW_RESPONSE_CHARACTERS = 100_000;
     static final int MAX_FALLBACK_TEXT_CHARACTERS = 4_000;
     static final int MAX_FALLBACK_ARRAY_ITEMS = 40;
+    private static final int ACTIVE_ORDINARY_CLAIM_LIMIT = 26;
+    private static final int ROLLBACK_ORDINARY_CLAIM_LIMIT = 38;
     private static final int MAX_HTML_DECODE_PASSES = 5;
     private static final String OPENING_CLAIM_ID = "CLAIM-9001";
     private static final String CLOSING_CLAIM_ID = "CLAIM-9002";
@@ -45,6 +48,14 @@ public class LlmResponseParser {
     private static final String ORDINARY_CLAIM_ID_PATTERN =
             "^CLAIM-[0-8][0-9]{2,3}$";
     private static final String ORDINARY_CONTENT_PATH_PATTERN =
+            "^(?:/cv/(?:title|targetRole|personalSummary)"
+                    + "|/cv/projects/[0-9]+/(?:title|role|context|startDate|endDate|description)"
+                    + "|/cv/projects/[0-9]+/highlights/[0-9]+"
+                    + "|/cv/qualifications/[0-9]+/(?:qualificationName|issuingBody|status|grade|dateAchieved|expectedCompletion)"
+                    + "|/cv/workHistory/[0-9]+/(?:jobTitle|employer|startDate|endDate|tailoredDescription)"
+                    + "|/cv/workHistory/[0-9]+/responsibilities/[0-9]+"
+                    + "|/coverLetter/(?:title|jobTitle|companyName|bodyParagraphs/[0-9]+))$";
+    private static final String ROLLBACK_ORDINARY_CONTENT_PATH_PATTERN =
             "^(?:/cv(?:/[A-Za-z0-9_-]+)+|/coverLetter/"
                     + "(?:title|jobTitle|companyName|bodyParagraphs/[0-9]+))$";
     private static final Set<String> CANONICAL_APPLICATION_CLAIM_FIELDS = Set.of(
@@ -101,6 +112,8 @@ public class LlmResponseParser {
         }
         boolean usesDedicatedCanonicalClaims =
                 usesDedicatedCanonicalApplicationClaims(schema);
+        boolean projectsCoreSkills =
+                usesDeterministicCoreSkillProjection(schema);
 
         try {
             JsonNode output = objectMapper.readTree(rawResponse);
@@ -121,7 +134,8 @@ public class LlmResponseParser {
                         documents,
                         evidenceCatalog,
                         usesCanonicalApplicationBookendPolicy(
-                                schema));
+                                schema),
+                        projectsCoreSkills);
                 validateSchema(output, schema, "$");
                 validatePlainText(output, "$");
                 var normalizedClaims = documents.getClaims();
@@ -143,9 +157,20 @@ public class LlmResponseParser {
     }
 
     String parserVersion(JsonNode schema) {
-        return usesDedicatedCanonicalApplicationClaims(schema)
+        if (!usesDedicatedCanonicalApplicationClaims(schema)) {
+            return LEGACY_PARSER_VERSION;
+        }
+        return usesDeterministicCoreSkillProjection(schema)
                 ? PARSER_VERSION
-                : LEGACY_PARSER_VERSION;
+                : DEDICATED_CANONICAL_PARSER_VERSION;
+    }
+
+    String claimPolicyVersion(JsonNode schema) {
+        boolean dedicated =
+                usesDedicatedCanonicalApplicationClaims(schema);
+        return ClaimEvidenceValidator.policyVersion(
+                dedicated
+                        && usesDeterministicCoreSkillProjection(schema));
     }
 
     private GeneratedApplicationDocuments bindDocuments(
@@ -270,7 +295,9 @@ public class LlmResponseParser {
                 ORDINARY_CLAIM_ID_PATTERN.equals(claimIdPattern),
                 "ordinary claim ID namespace is incomplete");
         requireSchemaContract(
-                ORDINARY_CONTENT_PATH_PATTERN.equals(contentPathPattern),
+                ORDINARY_CONTENT_PATH_PATTERN.equals(contentPathPattern)
+                        || ROLLBACK_ORDINARY_CONTENT_PATH_PATTERN.equals(
+                                contentPathPattern),
                 "ordinary content-path allowlist is incomplete");
         try {
             Pattern ordinaryClaimIds = Pattern.compile(claimIdPattern);
@@ -288,9 +315,14 @@ public class LlmResponseParser {
                     "Dedicated canonical application claim schema is invalid.",
                     exception);
         }
+        int expectedOrdinaryClaimLimit =
+                ORDINARY_CONTENT_PATH_PATTERN.equals(contentPathPattern)
+                        ? ACTIVE_ORDINARY_CLAIM_LIMIT
+                        : ROLLBACK_ORDINARY_CLAIM_LIMIT;
         requireSchemaContract(
                 properties.path("claims").path("maxItems").isIntegralNumber()
-                        && properties.path("claims").path("maxItems").asInt() == 38,
+                        && properties.path("claims").path("maxItems").asInt()
+                                == expectedOrdinaryClaimLimit,
                 "ordinary claim bound does not reserve canonical capacity");
         return true;
     }
@@ -312,8 +344,13 @@ public class LlmResponseParser {
                 ORDINARY_CLAIM_ID_PATTERN.equals(claimIdPattern)
                         || ORDINARY_CONTENT_PATH_PATTERN.equals(
                                 contentPathPattern)
+                        || ROLLBACK_ORDINARY_CONTENT_PATH_PATTERN.equals(
+                                contentPathPattern)
                         || (ordinaryClaims.path("maxItems").isIntegralNumber()
-                                && ordinaryClaims.path("maxItems").asInt() == 38);
+                                && (ordinaryClaims.path("maxItems").asInt()
+                                                == ACTIVE_ORDINARY_CLAIM_LIMIT
+                                        || ordinaryClaims.path("maxItems").asInt()
+                                                == ROLLBACK_ORDINARY_CLAIM_LIMIT));
         requireSchemaContract(
                 !dedicatedMarker,
                 "canonical claim object is missing from a dedicated ordinary-claim contract");
@@ -409,6 +446,15 @@ public class LlmResponseParser {
         return schema.at(
                         "/properties/cv/properties/projects")
                 .isObject();
+    }
+
+    private boolean usesDeterministicCoreSkillProjection(
+            JsonNode schema
+    ) {
+        return ORDINARY_CONTENT_PATH_PATTERN.equals(
+                schema.at(
+                                "/properties/claims/items/properties/contentPaths/items/pattern")
+                        .asText());
     }
 
     private boolean usesCanonicalApplicationBookendPolicy(

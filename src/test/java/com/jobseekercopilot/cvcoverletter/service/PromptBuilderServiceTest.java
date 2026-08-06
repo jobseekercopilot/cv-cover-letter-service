@@ -22,7 +22,7 @@ class PromptBuilderServiceTest {
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBuilderService service = new PromptBuilderService(
                 objectMapper,
-                registry(objectMapper, "cv-cover-letter-1.5.5"),
+                registry(objectMapper, "cv-cover-letter-1.5.6"),
                 properties,
                 new ClaimEvidenceCatalogFactory());
         GenerationInputNormalizer normalizer = new GenerationInputNormalizer(
@@ -35,7 +35,7 @@ class PromptBuilderServiceTest {
         assertTrue(result.getTrustedInstructions().contains("UK English"));
         assertTrue(result.getTrustedInstructions().contains("Aim for 5 to 7 concise paragraphs"));
         assertTrue(result.getTrustedInstructions().contains("specific to the job"));
-        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.5.5"));
+        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.5.6"));
         assertTrue(result.getTrustedInstructions().contains(
                 "Generic, professional and application prose is"));
         assertTrue(result.getTrustedInstructions().contains(
@@ -75,6 +75,9 @@ class PromptBuilderServiceTest {
                 .equals("[\"SUPPORTED\",\"REWORDED\"]"));
         assertTrue(result.getOutputSchema().at(
                 "/properties/claims/items/properties/evidenceIds/minItems").asInt() == 1);
+        assertFalse(result.getOutputSchema().at(
+                "/properties/claims/items/properties/evidenceIds/items")
+                .has("enum"));
         assertTrue(result.getOutputSchema().at(
                 "/properties/claims/items/properties/contentPaths/minItems").asInt() == 1);
         assertTrue(result.getOutputSchema().at(
@@ -99,15 +102,31 @@ class PromptBuilderServiceTest {
                 "/properties/canonicalApplicationClaims/properties/opening/properties/generationIntentEvidenceId/enum/0")
                 .asText()
                 .equals("REQUEST.GENERATION_INTENT"));
-        assertTrue(result.getOutputSchema().at(
-                "/properties/claims/maxItems").asInt() == 38);
+        int ordinaryClaimLimit = result.getOutputSchema().at(
+                "/properties/claims/maxItems").asInt();
+        int canonicalClaimCount = result.getOutputSchema().at(
+                "/properties/canonicalApplicationClaims/properties").size();
+        int projectedSkillLimit = result.getOutputSchema().at(
+                "/properties/cv/properties/coreSkills/maxItems").asInt();
+        assertTrue(ordinaryClaimLimit == 26);
+        assertTrue(ordinaryClaimLimit
+                + canonicalClaimCount
+                + projectedSkillLimit == 40);
         String ordinaryPathPattern = result.getOutputSchema().at(
                 "/properties/claims/items/properties/contentPaths/items/pattern").asText();
         assertFalse("/coverLetter/openingParagraph".matches(ordinaryPathPattern));
         assertFalse("/coverLetter/closingParagraph".matches(ordinaryPathPattern));
+        assertFalse("/cv/coreSkills/0/name".matches(ordinaryPathPattern));
+        assertFalse("/cv/coreSkills/0/evidence".matches(ordinaryPathPattern));
+        assertFalse("/cv/qualifications/0/qualificationTitle"
+                .matches(ordinaryPathPattern));
+        assertTrue("/cv/qualifications/0/qualificationName"
+                .matches(ordinaryPathPattern));
         assertFalse(result.getOutputSchema().toString().contains("CONFIRMATION_REQUIRED"));
         assertFalse(result.getOutputSchema().toString().contains("REJECTED"));
-        assertTrue(result.getGenerationMetadata().schemaVersion().equals("3.6.0"));
+        assertFalse(result.getOutputSchema().toString().contains("PROFILE.SKILL.1"));
+        assertFalse(result.getOutputSchema().toString().contains("Build useful and reliable services."));
+        assertTrue(result.getGenerationMetadata().schemaVersion().equals("3.7.0"));
         assertTrue(result.getEvidenceCatalog().records().stream()
                 .anyMatch(record -> record.evidenceId().equals("JOB.TITLE")));
         assertFalse(result.getTrustedInstructions().contains("Build useful and reliable services."));

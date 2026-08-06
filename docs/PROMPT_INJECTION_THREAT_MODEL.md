@@ -97,12 +97,15 @@ Physical trusted/untrusted separation remains active when selecting an approved
 rollback bundle. Older bundles have fewer explicit safety instructions and
 their exemplar output is compiled into a closed structural schema, but local
 response, text, array and active-content limits with applied parser metadata
-`3.2.0` still apply. Active release `1.5.5` uses schema `3.6.0` to isolate its
-two canonical application claims in a dedicated private provider object and
-to constrain every private core-skill evidence scalar to the exact empty
-string. Parser `3.3.0` validates that raw object before deterministic projection
-into the unchanged public claim ledger; it does not trim, split, repair or
-retry invalid provider output. Rollback release `1.5.4` retains schema `3.5.0`
-and parser metadata `3.3.0`; release `1.5.3` retains parser metadata `3.2.0`.
+`3.2.0` still apply. Active release `1.5.6` uses schema `3.7.0` to isolate its
+two canonical application claims, require exact-empty private skill evidence
+and constrain ordinary claims to exact final leaves. This blocks fabricated
+paths such as `qualificationTitle` and prevents the provider from claiming
+core-skill or hidden evidence paths. Parser `3.4.0` validates the raw object,
+then projects skills only from server-owned approved CV skill records and
+regenerates their opaque-ID provenance under claim policy `2.11.0`. It never
+places free-text evidence in the trusted schema and does not retry invalid
+provider output. Rollback release `1.5.5` retains schema `3.6.0`, parser `3.3.0`
+and claim policy `2.10.0`; release `1.5.3` retains parser metadata `3.2.0`.
 Rollback is an emergency containment action, not evidence that the newer
 evaluation policy passed.

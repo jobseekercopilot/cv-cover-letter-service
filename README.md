@@ -53,8 +53,8 @@ evidence. See
 
 ## Prompt releases
 
-Prompt bundle `cv-cover-letter-1.5.5`, output schema `3.6.0` and evaluation
-policy `1.5.3` render projects as projects, keep paid employment separate, cap
+Prompt bundle `cv-cover-letter-1.5.6`, output schema `3.7.0` and evaluation
+policy `1.5.4` render projects as projects, keep paid employment separate, cap
 the CV at 8–12 unique confirmed skills where available, omit unsupported empty
 sections, and use the correct UK generic greeting/sign-off pair. A
 post-grounding quality policy rejects repeated narrative, repeated
@@ -83,13 +83,22 @@ deterministically projects the two siblings into the unchanged public claims
 ledger. It does not split or repair a grouped claim and does not retry the
 provider; any mismatch still fails closed under claim policy `2.10.0`. The
 local four-disposition claim policy remains compatible with historical data.
-Release `1.5.5` also makes every required `coreSkills.evidence` value exactly
-empty in the private schema, so hidden skill prose cannot create an unclaimed
-final-content path; proof remains on each skill-name claim's evidence IDs and
-in governed project or employment content. Parser `3.3.0` is unchanged because
-the existing generic schema validator enforces this narrowed field before
-claim validation. The immutable `1.5.4` release is the immediate emergency
-rollback and retains schema `3.5.0` and parser metadata `3.3.0`.
+Release `1.5.5` makes every required `coreSkills.evidence` value exactly empty.
+Release `1.5.6` additionally restricts ordinary claim paths to the exact
+claim-bearing leaves (`qualificationName`, never `qualificationTitle`) and
+excludes canonical bookends, core skills and hidden evidence. Its private
+ordinary-claim array is capped at 26, reserving two public-ledger entries for
+the canonical claims and up to 12 for deterministic skill provenance within
+the unchanged 40-claim public bound. Parser `3.4.0`
+then projects skills deterministically from approved CV skill facts: it keeps
+unique exact approved proposals, discards unsupported or duplicate values,
+fills in evidence order to `min(8, available)`, caps the result at 12, fixes
+`evidence` to empty and creates one exact, server-owned claim using the
+selected fact ID for each skill. Versioned
+catalogues use only CV `EVIDENCE_SNAPSHOT` `DEMONSTRATED_SKILL` facts; legacy
+catalogues use `PROFILE.SKILL` facts. Claim policy `2.11.0` applies only to this
+new projection contract. Immutable release `1.5.5` is the immediate emergency
+rollback and retains schema `3.6.0`, parser `3.3.0` and claim policy `2.10.0`.
 
 Prompt template, rules, output schema and evaluation-policy versions are
 selected as one reviewed bundle. Checksums, an approved-release index and

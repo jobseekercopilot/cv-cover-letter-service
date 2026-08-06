@@ -110,6 +110,7 @@ public class CvCoverLetterService {
                 claimLedgerFactory.create(
                         operationId,
                         draft.documents().getClaims(),
+                        prepared.claimPolicyVersion(),
                         prepared.parserVersion()),
                 new DraftGenerationResponse.DraftGenerationUsage(
                         usage == null ? null : usage.getInputTokens(),
@@ -133,6 +134,8 @@ public class CvCoverLetterService {
         long startedAt = System.nanoTime();
         CvCoverLetterPrompt prompt = promptBuilderService.buildPrompt(input);
         String parserVersion = responseParser.parserVersion(
+                prompt.getOutputSchema());
+        String claimPolicyVersion = responseParser.claimPolicyVersion(
                 prompt.getOutputSchema());
         log.info(
                 "Bounded prompt prepared jobId={} promptRelease={} bundleVersion={} schemaId={} schemaVersion={} estimatedTokens={} durationMs={}",
@@ -158,7 +161,12 @@ public class CvCoverLetterService {
                         .temperature(llmProperties.getTemperature())
                         .maxOutputTokens(llmProperties.getMaxTokens()));
         return new PreparedGeneration(
-                input, prompt, llmRequest, jobId, parserVersion);
+                input,
+                prompt,
+                llmRequest,
+                jobId,
+                claimPolicyVersion,
+                parserVersion);
     }
 
     private GenerationResponse invokeModel(
@@ -204,6 +212,7 @@ public class CvCoverLetterService {
             CvCoverLetterPrompt prompt,
             GenerationRequest llmRequest,
             String jobId,
+            String claimPolicyVersion,
             String parserVersion) {
     }
 
@@ -223,6 +232,8 @@ public class CvCoverLetterService {
         log.info("Prompt build started userId={} jobId={}", userId, jobId);
         CvCoverLetterPrompt prompt = promptBuilderService.buildPrompt(input);
         String parserVersion = responseParser.parserVersion(
+                prompt.getOutputSchema());
+        String claimPolicyVersion = responseParser.claimPolicyVersion(
                 prompt.getOutputSchema());
         log.info("Prompt build completed userId={} jobId={} llmContractVersion=2.0 promptRelease={} bundleVersion={} templateVersion={} rulesVersion={} schemaId={} schemaVersion={} evaluationPolicyVersion={} bundleSha256={} trustedInstructionCharacters={} untrustedInputCharacters={} estimatedTokens={} durationMs={}",
                 userId,
@@ -360,7 +371,7 @@ public class CvCoverLetterService {
                         "LLM claim evidence accepted userId={} jobId={} policyVersion={} evidenceRecords={} claims={}",
                         userId,
                         jobId,
-                        ClaimEvidenceValidator.POLICY_VERSION,
+                        claimPolicyVersion,
                         prompt.getEvidenceCatalog().records().size(),
                         documents.getClaims().size());
             }

@@ -11,7 +11,9 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedApplicationDocuments;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidLlmResponseException;
+import com.jobseekercopilot.cvcoverletter.model.ClaimEvidenceCatalog;
 import java.io.InputStream;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -20,6 +22,7 @@ class LlmResponseParserTest {
     private ObjectMapper objectMapper;
     private LlmResponseParser parser;
     private JsonNode schema;
+    private JsonNode dedicatedRollbackSchema;
     private JsonNode legacySchema;
 
     @BeforeEach
@@ -30,11 +33,19 @@ class LlmResponseParserTest {
                 new ClaimEvidenceValidator(),
                 new GeneratedDocumentQualityValidator());
         try (InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.5.5/output-schema.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.6/output-schema.json")) {
             if (input == null) {
                 throw new IllegalStateException("Active output schema fixture is missing.");
             }
             schema = objectMapper.readTree(input);
+        }
+        try (InputStream input = getClass().getResourceAsStream(
+                "/prompts/bundles/cv-cover-letter-1.5.5/output-schema.json")) {
+            if (input == null) {
+                throw new IllegalStateException(
+                        "Dedicated rollback output schema fixture is missing.");
+            }
+            dedicatedRollbackSchema = objectMapper.readTree(input);
         }
         try (InputStream input = getClass().getResourceAsStream(
                 "/prompts/bundles/cv-cover-letter-1.5.3/output-schema.json")) {
@@ -56,7 +67,8 @@ class LlmResponseParserTest {
         assertEquals(10, result.getClaims().size());
         assertEquals("CLAIM-9001", result.getClaims().get(8).getClaimId());
         assertEquals("CLAIM-9002", result.getClaims().get(9).getClaimId());
-        assertEquals("3.3.0", parser.parserVersion(schema));
+        assertEquals("3.4.0", parser.parserVersion(schema));
+        assertEquals("2.11.0", parser.claimPolicyVersion(schema));
     }
 
     @Test
@@ -128,6 +140,45 @@ class LlmResponseParserTest {
         ((ObjectNode) nullEvidence.at("/cv/coreSkills/0"))
                 .putNull("evidence");
         assertRejectedAt(nullEvidence, "$.cv.coreSkills[0].evidence");
+    }
+
+    @Test
+    void deterministicallyProjectsLegacySkillsAndRegeneratesExactProvenance()
+            throws Exception {
+        JsonNode output = objectMapper.readTree(
+                CvCoverLetterServiceTest.activeValidJson());
+        ArrayNode skills = (ArrayNode) output.at("/cv/coreSkills");
+        for (String name : List.of("Spring", "Kubernetes", "Spring")) {
+            ObjectNode skill = skills.addObject();
+            skill.put("name", name);
+            skill.put("evidence", "");
+        }
+        ClaimEvidenceCatalog catalog = new ClaimEvidenceCatalogFactory()
+                .create(new GenerationInputNormalizer().normalize(
+                        "owner-123",
+                        com.jobseekercopilot.cvcoverletter
+                                .GenerationInputFixtures.validRequest()));
+
+        GeneratedApplicationDocuments documents = parser.parse(
+                objectMapper.writeValueAsString(output),
+                schema,
+                catalog);
+
+        assertEquals(
+                List.of("Spring", "Java"),
+                documents.getCv().getCoreSkills().stream()
+                        .map(skill -> skill.getName())
+                        .toList());
+        assertTrue(documents.getCv().getCoreSkills().stream()
+                .allMatch(skill -> skill.getEvidence().isEmpty()));
+        assertEquals(
+                List.of("PROFILE.SKILL.2"),
+                claimFor(documents, "/cv/coreSkills/0/name")
+                        .getEvidenceIds());
+        assertEquals(
+                List.of("PROFILE.SKILL.1"),
+                claimFor(documents, "/cv/coreSkills/1/name")
+                        .getEvidenceIds());
     }
 
     @Test
@@ -240,12 +291,53 @@ class LlmResponseParserTest {
     }
 
     @Test
-    void reservesCapacityForExactlyTwoProjectedCanonicalClaims()
+    void ordinaryClaimPathsAreRestrictedToExactClaimBearingLeaves() {
+        String pattern = schema.at(
+                "/properties/claims/items/properties/contentPaths/items/pattern")
+                .asText();
+
+        for (String allowed : new String[] {
+                "/cv/title",
+                "/cv/targetRole",
+                "/cv/personalSummary",
+                "/cv/projects/0/title",
+                "/cv/projects/12/highlights/7",
+                "/cv/qualifications/0/qualificationName",
+                "/cv/qualifications/19/expectedCompletion",
+                "/cv/workHistory/0/jobTitle",
+                "/cv/workHistory/19/responsibilities/11",
+                "/coverLetter/title",
+                "/coverLetter/jobTitle",
+                "/coverLetter/companyName",
+                "/coverLetter/bodyParagraphs/4"
+        }) {
+            assertTrue(allowed.matches(pattern), allowed);
+        }
+        for (String rejected : new String[] {
+                "/cv/coreSkills",
+                "/cv/coreSkills/0/name",
+                "/cv/coreSkills/0/evidence",
+                "/cv/projects/0",
+                "/cv/projects/0/highlights",
+                "/cv/qualifications/0/qualificationTitle",
+                "/cv/workHistory/0/responsibilities",
+                "/coverLetter/greeting",
+                "/coverLetter/openingParagraph",
+                "/coverLetter/closingParagraph",
+                "/coverLetter/signOff",
+                "/generationNotes/tailoringSummary"
+        }) {
+            assertFalse(rejected.matches(pattern), rejected);
+        }
+    }
+
+    @Test
+    void reservesCapacityForCanonicalAndProjectedSkillClaims()
             throws Exception {
         JsonNode bounded = objectMapper.readTree(
                 CvCoverLetterServiceTest.activeValidJson());
         ArrayNode claims = (ArrayNode) bounded.path("claims");
-        while (claims.size() < 38) {
+        while (claims.size() < 26) {
             ObjectNode copy = claims.get(0).deepCopy();
             copy.put("claimId", "CLAIM-" + (100 + claims.size()));
             claims.add(copy);
@@ -253,12 +345,34 @@ class LlmResponseParserTest {
 
         GeneratedApplicationDocuments accepted = parser.parse(
                 objectMapper.writeValueAsString(bounded), schema);
-        assertEquals(40, accepted.getClaims().size());
+        assertEquals(28, accepted.getClaims().size());
 
         ObjectNode extra = claims.get(0).deepCopy();
         extra.put("claimId", "CLAIM-888");
         claims.add(extra);
         assertRejectedAt(bounded, "$.claims");
+
+        JsonNode rollbackBounded = objectMapper.readTree(
+                CvCoverLetterServiceTest.activeValidJson());
+        ArrayNode rollbackClaims =
+                (ArrayNode) rollbackBounded.path("claims");
+        while (rollbackClaims.size() < 38) {
+            ObjectNode copy = rollbackClaims.get(0).deepCopy();
+            copy.put("claimId", "CLAIM-" + (100 + rollbackClaims.size()));
+            rollbackClaims.add(copy);
+        }
+        GeneratedApplicationDocuments rollbackAccepted = parser.parse(
+                objectMapper.writeValueAsString(rollbackBounded),
+                dedicatedRollbackSchema);
+        assertEquals(40, rollbackAccepted.getClaims().size());
+
+        ObjectNode rollbackExtra = rollbackClaims.get(0).deepCopy();
+        rollbackExtra.put("claimId", "CLAIM-888");
+        rollbackClaims.add(rollbackExtra);
+        assertRejectedAt(
+                rollbackBounded,
+                dedicatedRollbackSchema,
+                "$.claims");
     }
 
     @Test
@@ -297,14 +411,14 @@ class LlmResponseParserTest {
 
         JsonNode nonNumericBound = schema.deepCopy();
         ((ObjectNode) nonNumericBound.at("/properties/claims"))
-                .put("maxItems", "38");
+                .put("maxItems", "26");
         assertThrows(
                 IllegalStateException.class,
                 () -> parser.parserVersion(nonNumericBound));
 
         JsonNode excessiveBound = schema.deepCopy();
         ((ObjectNode) excessiveBound.at("/properties/claims"))
-                .put("maxItems", 39);
+                .put("maxItems", 27);
         assertThrows(
                 IllegalStateException.class,
                 () -> parser.parserVersion(excessiveBound));
@@ -409,6 +523,12 @@ class LlmResponseParserTest {
                 CvCoverLetterServiceTest.validJson(), legacySchema);
         assertEquals(10, rollback.getClaims().size());
         assertEquals("3.2.0", parser.parserVersion(legacySchema));
+        assertEquals(
+                "3.3.0",
+                parser.parserVersion(dedicatedRollbackSchema));
+        assertEquals(
+                "2.10.0",
+                parser.claimPolicyVersion(dedicatedRollbackSchema));
     }
 
     @Test
@@ -441,6 +561,16 @@ class LlmResponseParserTest {
     private InvalidLlmResponseException assertRejectedAt(JsonNode output, String path)
             throws Exception {
         return assertRejectedAt(output, schema, path);
+    }
+
+    private com.jobseekercopilot.cvcoverletter.dto.GeneratedClaim claimFor(
+            GeneratedApplicationDocuments documents,
+            String contentPath
+    ) {
+        return documents.getClaims().stream()
+                .filter(claim -> claim.getContentPaths().contains(contentPath))
+                .findFirst()
+                .orElseThrow();
     }
 
     private InvalidLlmResponseException assertRejectedAt(

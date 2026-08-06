@@ -36,7 +36,7 @@ class PromptBundleEvaluationTest {
     void setUp() throws IOException {
         objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBundleProperties bundleProperties = new PromptBundleProperties();
-        bundleProperties.setSelectedReleaseId("cv-cover-letter-1.5.5");
+        bundleProperties.setSelectedReleaseId("cv-cover-letter-1.5.6");
         PromptBundleRegistry registry =
                 new PromptBundleRegistry(objectMapper, new DefaultResourceLoader(), bundleProperties);
         registry.initialize();
@@ -48,7 +48,7 @@ class PromptBundleEvaluationTest {
         normalizer = new GenerationInputNormalizer(
                 Clock.fixed(Instant.parse("2026-07-24T13:00:00Z"), ZoneOffset.UTC));
         try (InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.5.5/evaluation-policy.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.6/evaluation-policy.json")) {
             if (input == null) {
                 throw new IllegalStateException("Prompt evaluation policy fixture is missing.");
             }
@@ -62,7 +62,7 @@ class PromptBundleEvaluationTest {
 
         assertEquals(policy.policyVersion(), prompt.getGenerationMetadata().evaluationPolicyVersion());
         assertEquals(
-                "7e2a94a62be6e999473b1a0db547b42031e6ccddf247ee84415eccbc9b564005",
+                "fc1f0791d752097f5788bb5e40bc03b7cbf56c3711e75200cc19633d427b9d95",
                 sha256(boundaryMaterial(prompt)),
                 "The golden LLM boundary changed; review the trusted instructions, untrusted envelope, "
                         + "output schema and rollback metadata together.");
@@ -101,7 +101,7 @@ class PromptBundleEvaluationTest {
         assertTrue(trustedInstructions.contains(
                 "ordinary claims[].contentPaths plus both sibling"));
         assertTrue(trustedInstructions.contains(
-                "no missing, duplicate or\nwrong-purpose pointer"));
+                "with no\nmissing, duplicate or wrong-purpose pointer"));
     }
 
     @Test
@@ -130,6 +130,16 @@ class PromptBundleEvaluationTest {
                 "Omit unsupported or unconfirmed material from the final documents and claims."));
         assertTrue(prompt.getTrustedInstructions().contains(
                 "generationNotes.missingInformation"));
+        String pathPattern = claims.path("contentPaths")
+                .path("items")
+                .path("pattern")
+                .asText();
+        assertTrue("/cv/qualifications/0/qualificationName"
+                .matches(pathPattern));
+        assertFalse("/cv/qualifications/0/qualificationTitle"
+                .matches(pathPattern));
+        assertFalse("/cv/coreSkills/0/name".matches(pathPattern));
+        assertFalse("/cv/coreSkills/0/evidence".matches(pathPattern));
     }
 
     @Test

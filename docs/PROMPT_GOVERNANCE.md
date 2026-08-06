@@ -5,13 +5,13 @@ Each approved release under `src/main/resources/prompts/bundles` packages the
 template, generation rules, output schema and synthetic evaluation policy with
 immutable component checksums. `index.json` is the only runtime allowlist.
 
-The active `cv-cover-letter-1.5.5` release converts the normalised profile and
+The active `cv-cover-letter-1.5.6` release converts the normalised profile and
 canonical job into a stable approved-evidence catalogue and treats that
 catalogue and normalisation warnings as untrusted data. It places the safety
 rules before that evidence and forbids direct, indirect, encoded, nested,
 Unicode-obfuscated and schema-escape instructions in source content from
-changing the task. The release also owns exact bounded JSON Schema `3.6.0` and
-evaluation policy `1.5.3`, used at the provider boundary and by the local
+changing the task. The release also owns exact bounded JSON Schema `3.7.0` and
+evaluation policy `1.5.4`, used at the provider boundary and by the local
 response parser and synthetic evaluation checks. The domain bundle cannot name
 a model provider or transport API; provider mechanics belong behind LLM
 Gateway.
@@ -56,6 +56,23 @@ claim evidence IDs retain provenance. The parser does not trim, discard or
 repair a non-empty value; strict schema validation rejects it before claim
 validation. Parser `3.3.0` remains the applied parser because its validated
 canonical-sibling projection algorithm is unchanged.
+
+Release `1.5.6` narrows ordinary `contentPaths` to the exact claim-bearing
+leaves. The pattern permits `qualificationName`, never `qualificationTitle`,
+and excludes canonical bookends, containers, all core-skill paths and hidden
+evidence. The active ordinary array is capped at 26, reserving two public
+entries for canonical claims and up to 12 for projected skill provenance
+within the unchanged 40-claim bound. Parser `3.4.0` and claim policy `2.11.0`
+then project core skills from
+approved purpose-compatible facts, preserving unique exact approved proposals,
+discarding unsupported or duplicate values, filling in evidence order to
+`min(8, available)`, capping at 12 and forcing evidence to empty. Versioned
+catalogues use only CV `EVIDENCE_SNAPSHOT` `DEMONSTRATED_SKILL` records; legacy
+catalogues use only `PROFILE.SKILL`. The schema rejects model-authored skill
+paths before claim validation, and the service creates one exact claim per
+projected skill using the selected fact ID without a second provider call. Request-specific
+opaque IDs and free-text evidence remain in the untrusted catalogue; the
+immutable trusted schema is not rewritten per request.
 
 Runtime assembly preserves those domains as separate LLM Gateway v2 fields:
 reviewed bundle text becomes `trustedInstructions`, normalised evidence becomes
@@ -112,19 +129,21 @@ Rollback restores prompt construction only. The LLM Gateway v2 physical
 trusted/untrusted separation remains enforced for every approved release. It
 does not reverse documents already generated or stored, so operators must use
 the recorded release and component hashes when identifying affected outputs.
-Release `cv-cover-letter-1.5.4` is the immediate approved emergency rollback
-for `1.5.5`; its immutable files must not be edited to adopt the exact-empty
-skill constraint. It retains schema `3.5.0`, the dedicated canonical-claim
-wire shape and applied parser metadata `3.3.0`. Release `1.5.3` remains a
+Release `cv-cover-letter-1.5.5` is the immediate approved emergency rollback
+for `1.5.6`; its immutable files must not be edited to adopt exact ordinary
+paths or deterministic skill projection. It retains schema `3.6.0`, the
+dedicated canonical-claim wire shape, parser `3.3.0` and claim policy `2.10.0`.
+Release `1.5.3` remains a
 deeper rollback with the ordinary claim-array contract and parser metadata
 `3.2.0`.
 
 The oldest approved releases contain output exemplars rather than the active
 bounded schema. They are compiled into closed structural schemas at runtime and
 remain subject to the response, text, array and active-content limits associated
-with applied parser metadata `3.2.0`. Parser `3.3.0` applies only when the
-selected schema contains the exact dedicated canonical-claim structure; it
-projects that private structure only after raw schema validation. Releases
+with applied parser metadata `3.2.0`. Parser `3.3.0` applies to the dedicated
+canonical-claim rollback shape; parser `3.4.0` additionally requires the exact
+ordinary path pattern before enabling skill projection. Both project the
+private canonical structure only after raw schema validation. Releases
 from `1.2.0` onward have specific field-by-field bounds at both the provider
 and local validation boundaries; releases from `1.3.0` onward enable the claim
 evidence ledger. The `1.5.x` post-grounding quality policy is gated by the

@@ -122,8 +122,10 @@ class CvCoverLetterServiceTest {
                 "gpt-4.1-mini-2025-04-14",
                 actual.audit().modelId());
         assertEquals("1.0", actual.inputSchemaVersion());
-        assertEquals(10, actual.claimLedger().claims().size());
+        assertEquals(12, actual.claimLedger().claims().size());
         assertEquals(64, actual.claimLedger().ledgerSha256().length());
+        assertEquals("2.11.0", actual.claimLedger().policyVersion());
+        assertEquals("3.4.0", actual.claimLedger().parserVersion());
         verify(llmGatewayApi).generateV2(any());
         verifyNoInteractions(
                 paymentBillingClient,
@@ -180,6 +182,7 @@ class CvCoverLetterServiceTest {
                 "user-123", UUID.randomUUID(), request);
 
         assertEquals("3.2.0", result.claimLedger().parserVersion());
+        assertEquals("2.10.0", result.claimLedger().policyVersion());
         assertEquals(10, result.claimLedger().claims().size());
         verifyNoInteractions(
                 paymentBillingClient,
@@ -206,6 +209,71 @@ class CvCoverLetterServiceTest {
     }
 
     @Test
+    void draftProjectsSupportedSkillsAfterOneProviderCallWithoutSideEffects()
+            throws Exception {
+        UUID operationId = UUID.randomUUID();
+        when(llmGatewayApi.generateV2(any())).thenReturn(
+                successfulResponse(activeJsonWithNoisyCoreSkills()));
+
+        DraftGenerationResponse actual = service.generateDraft(
+                "user-123",
+                operationId,
+                request);
+
+        org.junit.jupiter.api.Assertions.assertTrue(
+                actual.cvContent().contains(
+                        "Technical Skills\nSpring, Java"));
+        assertEquals(
+                java.util.Set.of(
+                        "/cv/coreSkills/0/name",
+                        "/cv/coreSkills/1/name"),
+                actual.claimLedger().claims().stream()
+                        .flatMap(claim -> claim.contentPaths().stream())
+                        .filter(path -> path.startsWith("/cv/coreSkills/"))
+                        .collect(java.util.stream.Collectors.toSet()));
+        verify(llmGatewayApi, org.mockito.Mockito.times(1))
+                .generateV2(any());
+        verifyNoInteractions(
+                paymentBillingClient,
+                documentStoreApi,
+                applicationTrackerApi);
+    }
+
+    @Test
+    void rejectsQualificationTitlePathAfterOneProviderCallAndPersistsNothing()
+            throws Exception {
+        UUID reservationId = UUID.randomUUID();
+        when(paymentBillingClient.reserve(any(), any())).thenReturn(
+                new PaymentBillingClient.ReservationResponse(
+                        reservationId,
+                        "user-123",
+                        5000,
+                        40000,
+                        "RESERVED"));
+        String invalidPath = activeValidJson().replace(
+                "/cv/targetRole",
+                "/cv/qualifications/0/qualificationTitle");
+        when(llmGatewayApi.generateV2(any())).thenReturn(
+                successfulResponse(invalidPath));
+
+        InvalidLlmResponseException failure = assertThrows(
+                InvalidLlmResponseException.class,
+                () -> service.generate("user-123", request));
+
+        org.junit.jupiter.api.Assertions.assertTrue(
+                failure.getMessage().contains(
+                        "$.claims[0].contentPaths[0]"));
+        verify(llmGatewayApi, org.mockito.Mockito.times(1))
+                .generateV2(any());
+        verify(paymentBillingClient).release(
+                "user-123",
+                reservationId,
+                "Document generation failed");
+        verify(paymentBillingClient, never()).commit(any(), any(), any());
+        verifyNoInteractions(documentStoreApi, applicationTrackerApi);
+    }
+
+    @Test
     void generatesStoresBothDocumentsCreatesApplicationAndReturnsContent(CapturedOutput output) {
         when(llmGatewayApi.generateV2(any())).thenReturn(successfulResponse(
                 activeValidJson().replace("Focused on Java.", "response-secret-sentinel")));
@@ -228,7 +296,7 @@ class CvCoverLetterServiceTest {
         assertEquals("trusted generation rules", llmRequest.getTrustedInstructions());
         assertEquals("{\"job\":\"input-secret-sentinel\"}", llmRequest.getUntrustedInput());
         assertEquals("cv-cover-letter-output", llmRequest.getOutput().getSchemaId());
-        assertEquals("3.6.0", llmRequest.getOutput().getSchemaVersion());
+        assertEquals("3.7.0", llmRequest.getOutput().getSchemaVersion());
         assertEquals(0.25, llmRequest.getLimits().getTemperature());
         assertEquals(2500, llmRequest.getLimits().getMaxOutputTokens());
 
@@ -253,9 +321,9 @@ class CvCoverLetterServiceTest {
         assertEquals("Java Developer CV", actual.getCvTitle());
         assertEquals("Java Developer CV", actual.getCvContent().lines().findFirst().orElseThrow());
         assertEquals("1.0", actual.getInputSchemaVersion());
-        assertEquals("cv-cover-letter-1.5.5", actual.getGenerationMetadata().releaseId());
-        assertEquals("1.5.5", actual.getGenerationMetadata().rulesVersion());
-        assertEquals("3.6.0", actual.getGenerationMetadata().schemaVersion());
+        assertEquals("cv-cover-letter-1.5.6", actual.getGenerationMetadata().releaseId());
+        assertEquals("1.5.6", actual.getGenerationMetadata().rulesVersion());
+        assertEquals("3.7.0", actual.getGenerationMetadata().schemaVersion());
         assertEquals(normalizedInput.warnings(), actual.getInputWarnings());
         org.junit.jupiter.api.Assertions.assertTrue(
                 actual.getCoverLetterContent().contains("Dear Hiring Manager,"));
@@ -284,15 +352,15 @@ class CvCoverLetterServiceTest {
         org.junit.jupiter.api.Assertions.assertTrue(
                 output.getAll().contains("pricingVersion=openai-standard-2026-07-25"));
         org.junit.jupiter.api.Assertions.assertTrue(
-                output.getAll().contains("promptRelease=cv-cover-letter-1.5.5"));
+                output.getAll().contains("promptRelease=cv-cover-letter-1.5.6"));
         org.junit.jupiter.api.Assertions.assertTrue(
                 output.getAll().contains("templateVersion=1.2.0"));
         org.junit.jupiter.api.Assertions.assertTrue(
-                output.getAll().contains("rulesVersion=1.5.5"));
+                output.getAll().contains("rulesVersion=1.5.6"));
         org.junit.jupiter.api.Assertions.assertTrue(
-                output.getAll().contains("schemaVersion=3.6.0"));
+                output.getAll().contains("schemaVersion=3.7.0"));
         org.junit.jupiter.api.Assertions.assertTrue(
-                output.getAll().contains("parserVersion=3.3.0"));
+                output.getAll().contains("parserVersion=3.4.0"));
         assertFalse(output.getAll().contains("input-secret-sentinel"));
         assertFalse(output.getAll().contains("response-secret-sentinel"));
     }
@@ -452,7 +520,7 @@ class CvCoverLetterServiceTest {
                 .output(output)
                 .finishReason(GenerationResponse.FinishReasonEnum.COMPLETED)
                 .schemaId("cv-cover-letter-output")
-                .schemaVersion("3.6.0")
+                .schemaVersion("3.7.0")
                 .audit(generationAudit())
                 .usage(usage());
     }
@@ -491,6 +559,15 @@ class CvCoverLetterServiceTest {
                         + "\"evidence\":\"Built useful Java services.\"}]");
     }
 
+    private static String activeJsonWithNoisyCoreSkills() {
+        return activeValidJson().replace(
+                "\"coreSkills\": []",
+                "\"coreSkills\": ["
+                        + "{\"name\":\"Spring\",\"evidence\":\"\"},"
+                        + "{\"name\":\"Kubernetes\",\"evidence\":\"\"},"
+                        + "{\"name\":\"Spring\",\"evidence\":\"\"}]");
+    }
+
     private static Stream<GenerationAudit> invalidGenerationAudits() {
         return Stream.<GenerationAudit>of(
                 null,
@@ -516,18 +593,18 @@ class CvCoverLetterServiceTest {
 
     private PromptGenerationMetadata promptMetadata() {
         return new PromptGenerationMetadata(
-                "cv-cover-letter-1.5.5",
+                "cv-cover-letter-1.5.6",
                 "cv-cover-letter",
-                "1.5.5",
+                "1.5.6",
                 "a".repeat(64),
                 "1.2.0",
                 "b".repeat(64),
-                "1.5.5",
+                "1.5.6",
                 "c".repeat(64),
                 "cv-cover-letter-output",
-                "3.6.0",
+                "3.7.0",
                 "d".repeat(64),
-                "1.5.3",
+                "1.5.4",
                 "e".repeat(64)
         );
     }
@@ -664,7 +741,7 @@ class CvCoverLetterServiceTest {
 
     private com.fasterxml.jackson.databind.JsonNode activeOutputSchema() throws Exception {
         try (java.io.InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.5.5/output-schema.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.6/output-schema.json")) {
             if (input == null) {
                 throw new IllegalStateException("Active output schema fixture is missing.");
             }

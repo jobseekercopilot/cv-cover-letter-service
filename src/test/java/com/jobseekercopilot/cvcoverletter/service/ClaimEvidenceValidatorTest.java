@@ -1616,6 +1616,178 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
+    void activePolicyProjectsOnlyCvDemonstratedSkillsInDeterministicOrder()
+            throws Exception {
+        useVersionedCatalog();
+        List<ApprovedEvidenceRecord> records =
+                new java.util.ArrayList<>(catalog.records());
+        List<String> additionalSkills = List.of(
+                "Kotlin",
+                "TypeScript",
+                "SQL",
+                "Docker",
+                "Terraform",
+                "Angular",
+                "Python");
+        for (int index = 0; index < additionalSkills.size(); index++) {
+            records.add(new ApprovedEvidenceRecord(
+                    "81000000-0000-4000-8000-00000000000" + index,
+                    EvidenceSource.EVIDENCE_SNAPSHOT,
+                    "/evidenceSnapshots/cv/selections/0/facts/"
+                            + (index + 3),
+                    additionalSkills.get(index),
+                    "DEMONSTRATED_SKILL",
+                    "PROJECT",
+                    EvidencePurpose.CV));
+        }
+        records.add(new ApprovedEvidenceRecord(
+                "83000000-0000-4000-8000-000000000001",
+                EvidenceSource.EVIDENCE_SNAPSHOT,
+                "/evidenceSnapshots/coverLetter/selections/0/facts/1",
+                "Rust",
+                "DEMONSTRATED_SKILL",
+                "VOLUNTEERING",
+                EvidencePurpose.COVER_LETTER));
+        records.add(new ApprovedEvidenceRecord(
+                "83000000-0000-4000-8000-000000000002",
+                EvidenceSource.EVIDENCE_SNAPSHOT,
+                "/evidenceSnapshots/cv/selections/0/facts/11",
+                "Go",
+                "DESCRIPTION",
+                "PROJECT",
+                EvidencePurpose.CV));
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                List.copyOf(records),
+                catalog.sectionOrder());
+        ObjectNode output = versionedOutput();
+        ArrayNode proposed = (ArrayNode) output.at("/cv/coreSkills");
+        proposed.removeAll();
+        for (String name : List.of(
+                "Kotlin", "Rust", "Kotlin", "Java", "Go")) {
+            ObjectNode skill = proposed.addObject();
+            skill.put("name", name);
+            skill.put("evidence", "");
+        }
+        GeneratedApplicationDocuments documents = objectMapper.treeToValue(
+                output,
+                GeneratedApplicationDocuments.class);
+
+        new ClaimEvidenceValidator().validate(
+                output,
+                documents,
+                catalog,
+                false,
+                true);
+
+        assertEquals(
+                List.of(
+                        "Kotlin",
+                        "Java",
+                        "TypeScript",
+                        "SQL",
+                        "Docker",
+                        "Terraform",
+                        "Angular",
+                        "Python"),
+                output.at("/cv/coreSkills").findValues("name").stream()
+                        .map(JsonNode::asText)
+                        .toList());
+        assertTrue(output.at("/cv/coreSkills").findValues("evidence")
+                .stream()
+                .allMatch(value -> value.asText().isEmpty()));
+        assertTrue(claimById(documents, "CLAIM-002")
+                .getContentPaths().stream()
+                .noneMatch(path -> path.startsWith("/cv/coreSkills")));
+        java.util.Map<String, String> firstSkillEvidenceByValue =
+                new java.util.LinkedHashMap<>();
+        catalog.records().stream()
+                .filter(record -> record.source()
+                        == EvidenceSource.EVIDENCE_SNAPSHOT)
+                .filter(record -> record.purpose()
+                        == EvidencePurpose.CV)
+                .filter(record -> "DEMONSTRATED_SKILL".equals(
+                        record.factType()))
+                .forEach(record -> firstSkillEvidenceByValue.putIfAbsent(
+                        record.value(),
+                        record.evidenceId()));
+        for (int index = 0; index < 8; index++) {
+            String path = "/cv/coreSkills/" + index + "/name";
+            GeneratedClaim skillClaim = documents.getClaims().stream()
+                    .filter(claim -> claim.getContentPaths().equals(
+                            List.of(path)))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals(ClaimDisposition.SUPPORTED,
+                    skillClaim.getDisposition());
+            assertEquals(
+                    List.of(firstSkillEvidenceByValue.get(
+                            output.at(path).asText())),
+                    skillClaim.getEvidenceIds());
+        }
+        assertTrue(documents.getClaims().size() <= 40);
+        GeneratedApplicationDocuments projected = objectMapper.treeToValue(
+                output,
+                GeneratedApplicationDocuments.class);
+        projected.setClaims(documents.getClaims());
+        new GeneratedDocumentQualityValidator().validate(
+                output,
+                projected,
+                catalog);
+    }
+
+    @Test
+    void projectedSkillProvenanceKeepsOneOrderedFactWhenNamesRepeat()
+            throws Exception {
+        useVersionedCatalog();
+        List<ApprovedEvidenceRecord> records =
+                new java.util.ArrayList<>(catalog.records());
+        for (int index = 0; index < 31; index++) {
+            records.add(new ApprovedEvidenceRecord(
+                    String.format(
+                            "84000000-0000-4000-8000-%012d",
+                            index),
+                    EvidenceSource.EVIDENCE_SNAPSHOT,
+                    "/evidenceSnapshots/cv/selections/1/facts/"
+                            + index,
+                    "Kotlin",
+                    "DEMONSTRATED_SKILL",
+                    "PROJECT",
+                    EvidencePurpose.CV));
+        }
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                List.copyOf(records),
+                catalog.sectionOrder());
+        ObjectNode output = versionedOutput();
+        ArrayNode proposed = (ArrayNode) output.at("/cv/coreSkills");
+        proposed.removeAll();
+        ObjectNode kotlin = proposed.addObject();
+        kotlin.put("name", "Kotlin");
+        kotlin.put("evidence", "");
+        GeneratedApplicationDocuments documents = objectMapper.treeToValue(
+                output,
+                GeneratedApplicationDocuments.class);
+
+        new ClaimEvidenceValidator().validate(
+                output,
+                documents,
+                catalog,
+                false,
+                true);
+
+        GeneratedClaim kotlinClaim = documents.getClaims().stream()
+                .filter(claim -> claim.getContentPaths().equals(
+                        List.of("/cv/coreSkills/0/name")))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(
+                List.of("84000000-0000-4000-8000-000000000000"),
+                kotlinClaim.getEvidenceIds());
+        assertTrue(documents.getClaims().size() <= 40);
+    }
+
+    @Test
     void rejectsASelectedEvidenceEntryMissingFromFinalContent()
             throws Exception {
         useVersionedCatalog();

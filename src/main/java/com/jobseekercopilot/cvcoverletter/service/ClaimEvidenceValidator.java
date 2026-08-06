@@ -28,10 +28,13 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.10.0";
+    static final String POLICY_VERSION = "2.11.0";
+    static final String ROLLBACK_POLICY_VERSION = "2.10.0";
     private static final int MAX_CLAIMS = 40;
     private static final int MAX_CLAIM_REFERENCES = 30;
     private static final int MAX_REVIEW_TEXT_LENGTH = 500;
+    private static final int MIN_PROJECTED_CORE_SKILLS = 8;
+    private static final int MAX_PROJECTED_CORE_SKILLS = 12;
     private static final String GENERATION_INTENT_EVIDENCE_ID =
             "REQUEST.GENERATION_INTENT";
     private static final String JOB_TITLE_EVIDENCE_ID = "JOB.TITLE";
@@ -61,7 +64,7 @@ public class ClaimEvidenceValidator {
             GeneratedApplicationDocuments documents,
             ClaimEvidenceCatalog catalog
     ) {
-        validate(output, documents, catalog, false);
+        validate(output, documents, catalog, false, false);
     }
 
     public void validate(
@@ -69,6 +72,21 @@ public class ClaimEvidenceValidator {
             GeneratedApplicationDocuments documents,
             ClaimEvidenceCatalog catalog,
             boolean enforceCanonicalApplicationBookends
+    ) {
+        validate(
+                output,
+                documents,
+                catalog,
+                enforceCanonicalApplicationBookends,
+                false);
+    }
+
+    public void validate(
+            JsonNode output,
+            GeneratedApplicationDocuments documents,
+            ClaimEvidenceCatalog catalog,
+            boolean enforceCanonicalApplicationBookends,
+            boolean projectCoreSkills
     ) {
         if (catalog == null || catalog.records() == null || catalog.records().isEmpty()) {
             throw new IllegalStateException("Approved claim evidence catalogue is missing.");
@@ -122,6 +140,15 @@ public class ClaimEvidenceValidator {
                         output,
                         documents.getClaims(),
                         versionedEvidence);
+        Map<String, String> projectedCoreSkillEvidenceByPath = Map.of();
+        if (projectCoreSkills) {
+            projectedCoreSkillEvidenceByPath = canonicalizeCoreSkills(
+                    output,
+                    catalog.records(),
+                    versionedEvidence);
+            submittedClaims = removeSubmittedCoreSkillCoverage(
+                    submittedClaims);
+        }
         documents.setClaims(submittedClaims);
         Set<String> submittedPaths = claimBearingPaths(output);
         validateSubmittedContentPaths(
@@ -159,11 +186,13 @@ public class ClaimEvidenceValidator {
                 claims,
                 evidenceById,
                 expectedPaths,
-                versionedEvidence);
+                versionedEvidence,
+                projectedCoreSkillEvidenceByPath);
         claims = enrichAtomicEvidenceReferences(
                 output,
                 claims,
-                evidenceById);
+                evidenceById,
+                projectCoreSkills);
         claims = normalizeDuplicateClaimIds(
                 splitOversizedContentPathClaims(
                         isolateStructuredProjectClaims(
@@ -198,6 +227,129 @@ public class ClaimEvidenceValidator {
                     "final content contains unaccounted claim paths "
                             + unaccounted);
         }
+    }
+
+    static String policyVersion(boolean projectsCoreSkills) {
+        return projectsCoreSkills
+                ? POLICY_VERSION
+                : ROLLBACK_POLICY_VERSION;
+    }
+
+    private Map<String, String> canonicalizeCoreSkills(
+            JsonNode output,
+            List<ApprovedEvidenceRecord> records,
+            boolean versionedEvidence
+    ) {
+        JsonNode coreSkills = output.at("/cv/coreSkills");
+        if (!(coreSkills instanceof ArrayNode coreSkillArray)) {
+            return Map.of();
+        }
+
+        Map<String, ApprovedEvidenceRecord> availableByNormalisedValue =
+                new LinkedHashMap<>();
+        for (ApprovedEvidenceRecord record : records) {
+            if (!approvedCoreSkill(record, versionedEvidence)) {
+                continue;
+            }
+            availableByNormalisedValue.putIfAbsent(
+                    normalise(record.value()),
+                    record);
+        }
+
+        List<ApprovedEvidenceRecord> selected = new ArrayList<>();
+        Set<String> selectedValues = new LinkedHashSet<>();
+        for (JsonNode proposedSkill : coreSkillArray) {
+            if (selected.size() >= MAX_PROJECTED_CORE_SKILLS) {
+                break;
+            }
+            JsonNode proposedName = proposedSkill.path("name");
+            if (!proposedName.isTextual()) {
+                continue;
+            }
+            ApprovedEvidenceRecord exact = availableByNormalisedValue.values()
+                    .stream()
+                    .filter(record -> record.value().equals(
+                            proposedName.textValue()))
+                    .findFirst()
+                    .orElse(null);
+            if (exact == null
+                    || !selectedValues.add(normalise(exact.value()))) {
+                continue;
+            }
+            selected.add(exact);
+        }
+
+        int minimum = Math.min(
+                MIN_PROJECTED_CORE_SKILLS,
+                availableByNormalisedValue.size());
+        for (ApprovedEvidenceRecord available :
+                availableByNormalisedValue.values()) {
+            if (selected.size() >= minimum
+                    || selected.size() >= MAX_PROJECTED_CORE_SKILLS) {
+                break;
+            }
+            if (selectedValues.add(normalise(available.value()))) {
+                selected.add(available);
+            }
+        }
+
+        coreSkillArray.removeAll();
+        Map<String, String> evidenceByProjectedPath =
+                new LinkedHashMap<>();
+        for (int index = 0; index < selected.size(); index++) {
+            ApprovedEvidenceRecord skill = selected.get(index);
+            ObjectNode projected = coreSkillArray.addObject();
+            projected.put("name", skill.value());
+            projected.put("evidence", "");
+            evidenceByProjectedPath.put(
+                    "/cv/coreSkills/" + index + "/name",
+                    skill.evidenceId());
+        }
+        return evidenceByProjectedPath;
+    }
+
+    private boolean approvedCoreSkill(
+            ApprovedEvidenceRecord record,
+            boolean versionedEvidence
+    ) {
+        if (record == null || !StringUtils.hasText(record.value())) {
+            return false;
+        }
+        if (versionedEvidence) {
+            return record.source() == EvidenceSource.EVIDENCE_SNAPSHOT
+                    && record.purpose() == EvidencePurpose.CV
+                    && "DEMONSTRATED_SKILL".equals(record.factType());
+        }
+        return record.source() == EvidenceSource.PROFILE
+                && record.purpose().supports(EvidencePurpose.CV)
+                && record.evidenceId().startsWith("PROFILE.SKILL.");
+    }
+
+    private List<GeneratedClaim> removeSubmittedCoreSkillCoverage(
+            List<GeneratedClaim> claims
+    ) {
+        List<GeneratedClaim> normalized = new ArrayList<>(claims.size());
+        for (GeneratedClaim claim : claims) {
+            if (claim == null) {
+                normalized.add(null);
+                continue;
+            }
+            List<String> retainedPaths = safe(claim.getContentPaths()).stream()
+                    .filter(path -> path == null
+                            || !path.equals("/cv/coreSkills")
+                                    && !path.startsWith("/cv/coreSkills/"))
+                    .toList();
+            if (isFinalContent(claim.getDisposition())
+                    && retainedPaths.isEmpty()) {
+                continue;
+            }
+            GeneratedClaim copy = copyWithClaimId(
+                    claim,
+                    claim.getClaimId());
+            copy.setContentPaths(retainedPaths);
+            normalized.add(copy);
+        }
+        return List.copyOf(normalized);
     }
 
     private void validateSubmittedEvidence(
@@ -1064,7 +1216,8 @@ public class ClaimEvidenceValidator {
             List<GeneratedClaim> claims,
             Map<String, List<ApprovedEvidenceRecord>> evidenceById,
             Set<String> expectedPaths,
-            boolean versionedEvidence
+            boolean versionedEvidence,
+            Map<String, String> projectedCoreSkillEvidenceByPath
     ) {
         Set<String> covered = claims.stream()
                 .filter(java.util.Objects::nonNull)
@@ -1089,7 +1242,12 @@ public class ClaimEvidenceValidator {
             Predicate<ApprovedEvidenceRecord> atomicEvidence =
                     atomicEvidenceFor(contentPath);
             List<String> matchingEvidenceIds;
-            if (versionedEvidence
+            String projectedCoreSkillEvidenceId =
+                    projectedCoreSkillEvidenceByPath.get(contentPath);
+            if (projectedCoreSkillEvidenceId != null) {
+                matchingEvidenceIds = List.of(
+                        projectedCoreSkillEvidenceId);
+            } else if (versionedEvidence
                     && isCanonicalApplicationBookend(
                             output,
                             contentPath,
@@ -1159,7 +1317,8 @@ public class ClaimEvidenceValidator {
     private List<GeneratedClaim> enrichAtomicEvidenceReferences(
             JsonNode output,
             List<GeneratedClaim> claims,
-            Map<String, List<ApprovedEvidenceRecord>> evidenceById
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            boolean projectedCoreSkills
     ) {
         List<GeneratedClaim> normalized = new ArrayList<>(claims.size());
         for (GeneratedClaim claim : claims) {
@@ -1177,6 +1336,9 @@ public class ClaimEvidenceValidator {
             for (String contentPath : claim.getContentPaths()) {
                 Predicate<ApprovedEvidenceRecord> atomicEvidence =
                         atomicEvidenceFor(contentPath);
+                boolean projectedCoreSkill = projectedCoreSkills
+                        && contentPath.matches(
+                                "/cv/coreSkills/\\d+/name");
                 JsonNode value = output.at(contentPath);
                 if (!value.isTextual()
                         || !StringUtils.hasText(value.textValue())) {
@@ -1184,7 +1346,8 @@ public class ClaimEvidenceValidator {
                 }
                 evidenceById.forEach((evidenceId, candidates) -> {
                     boolean exactApprovedFact =
-                            atomicEvidence != null
+                            !projectedCoreSkill
+                                    && atomicEvidence != null
                                     && candidates.stream()
                                             .anyMatch(record ->
                                                     record.purpose().supports(purpose)
@@ -1192,7 +1355,8 @@ public class ClaimEvidenceValidator {
                                                             && equalText(
                                                                     value.textValue(),
                                                                     record.value()));
-                    boolean exactApprovedNarrative = candidates.stream()
+                    boolean exactApprovedNarrative = !projectedCoreSkill
+                            && candidates.stream()
                             .filter(record -> record.purpose().supports(purpose))
                             .filter(record -> !requiresConfirmedCandidateEvidence(
                                     contentPath)
@@ -1200,7 +1364,8 @@ public class ClaimEvidenceValidator {
                             .anyMatch(record -> equalText(
                                     value.textValue(),
                                     record.value()));
-                    boolean exactSupportedTerm = candidates.stream()
+                    boolean exactSupportedTerm = !projectedCoreSkill
+                            && candidates.stream()
                             .filter(record -> record.purpose().supports(purpose))
                             .filter(record -> !requiresConfirmedCandidateEvidence(
                                     contentPath)
