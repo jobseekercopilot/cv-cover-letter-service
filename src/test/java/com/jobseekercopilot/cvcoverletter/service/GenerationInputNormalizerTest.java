@@ -150,10 +150,15 @@ class GenerationInputNormalizerTest {
                                 .EvidenceCategory.PROJECT),
                 actual.evidenceSnapshots().cv().sectionOrder());
         assertEquals(
-                "DEMONSTRATED_SKILL",
+                "HEADING",
                 actual.evidenceSnapshots().cv()
                         .selections().get(0)
                         .facts().get(0).factType());
+        assertEquals(
+                "DEMONSTRATED_SKILL",
+                actual.evidenceSnapshots().cv()
+                        .selections().get(0)
+                        .facts().get(1).factType());
         assertTrue(actual.profile().skills().isEmpty());
         assertTrue(actual.profile().employmentHistory().isEmpty());
     }

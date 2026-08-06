@@ -24,9 +24,29 @@ class ValidatedClaimLedgerFactoryTest {
 
         assertEquals(first.ledgerId(), replay.ledgerId());
         assertEquals(first.ledgerSha256(), replay.ledgerSha256());
-        assertEquals("2.0.0", first.policyVersion());
-        assertEquals("3.0.0", first.parserVersion());
+        assertEquals("2.11.0", first.policyVersion());
+        assertEquals("3.4.0", first.parserVersion());
         assertEquals(64, first.ledgerSha256().length());
+    }
+
+    @Test
+    void recordsTheAppliedRollbackParserVersionInMetadataAndDigest() {
+        UUID operationId =
+                UUID.fromString("10000000-0000-4000-8000-000000000001");
+
+        var active = factory.create(
+                operationId,
+                List.of(claim("Focused review")),
+                "3.4.0");
+        var rollback = factory.create(
+                operationId,
+                List.of(claim("Focused review")),
+                "3.2.0");
+
+        assertEquals("3.2.0", rollback.parserVersion());
+        assertEquals("2.10.0", rollback.policyVersion());
+        assertNotEquals(active.ledgerSha256(), rollback.ledgerSha256());
+        assertNotEquals(active.ledgerId(), rollback.ledgerId());
     }
 
     @Test

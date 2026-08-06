@@ -22,7 +22,7 @@ class PromptBuilderServiceTest {
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBuilderService service = new PromptBuilderService(
                 objectMapper,
-                registry(objectMapper, "cv-cover-letter-1.3.0"),
+                registry(objectMapper, "cv-cover-letter-1.5.6"),
                 properties,
                 new ClaimEvidenceCatalogFactory());
         GenerationInputNormalizer normalizer = new GenerationInputNormalizer(
@@ -35,7 +35,17 @@ class PromptBuilderServiceTest {
         assertTrue(result.getTrustedInstructions().contains("UK English"));
         assertTrue(result.getTrustedInstructions().contains("Aim for 5 to 7 concise paragraphs"));
         assertTrue(result.getTrustedInstructions().contains("specific to the job"));
-        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.3.0"));
+        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.5.6"));
+        assertTrue(result.getTrustedInstructions().contains(
+                "Generic, professional and application prose is"));
+        assertTrue(result.getTrustedInstructions().contains(
+                "/coverLetter/bodyParagraphs/{i}"));
+        assertTrue(result.getTrustedInstructions().contains(
+                "ordinary claims[].contentPaths plus both sibling"));
+        assertTrue(result.getTrustedInstructions().contains(
+                "The claims ledger is final-content provenance only."));
+        assertTrue(result.getTrustedInstructions().contains(
+                "Do not emit CONFIRMATION_REQUIRED or REJECTED ledger entries"));
         assertTrue(result.getTrustedInstructions().contains("UNTRUSTED CONTENT RULES"));
         assertTrue(result.getTrustedInstructions().contains(
                 "[CANONICAL JOB FACTS SUPPLIED THROUGH THE UNTRUSTED INPUT CHANNEL]"));
@@ -51,9 +61,72 @@ class PromptBuilderServiceTest {
         assertTrue(result.getOutputSchema().path("additionalProperties").isBoolean());
         assertTrue(result.getOutputSchema().at("/properties/cv/properties/title/pattern").isTextual());
         assertTrue(result.getOutputSchema().at(
-                "/properties/coverLetter/properties/bodyParagraphs/maxItems").asInt() == 7);
+                "/properties/coverLetter/properties/bodyParagraphs/maxItems").asInt() == 5);
+        assertTrue(result.getOutputSchema().at(
+                "/properties/cv/properties/coreSkills/maxItems").asInt() == 12);
+        assertTrue(result.getOutputSchema().at(
+                "/properties/cv/properties/coreSkills/items/properties/evidence/enum/0")
+                .asText().isEmpty());
+        assertTrue(result.getOutputSchema().at(
+                "/properties/cv/properties/projects").isObject());
         assertTrue(result.getGenerationMetadata().bundleSha256().matches("[a-f0-9]{64}"));
-        assertTrue(result.getGenerationMetadata().schemaVersion().equals("3.0.0"));
+        assertTrue(result.getOutputSchema().at(
+                "/properties/claims/items/properties/disposition/enum").toString()
+                .equals("[\"SUPPORTED\",\"REWORDED\"]"));
+        assertTrue(result.getOutputSchema().at(
+                "/properties/claims/items/properties/evidenceIds/minItems").asInt() == 1);
+        assertFalse(result.getOutputSchema().at(
+                "/properties/claims/items/properties/evidenceIds/items")
+                .has("enum"));
+        assertTrue(result.getOutputSchema().at(
+                "/properties/claims/items/properties/contentPaths/minItems").asInt() == 1);
+        assertTrue(result.getOutputSchema().at(
+                "/properties/claims/items/properties/reviewText/enum/0").asText().isEmpty());
+        assertTrue(result.getOutputSchema().at(
+                "/properties/coverLetter/properties/openingParagraph/enum/0")
+                .asText()
+                .equals("Please consider my application for this role."));
+        assertTrue(result.getOutputSchema().at(
+                "/properties/coverLetter/properties/closingParagraph/enum/0")
+                .asText()
+                .equals("Thank you for considering my application."));
+        assertTrue(result.getOutputSchema().at(
+                "/properties/canonicalApplicationClaims/properties/opening/properties/claimId/enum/0")
+                .asText()
+                .equals("CLAIM-9001"));
+        assertTrue(result.getOutputSchema().at(
+                "/properties/canonicalApplicationClaims/properties/closing/properties/claimId/enum/0")
+                .asText()
+                .equals("CLAIM-9002"));
+        assertTrue(result.getOutputSchema().at(
+                "/properties/canonicalApplicationClaims/properties/opening/properties/generationIntentEvidenceId/enum/0")
+                .asText()
+                .equals("REQUEST.GENERATION_INTENT"));
+        int ordinaryClaimLimit = result.getOutputSchema().at(
+                "/properties/claims/maxItems").asInt();
+        int canonicalClaimCount = result.getOutputSchema().at(
+                "/properties/canonicalApplicationClaims/properties").size();
+        int projectedSkillLimit = result.getOutputSchema().at(
+                "/properties/cv/properties/coreSkills/maxItems").asInt();
+        assertTrue(ordinaryClaimLimit == 26);
+        assertTrue(ordinaryClaimLimit
+                + canonicalClaimCount
+                + projectedSkillLimit == 40);
+        String ordinaryPathPattern = result.getOutputSchema().at(
+                "/properties/claims/items/properties/contentPaths/items/pattern").asText();
+        assertFalse("/coverLetter/openingParagraph".matches(ordinaryPathPattern));
+        assertFalse("/coverLetter/closingParagraph".matches(ordinaryPathPattern));
+        assertFalse("/cv/coreSkills/0/name".matches(ordinaryPathPattern));
+        assertFalse("/cv/coreSkills/0/evidence".matches(ordinaryPathPattern));
+        assertFalse("/cv/qualifications/0/qualificationTitle"
+                .matches(ordinaryPathPattern));
+        assertTrue("/cv/qualifications/0/qualificationName"
+                .matches(ordinaryPathPattern));
+        assertFalse(result.getOutputSchema().toString().contains("CONFIRMATION_REQUIRED"));
+        assertFalse(result.getOutputSchema().toString().contains("REJECTED"));
+        assertFalse(result.getOutputSchema().toString().contains("PROFILE.SKILL.1"));
+        assertFalse(result.getOutputSchema().toString().contains("Build useful and reliable services."));
+        assertTrue(result.getGenerationMetadata().schemaVersion().equals("3.7.0"));
         assertTrue(result.getEvidenceCatalog().records().stream()
                 .anyMatch(record -> record.evidenceId().equals("JOB.TITLE")));
         assertFalse(result.getTrustedInstructions().contains("Build useful and reliable services."));

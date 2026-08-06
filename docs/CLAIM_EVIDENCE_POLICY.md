@@ -1,15 +1,128 @@
 # Claim evidence policy
 
-Prompt release `cv-cover-letter-1.3.0` and output schema `3.0.0` establish the
-DOCGEN-08 claim-provenance boundary.
+Prompt release `cv-cover-letter-1.5.6`, output schema `3.7.0`, evaluation
+policy `1.5.4`, claim policy `2.11.0` and deterministic quality policy `1.1.0`
+establish the current claim-provenance and document-quality boundary.
+
+Release `1.5.1` makes the provider perform an explicit final-pointer coverage
+audit, including generic narrative and each populated array index, before it
+returns the claim ledger. Release `1.5.2` makes the provider ledger
+final-content-only: every entry is `SUPPORTED` or `REWORDED`, has at least one
+approved evidence ID and final content path, and has empty review text.
+Unsupported and unconfirmed material is omitted from the documents and ledger;
+only a neutral missing-information note may remain. The broader four-
+disposition local and published contract is unchanged for historical and
+rollback output. Local validation remains fail-closed. If the model
+omits only a required project-description pointer, the active policy replaces
+that prose with the unique exact `DESCRIPTION` fact from the PROJECT selection
+anchored by the same project's exact claimed `HEADING`; it then creates exact
+claim coverage. If a versioned response omits only an opening or closing
+cover-letter pointer, the same policy discards the unaccounted model prose and
+uses fixed, server-owned application correspondence without interpolating
+untrusted job text. This narrow local recovery is accepted without claimant
+evidence only when the final path and complete text match exactly and the
+ledger cites exactly the canonical generation-intent, job-title and company
+records. Under approved historical schemas before dedicated canonical claims,
+the fixed text is not reserved: a model-authored claim with additional
+confirmed claimant evidence follows the ordinary evidence rules. The `1.5.3`
+rollback contract requires
+the isolated canonical claims described below; the `1.5.5` rollback retains
+their structural isolation and exact-empty skill evidence. Active `1.5.6`
+adds the exact ordinary-path allowlist and deterministic skill projection
+described below.
+Claimed unsafe prose, missing claimant evidence outside the exact exception,
+ambiguous project evidence and every other omitted narrative still reject.
+
+Release `1.5.3` makes that exception explicit at both provider boundaries.
+`/coverLetter/openingParagraph` must be exactly `Please consider my application
+for this role.` and `/coverLetter/closingParagraph` must be exactly `Thank you
+for considering my application.`. Each canonical bookend must be covered by
+its own `SUPPORTED` claim: `evidenceIds` is exactly
+`["REQUEST.GENERATION_INTENT", "JOB.TITLE", "JOB.COMPANY"]`, `contentPaths`
+contains only that bookend's pointer, and `reviewText` is empty. Neither
+bookend claim may include another final path or claimant evidence. Canonical
+job and request evidence may supplement ordinary claims but, outside the
+bounded identity fields and these two isolated bookends, at least one
+purpose-compatible confirmed claimant snapshot fact is mandatory.
+
+Release `1.5.4` moves those two claims out of the ordinary provider array and
+into the private `canonicalApplicationClaims.opening` and
+`canonicalApplicationClaims.closing` siblings. The schema fixes their IDs to
+`CLAIM-9001` and `CLAIM-9002`, their disposition to `SUPPORTED`, their
+`reviewText` to empty, and each `contentPath` to its one corresponding
+bookend. The canonical evidence is represented as three required singleton
+scalar fields: `generationIntentEvidenceId`, `jobTitleEvidenceId` and
+`companyEvidenceId`. Ordinary claims exclude both bookend paths and the 9xxx
+ID range and are capped at 38, reserving the two remaining entries within the
+existing 40-claim public bound.
+
+Parser `3.4.0` first validates the complete raw provider envelope against
+schema `3.7.0`, then deterministically projects the two dedicated siblings
+into the unchanged public claims ledger. The projection changes only the wire
+shape: it does not split or repair a grouped ordinary claim and it does not
+retry generation. Any absent, grouped, duplicated or malformed bookend claim
+fails closed before persistence. The `1.5.3` rollback continues to use its
+ordinary-array wire shape and records applied parser metadata `3.2.0`. Claim
+policy `2.11.0` validates the projected ledger. Schema `3.7.0` retains the
+exact-empty `coreSkills.evidence` constraint and restricts ordinary
+`contentPaths` to the exact CV and cover-letter claim-bearing leaves. It names
+`qualificationName`, never `qualificationTitle`, and excludes bookends,
+containers, all core-skill paths and hidden evidence. Its ordinary array is
+capped at 26, reserving two public entries for canonical claims and up to 12
+for projected skill provenance within the unchanged 40-claim public bound.
+
+Before submitted path validation, policy `2.11.0` replaces `cv.coreSkills`
+with a deterministic projection. It preserves unique, exact model-selected
+approved skills, discards unsupported and duplicate proposals, fills in
+catalogue order to `min(8, available)`, caps at 12, and forces every `evidence`
+field to empty. A versioned catalogue contributes only `EVIDENCE_SNAPSHOT`
+records with purpose `CV` and fact type `DEMONSTRATED_SKILL`; a legacy catalogue
+contributes only `PROFILE.SKILL` records. Model-authored skill-path coverage is
+rejected by the schema before claim validation. The exact-coverage stage then
+creates one claim per projected skill using the exact selected fact ID in
+projected order. The provider is called once; projection is not a retry
+or a weakening of schema, evidence, topology or exact-once validation.
+
+Policy `2.11.0` retains the `2.10.0` project-claim isolation after evidence
+enrichment. The project paths retain snapshot facts only from their unique,
+exact-title-anchored PROJECT selection; paths outside that project are split
+into separate claims. This prevents a qualification or another project
+selection from lending facts to the rendered project. Unknown evidence IDs
+and non-snapshot request or job context are retained for ordinary fail-closed
+validation. Missing or ambiguous title anchors are never guessed. Submitted
+claim paths must identify the known claim-bearing topology in the
+schema-validated output tree. A pointer to an existing but empty optional
+field or empty container may accompany a populated pointer and is discarded
+because it cannot cover final content. An empty-only final claim, server-owned
+non-claim field, missing, unknown or out-of-range pointer rejects. Submitted
+evidence IDs are validated as approved and unique before empty pointers can
+be removed. Exact-once coverage of all populated final content remains
+mandatory after canonicalisation.
+
+Policy `2.11.0` retains the narrowly bounded `2.10.0` repair for one structural provider
+error for versioned evidence: when every submitted final cover-letter body
+pointer, as an exact multiset, is the complete canonical one-based sequence
+`/coverLetter/bodyParagraphs/1` through the actual paragraph count, each
+pointer is shifted to its corresponding zero-based JSON Pointer. The pointer
+shift itself leaves claim ownership, disposition and submitted evidence IDs
+unchanged; ordinary deterministic evidence enrichment and the complete
+topology, evidence-purpose, content-alignment and exact-once checks still run.
+The repair never shifts legacy evidence, another array, a partial, duplicate,
+mixed, leading-zero, malformed or review-only sequence, or a container mixed
+with leaf paths. Malformed and out-of-range paths reject at topology
+validation; otherwise structurally valid unchanged paths continue through the
+ordinary evidence, canonicalisation and exact-coverage policy. A valid
+zero-based ledger and the existing container-only compatibility form are
+unchanged.
 
 ## Approved evidence
 
 `ClaimEvidenceCatalogFactory` builds a new catalogue from the authenticated,
-normalised generation input. Stable IDs identify individual profile skills,
-target roles, qualification fields, employment fields, canonical job fields
-and the authenticated generation intent. The catalogue excludes owner IDs,
-source resource/version IDs and render-only contact details.
+normalised generation input. Schema `2.0` uses immutable purpose-bound evidence
+snapshots and stable fact UUIDs; the legacy catalogue retains positional profile
+facts only for the coordinated compatibility path. Canonical job facts and the
+authenticated generation intent remain service-owned. The catalogue excludes
+owner IDs and render-only contact details.
 
 The catalogue is server-owned. Model output cannot add evidence records or
 alter their IDs. Profile and job values are sent through LLM Gateway's
@@ -17,17 +130,20 @@ untrusted-input field, never interpolated into reviewed instructions.
 
 ## Claim dispositions
 
-Every claim-ledger entry has one disposition:
+The published and local claim-ledger contract retains four dispositions:
 
 - `SUPPORTED`: exact or directly composed from cited approved evidence;
 - `REWORDED`: wording changed without changing the cited evidence's meaning;
 - `CONFIRMATION_REQUIRED`: useful candidate material that requires user review;
 - `REJECTED`: unsupported material excluded from the documents.
 
-Supported and reworded entries require approved evidence IDs and one or more
-exact JSON Pointer paths into final CV or cover-letter text. Their `reviewText`
-must be empty. Confirmation-required and rejected entries may contain only
-review text; their final `contentPaths` must be empty.
+The active `1.5.6` provider schema emits only supported and reworded ordinary
+entries plus the two structurally fixed supported canonical siblings. Ordinary
+claims require approved evidence IDs and one or more exact JSON Pointer paths
+into final CV or cover-letter text, and their `reviewText` must be empty.
+Confirmation-required and rejected entries remain accepted only through
+approved rollback or historical local validation; they may contain only review
+text and their final `contentPaths` must be empty.
 
 ## Fail-closed validation
 
@@ -41,9 +157,45 @@ external write, `ClaimEvidenceValidator`:
 4. requires candidate CV narratives to cite profile evidence rather than job
    requirements or generation intent alone;
 5. exact-matches job titles, companies, profile skills, qualification facts,
-   employment titles, employers and dates to the appropriate approved record;
+   project titles/roles/context/dates and employment titles/employers/dates to
+   the appropriate approved record;
 6. rejects uncited numeric claims and unsupported high-risk terms covering
-   tools, qualifications, motivation, availability, salary and right-to-work.
+   tools, qualifications, motivation, availability, salary and right-to-work;
+7. accepts the fixed opening and closing without claimant evidence only after
+   their exact dedicated provider siblings have been projected as separate
+   canonical-evidence claims, and requires confirmed claimant evidence for
+   every other non-identity versioned claim;
+8. revalidates the complete schema and plain-text policy after every trusted
+   canonicalisation.
+
+The active path contract prevents the provider from claiming core-skill or
+hidden evidence paths. Skill claims added by the service remain subject to the
+same purpose, exact-fact, unique-ID and exact-once coverage checks. Evidence
+IDs remain opaque strings in the immutable schema; request-specific IDs and
+all free-text evidence values stay in the untrusted catalogue rather than
+being injected into the trusted schema.
+
+For the project-aware `3.2.0`, `3.3.0`, `3.4.0`, `3.5.0`, `3.6.0` and `3.7.0` schemas,
+`GeneratedDocumentQualityValidator` runs only after the grounding ledger is
+normalised and accepted. It:
+
+1. requires canonical job titles, company, generic greeting and UK sign-off;
+2. limits skills to 12, rejects normalised duplicates and requires up to 8
+   confirmed demonstrated skills when that many are selected;
+3. rejects duplicate normalised narrative and repeated substantive
+   qualification phrases, including phrases embedded in longer paragraphs;
+4. requires every selected evidence entry to own at least one final path for
+   its document purpose;
+5. requires CV project, employment and education selections to appear in their
+   governed sections, and requires each project to use one selected PROJECT
+   entry;
+6. requires every project description and highlight to cite same-selection
+   project narrative evidence.
+
+Project facts cannot satisfy the atomic employment fields. Empty optional
+employment narrative remains empty rather than being replaced with an
+arbitrary evidence fact. The active renderer omits every unsupported empty
+section.
 
 Validation failures expose only a ledger path and policy reason. They release
 the billing reservation and occur before document storage, application

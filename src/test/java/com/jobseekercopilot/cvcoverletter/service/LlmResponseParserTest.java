@@ -11,7 +11,9 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedApplicationDocuments;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidLlmResponseException;
+import com.jobseekercopilot.cvcoverletter.model.ClaimEvidenceCatalog;
 import java.io.InputStream;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -20,38 +22,430 @@ class LlmResponseParserTest {
     private ObjectMapper objectMapper;
     private LlmResponseParser parser;
     private JsonNode schema;
+    private JsonNode dedicatedRollbackSchema;
+    private JsonNode legacySchema;
 
     @BeforeEach
     void setUp() throws Exception {
         objectMapper = new ObjectMapper();
-        parser = new LlmResponseParser(objectMapper, new ClaimEvidenceValidator());
+        parser = new LlmResponseParser(
+                objectMapper,
+                new ClaimEvidenceValidator(),
+                new GeneratedDocumentQualityValidator());
         try (InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.3.0/output-schema.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.6/output-schema.json")) {
             if (input == null) {
                 throw new IllegalStateException("Active output schema fixture is missing.");
             }
             schema = objectMapper.readTree(input);
+        }
+        try (InputStream input = getClass().getResourceAsStream(
+                "/prompts/bundles/cv-cover-letter-1.5.5/output-schema.json")) {
+            if (input == null) {
+                throw new IllegalStateException(
+                        "Dedicated rollback output schema fixture is missing.");
+            }
+            dedicatedRollbackSchema = objectMapper.readTree(input);
+        }
+        try (InputStream input = getClass().getResourceAsStream(
+                "/prompts/bundles/cv-cover-letter-1.5.3/output-schema.json")) {
+            if (input == null) {
+                throw new IllegalStateException("Rollback output schema fixture is missing.");
+            }
+            legacySchema = objectMapper.readTree(input);
         }
     }
 
     @Test
     void parsesJsonThatMatchesTheExactProviderSchema() {
         GeneratedApplicationDocuments result =
-                parser.parse(CvCoverLetterServiceTest.validJson(), schema);
+                parser.parse(CvCoverLetterServiceTest.activeValidJson(), schema);
 
         assertEquals("Tailored Developer CV", result.getCv().getTitle());
         assertEquals("Developer Cover Letter", result.getCoverLetter().getTitle());
         assertEquals("Focused on Java.", result.getGenerationNotes().getTailoringSummary());
+        assertEquals(10, result.getClaims().size());
+        assertEquals("CLAIM-9001", result.getClaims().get(8).getClaimId());
+        assertEquals("CLAIM-9002", result.getClaims().get(9).getClaimId());
+        assertEquals("3.4.0", parser.parserVersion(schema));
+        assertEquals("2.11.0", parser.claimPolicyVersion(schema));
+    }
+
+    @Test
+    void rejectsReviewOnlyOrStructurallyEmptyClaimsAtTheActiveSchemaBoundary()
+            throws Exception {
+        for (String disposition :
+                new String[] {"CONFIRMATION_REQUIRED", "REJECTED"}) {
+            JsonNode reviewOnly =
+                    objectMapper.readTree(CvCoverLetterServiceTest.activeValidJson());
+            ((ObjectNode) reviewOnly.at("/claims/0"))
+                    .put("disposition", disposition);
+            assertRejectedAt(reviewOnly, "$.claims[0].disposition");
+        }
+
+        JsonNode emptyEvidence =
+                objectMapper.readTree(CvCoverLetterServiceTest.activeValidJson());
+        ((ArrayNode) emptyEvidence.at("/claims/0/evidenceIds")).removeAll();
+        assertRejectedAt(emptyEvidence, "$.claims[0].evidenceIds");
+
+        JsonNode emptyPaths =
+                objectMapper.readTree(CvCoverLetterServiceTest.activeValidJson());
+        ((ArrayNode) emptyPaths.at("/claims/0/contentPaths")).removeAll();
+        assertRejectedAt(emptyPaths, "$.claims[0].contentPaths");
+
+        JsonNode reviewText =
+                objectMapper.readTree(CvCoverLetterServiceTest.activeValidJson());
+        ((ObjectNode) reviewText.at("/claims/0"))
+                .put("reviewText", "Please confirm this claim.");
+        assertRejectedAt(reviewText, "$.claims[0].reviewText");
+
+        JsonNode terminalLineSeparator =
+                objectMapper.readTree(CvCoverLetterServiceTest.activeValidJson());
+        ((ObjectNode) terminalLineSeparator.at("/claims/0"))
+                .put("reviewText", "\n");
+        assertRejectedAt(terminalLineSeparator, "$.claims[0].reviewText");
+    }
+
+    @Test
+    void requiresCoreSkillEvidenceToBeExactlyEmptyAtTheActiveSchemaBoundary()
+            throws Exception {
+        JsonNode accepted = objectMapper.readTree(
+                CvCoverLetterServiceTest.activeValidJson());
+        ObjectNode skill = objectMapper.createObjectNode();
+        skill.put("name", "Java");
+        skill.put("evidence", "");
+        ((ArrayNode) accepted.at("/cv/coreSkills")).add(skill);
+
+        GeneratedApplicationDocuments documents = parser.parse(
+                objectMapper.writeValueAsString(accepted), schema);
+        assertEquals(1, documents.getCv().getCoreSkills().size());
+        assertEquals("", documents.getCv().getCoreSkills().get(0).getEvidence());
+
+        for (String forbidden : new String[] {
+                "Built useful Java services.",
+                " ",
+                "\n"
+        }) {
+            JsonNode nonEmpty = accepted.deepCopy();
+            ((ObjectNode) nonEmpty.at("/cv/coreSkills/0"))
+                    .put("evidence", forbidden);
+            assertRejectedAt(nonEmpty, "$.cv.coreSkills[0].evidence");
+        }
+
+        JsonNode missing = accepted.deepCopy();
+        ((ObjectNode) missing.at("/cv/coreSkills/0")).remove("evidence");
+        assertRejectedAt(missing, "$.cv.coreSkills[0].evidence");
+
+        JsonNode nullEvidence = accepted.deepCopy();
+        ((ObjectNode) nullEvidence.at("/cv/coreSkills/0"))
+                .putNull("evidence");
+        assertRejectedAt(nullEvidence, "$.cv.coreSkills[0].evidence");
+    }
+
+    @Test
+    void deterministicallyProjectsLegacySkillsAndRegeneratesExactProvenance()
+            throws Exception {
+        JsonNode output = objectMapper.readTree(
+                CvCoverLetterServiceTest.activeValidJson());
+        ArrayNode skills = (ArrayNode) output.at("/cv/coreSkills");
+        for (String name : List.of("Spring", "Kubernetes", "Spring")) {
+            ObjectNode skill = skills.addObject();
+            skill.put("name", name);
+            skill.put("evidence", "");
+        }
+        ClaimEvidenceCatalog catalog = new ClaimEvidenceCatalogFactory()
+                .create(new GenerationInputNormalizer().normalize(
+                        "owner-123",
+                        com.jobseekercopilot.cvcoverletter
+                                .GenerationInputFixtures.validRequest()));
+
+        GeneratedApplicationDocuments documents = parser.parse(
+                objectMapper.writeValueAsString(output),
+                schema,
+                catalog);
+
+        assertEquals(
+                List.of("Spring", "Java"),
+                documents.getCv().getCoreSkills().stream()
+                        .map(skill -> skill.getName())
+                        .toList());
+        assertTrue(documents.getCv().getCoreSkills().stream()
+                .allMatch(skill -> skill.getEvidence().isEmpty()));
+        assertEquals(
+                List.of("PROFILE.SKILL.2"),
+                claimFor(documents, "/cv/coreSkills/0/name")
+                        .getEvidenceIds());
+        assertEquals(
+                List.of("PROFILE.SKILL.1"),
+                claimFor(documents, "/cv/coreSkills/1/name")
+                        .getEvidenceIds());
+    }
+
+    @Test
+    void rejectsNonCanonicalApplicationBookendsAtTheActiveSchemaBoundary()
+            throws Exception {
+        for (String opening : new String[] {
+                "I am keen to apply for this role.",
+                "Please consider my application for this role. ",
+                "Please consider my application for this role.\n"
+        }) {
+            JsonNode output =
+                    objectMapper.readTree(CvCoverLetterServiceTest.activeValidJson());
+            ((ObjectNode) output.path("coverLetter"))
+                    .put("openingParagraph", opening);
+            assertRejectedAt(output, "$.coverLetter.openingParagraph");
+        }
+
+        for (String closing : new String[] {
+                "Thank you for considering my application at Example Ltd.",
+                "Thank you for considering my application. ",
+                "Thank you for considering my application.\n"
+        }) {
+            JsonNode output =
+                    objectMapper.readTree(CvCoverLetterServiceTest.activeValidJson());
+            ((ObjectNode) output.path("coverLetter"))
+                    .put("closingParagraph", closing);
+            assertRejectedAt(output, "$.coverLetter.closingParagraph");
+        }
+    }
+
+    @Test
+    void rejectsMissingWrongOrSurplusDedicatedCanonicalClaimsBeforeProjection()
+            throws Exception {
+        JsonNode missingOpening = objectMapper.readTree(
+                CvCoverLetterServiceTest.activeValidJson());
+        ((ObjectNode) missingOpening.path("canonicalApplicationClaims"))
+                .remove("opening");
+        assertRejectedAt(
+                missingOpening,
+                "$.canonicalApplicationClaims.opening");
+
+        JsonNode wrongClaimId = objectMapper.readTree(
+                CvCoverLetterServiceTest.activeValidJson());
+        ((ObjectNode) wrongClaimId.at("/canonicalApplicationClaims/opening"))
+                .put("claimId", "CLAIM-9002");
+        assertRejectedAt(
+                wrongClaimId,
+                "$.canonicalApplicationClaims.opening.claimId");
+
+        JsonNode wrongDisposition = objectMapper.readTree(
+                CvCoverLetterServiceTest.activeValidJson());
+        ((ObjectNode) wrongDisposition.at("/canonicalApplicationClaims/opening"))
+                .put("disposition", "REWORDED");
+        assertRejectedAt(
+                wrongDisposition,
+                "$.canonicalApplicationClaims.opening.disposition");
+
+        JsonNode wrongEvidence = objectMapper.readTree(
+                CvCoverLetterServiceTest.activeValidJson());
+        ((ObjectNode) wrongEvidence.at("/canonicalApplicationClaims/opening"))
+                .put("companyEvidenceId", "JOB.TITLE");
+        assertRejectedAt(
+                wrongEvidence,
+                "$.canonicalApplicationClaims.opening.companyEvidenceId");
+
+        JsonNode wrongPath = objectMapper.readTree(
+                CvCoverLetterServiceTest.activeValidJson());
+        ((ObjectNode) wrongPath.at("/canonicalApplicationClaims/closing"))
+                .put("contentPath", "/coverLetter/openingParagraph");
+        assertRejectedAt(
+                wrongPath,
+                "$.canonicalApplicationClaims.closing.contentPath");
+
+        JsonNode nonEmptyReview = objectMapper.readTree(
+                CvCoverLetterServiceTest.activeValidJson());
+        ((ObjectNode) nonEmptyReview.at("/canonicalApplicationClaims/closing"))
+                .put("reviewText", "review");
+        assertRejectedAt(
+                nonEmptyReview,
+                "$.canonicalApplicationClaims.closing.reviewText");
+
+        JsonNode surplusEvidence = objectMapper.readTree(
+                CvCoverLetterServiceTest.activeValidJson());
+        ((ObjectNode) surplusEvidence.at("/canonicalApplicationClaims/opening"))
+                .put("extraEvidenceId", "JOB.DESCRIPTION");
+        assertRejectedAt(
+                surplusEvidence,
+                "$.canonicalApplicationClaims.opening.extraEvidenceId");
+    }
+
+    @Test
+    void ordinaryClaimsCannotUseReservedIdsOrCanonicalBookendPaths()
+            throws Exception {
+        JsonNode reservedId = objectMapper.readTree(
+                CvCoverLetterServiceTest.activeValidJson());
+        ((ObjectNode) reservedId.at("/claims/0"))
+                .put("claimId", "CLAIM-9001");
+        assertRejectedAt(reservedId, "$.claims[0].claimId");
+
+        for (String path : new String[] {
+                "/coverLetter/openingParagraph",
+                "/coverLetter/closingParagraph"
+        }) {
+            JsonNode groupedBookend = objectMapper.readTree(
+                    CvCoverLetterServiceTest.activeValidJson());
+            ((ArrayNode) groupedBookend.at("/claims/0/contentPaths"))
+                    .set(0, objectMapper.getNodeFactory().textNode(path));
+            assertRejectedAt(groupedBookend, "$.claims[0].contentPaths[0]");
+        }
+    }
+
+    @Test
+    void ordinaryClaimPathsAreRestrictedToExactClaimBearingLeaves() {
+        String pattern = schema.at(
+                "/properties/claims/items/properties/contentPaths/items/pattern")
+                .asText();
+
+        for (String allowed : new String[] {
+                "/cv/title",
+                "/cv/targetRole",
+                "/cv/personalSummary",
+                "/cv/projects/0/title",
+                "/cv/projects/12/highlights/7",
+                "/cv/qualifications/0/qualificationName",
+                "/cv/qualifications/19/expectedCompletion",
+                "/cv/workHistory/0/jobTitle",
+                "/cv/workHistory/19/responsibilities/11",
+                "/coverLetter/title",
+                "/coverLetter/jobTitle",
+                "/coverLetter/companyName",
+                "/coverLetter/bodyParagraphs/4"
+        }) {
+            assertTrue(allowed.matches(pattern), allowed);
+        }
+        for (String rejected : new String[] {
+                "/cv/coreSkills",
+                "/cv/coreSkills/0/name",
+                "/cv/coreSkills/0/evidence",
+                "/cv/projects/0",
+                "/cv/projects/0/highlights",
+                "/cv/qualifications/0/qualificationTitle",
+                "/cv/workHistory/0/responsibilities",
+                "/coverLetter/greeting",
+                "/coverLetter/openingParagraph",
+                "/coverLetter/closingParagraph",
+                "/coverLetter/signOff",
+                "/generationNotes/tailoringSummary"
+        }) {
+            assertFalse(rejected.matches(pattern), rejected);
+        }
+    }
+
+    @Test
+    void reservesCapacityForCanonicalAndProjectedSkillClaims()
+            throws Exception {
+        JsonNode bounded = objectMapper.readTree(
+                CvCoverLetterServiceTest.activeValidJson());
+        ArrayNode claims = (ArrayNode) bounded.path("claims");
+        while (claims.size() < 26) {
+            ObjectNode copy = claims.get(0).deepCopy();
+            copy.put("claimId", "CLAIM-" + (100 + claims.size()));
+            claims.add(copy);
+        }
+
+        GeneratedApplicationDocuments accepted = parser.parse(
+                objectMapper.writeValueAsString(bounded), schema);
+        assertEquals(28, accepted.getClaims().size());
+
+        ObjectNode extra = claims.get(0).deepCopy();
+        extra.put("claimId", "CLAIM-888");
+        claims.add(extra);
+        assertRejectedAt(bounded, "$.claims");
+
+        JsonNode rollbackBounded = objectMapper.readTree(
+                CvCoverLetterServiceTest.activeValidJson());
+        ArrayNode rollbackClaims =
+                (ArrayNode) rollbackBounded.path("claims");
+        while (rollbackClaims.size() < 38) {
+            ObjectNode copy = rollbackClaims.get(0).deepCopy();
+            copy.put("claimId", "CLAIM-" + (100 + rollbackClaims.size()));
+            rollbackClaims.add(copy);
+        }
+        GeneratedApplicationDocuments rollbackAccepted = parser.parse(
+                objectMapper.writeValueAsString(rollbackBounded),
+                dedicatedRollbackSchema);
+        assertEquals(40, rollbackAccepted.getClaims().size());
+
+        ObjectNode rollbackExtra = rollbackClaims.get(0).deepCopy();
+        rollbackExtra.put("claimId", "CLAIM-888");
+        rollbackClaims.add(rollbackExtra);
+        assertRejectedAt(
+                rollbackBounded,
+                dedicatedRollbackSchema,
+                "$.claims");
+    }
+
+    @Test
+    void failsClosedWhenDedicatedSchemaSingletonsOrExclusionsAreWeakened()
+            throws Exception {
+        JsonNode widenedId = schema.deepCopy();
+        ((ArrayNode) widenedId.at(
+                "/properties/canonicalApplicationClaims/properties/opening/properties/claimId/enum"))
+                .add("CLAIM-9003");
+        assertThrows(
+                IllegalStateException.class,
+                () -> parser.parserVersion(widenedId));
+
+        JsonNode groupedPath = schema.deepCopy();
+        ((ObjectNode) groupedPath.at(
+                "/properties/claims/items/properties/contentPaths/items"))
+                .put("pattern", "^/(cv|coverLetter)(/[A-Za-z0-9_-]+)+$");
+        assertThrows(
+                IllegalStateException.class,
+                () -> parser.parserVersion(groupedPath));
+
+        JsonNode unreservedIds = schema.deepCopy();
+        ((ObjectNode) unreservedIds.at(
+                "/properties/claims/items/properties/claimId"))
+                .put("pattern", "^CLAIM-[0-9]{3,4}$");
+        assertThrows(
+                IllegalStateException.class,
+                () -> parser.parserVersion(unreservedIds));
+
+        JsonNode missingBound = schema.deepCopy();
+        ((ObjectNode) missingBound.at("/properties/claims"))
+                .remove("maxItems");
+        assertThrows(
+                IllegalStateException.class,
+                () -> parser.parserVersion(missingBound));
+
+        JsonNode nonNumericBound = schema.deepCopy();
+        ((ObjectNode) nonNumericBound.at("/properties/claims"))
+                .put("maxItems", "26");
+        assertThrows(
+                IllegalStateException.class,
+                () -> parser.parserVersion(nonNumericBound));
+
+        JsonNode excessiveBound = schema.deepCopy();
+        ((ObjectNode) excessiveBound.at("/properties/claims"))
+                .put("maxItems", 27);
+        assertThrows(
+                IllegalStateException.class,
+                () -> parser.parserVersion(excessiveBound));
+
+        JsonNode missingCanonicalContract = schema.deepCopy();
+        ((ObjectNode) missingCanonicalContract.path("properties"))
+                .remove("canonicalApplicationClaims");
+        ArrayNode required = (ArrayNode) missingCanonicalContract.path("required");
+        for (int index = required.size() - 1; index >= 0; index--) {
+            if ("canonicalApplicationClaims".equals(
+                    required.get(index).asText())) {
+                required.remove(index);
+            }
+        }
+        assertThrows(
+                IllegalStateException.class,
+                () -> parser.parserVersion(missingCanonicalContract));
     }
 
     @Test
     void rejectsMalformedTruncatedFencedTrailingAndDuplicateJsonWithoutEchoingPayload() {
         for (String response : new String[] {
                 "response-secret-sentinel",
-                CvCoverLetterServiceTest.validJson().substring(0, 80),
-                "```json\n" + CvCoverLetterServiceTest.validJson() + "\n```",
-                CvCoverLetterServiceTest.validJson() + "{}",
-                CvCoverLetterServiceTest.validJson().replace(
+                CvCoverLetterServiceTest.activeValidJson().substring(0, 80),
+                "```json\n" + CvCoverLetterServiceTest.activeValidJson() + "\n```",
+                CvCoverLetterServiceTest.activeValidJson() + "{}",
+                CvCoverLetterServiceTest.activeValidJson().replace(
                         "\"title\": \"Tailored Developer CV\"",
                         "\"title\": \"Tailored Developer CV\","
                                 + "\"title\": \"response-secret-sentinel\"")
@@ -65,22 +459,22 @@ class LlmResponseParserTest {
 
     @Test
     void rejectsMissingNullUnknownAndWrongTypeFields() throws Exception {
-        JsonNode missing = objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+        JsonNode missing = objectMapper.readTree(CvCoverLetterServiceTest.activeValidJson());
         ((ObjectNode) missing.path("cv")).remove("title");
         assertRejectedAt(missing, "$.cv.title");
 
-        JsonNode nullList = objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+        JsonNode nullList = objectMapper.readTree(CvCoverLetterServiceTest.activeValidJson());
         ((ObjectNode) nullList.path("cv"))
                 .putNull("coreSkills");
         assertRejectedAt(nullList, "$.cv.coreSkills");
 
-        JsonNode unknown = objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+        JsonNode unknown = objectMapper.readTree(CvCoverLetterServiceTest.activeValidJson());
         ((ObjectNode) unknown.path("coverLetter"))
                 .put("secretField", "response-secret-sentinel");
         InvalidLlmResponseException unknownError = assertRejectedAt(unknown, "$.coverLetter.secretField");
         assertFalse(unknownError.getMessage().contains("response-secret-sentinel"));
 
-        JsonNode wrongType = objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+        JsonNode wrongType = objectMapper.readTree(CvCoverLetterServiceTest.activeValidJson());
         ((ObjectNode) wrongType.path("cv"))
                 .put("personalSummary", 42);
         assertRejectedAt(wrongType, "$.cv.personalSummary");
@@ -88,12 +482,12 @@ class LlmResponseParserTest {
 
     @Test
     void rejectsOversizedTextArraysAndWholeResponses() throws Exception {
-        JsonNode oversizedTitle = objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+        JsonNode oversizedTitle = objectMapper.readTree(CvCoverLetterServiceTest.activeValidJson());
         ((ObjectNode) oversizedTitle.path("cv"))
                 .put("title", "x".repeat(201));
         assertRejectedAt(oversizedTitle, "$.cv.title");
 
-        JsonNode oversizedArray = objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+        JsonNode oversizedArray = objectMapper.readTree(CvCoverLetterServiceTest.activeValidJson());
         ArrayNode paragraphs = (ArrayNode) oversizedArray.path("coverLetter").path("bodyParagraphs");
         while (paragraphs.size() <= 7) {
             paragraphs.add("Bounded paragraph");
@@ -110,20 +504,31 @@ class LlmResponseParserTest {
 
     @Test
     void keepsApprovedLegacyRollbackSchemasBoundedByParserPolicy() throws Exception {
-        JsonNode legacySchema = schema.deepCopy();
-        removeProviderBounds(legacySchema);
+        JsonNode relaxedLegacySchema = legacySchema.deepCopy();
+        removeProviderBounds(relaxedLegacySchema);
 
         JsonNode oversizedText = objectMapper.readTree(CvCoverLetterServiceTest.validJson());
         ((ObjectNode) oversizedText.path("cv"))
                 .put("title", "x".repeat(LlmResponseParser.MAX_FALLBACK_TEXT_CHARACTERS + 1));
-        assertRejectedAt(oversizedText, legacySchema, "$.cv.title");
+        assertRejectedAt(oversizedText, relaxedLegacySchema, "$.cv.title");
 
         JsonNode oversizedArray = objectMapper.readTree(CvCoverLetterServiceTest.validJson());
         ArrayNode assumptions = (ArrayNode) oversizedArray.path("generationNotes").path("assumptionsMade");
         while (assumptions.size() <= LlmResponseParser.MAX_FALLBACK_ARRAY_ITEMS) {
             assumptions.add("Bounded assumption");
         }
-        assertRejectedAt(oversizedArray, legacySchema, "$.generationNotes.assumptionsMade");
+        assertRejectedAt(oversizedArray, relaxedLegacySchema, "$.generationNotes.assumptionsMade");
+
+        GeneratedApplicationDocuments rollback = parser.parse(
+                CvCoverLetterServiceTest.validJson(), legacySchema);
+        assertEquals(10, rollback.getClaims().size());
+        assertEquals("3.2.0", parser.parserVersion(legacySchema));
+        assertEquals(
+                "3.3.0",
+                parser.parserVersion(dedicatedRollbackSchema));
+        assertEquals(
+                "2.10.0",
+                parser.claimPolicyVersion(dedicatedRollbackSchema));
     }
 
     @Test
@@ -136,7 +541,7 @@ class LlmResponseParserTest {
                 "data:text/html;base64,PHNjcmlwdD4=",
                 "onclick=alert(1)"
         }) {
-            String response = CvCoverLetterServiceTest.validJson()
+            String response = CvCoverLetterServiceTest.activeValidJson()
                     .replace("A Java developer focused on useful services.", payload);
             InvalidLlmResponseException error = assertThrows(
                     InvalidLlmResponseException.class,
@@ -147,7 +552,7 @@ class LlmResponseParserTest {
             assertFalse(error.getMessage().contains(payload));
         }
 
-        JsonNode control = objectMapper.readTree(CvCoverLetterServiceTest.validJson());
+        JsonNode control = objectMapper.readTree(CvCoverLetterServiceTest.activeValidJson());
         ((ObjectNode) control.path("cv"))
                 .put("personalSummary", "unsafe\u0000control");
         assertRejectedAt(control, "$.cv.personalSummary");
@@ -156,6 +561,16 @@ class LlmResponseParserTest {
     private InvalidLlmResponseException assertRejectedAt(JsonNode output, String path)
             throws Exception {
         return assertRejectedAt(output, schema, path);
+    }
+
+    private com.jobseekercopilot.cvcoverletter.dto.GeneratedClaim claimFor(
+            GeneratedApplicationDocuments documents,
+            String contentPath
+    ) {
+        return documents.getClaims().stream()
+                .filter(claim -> claim.getContentPaths().contains(contentPath))
+                .findFirst()
+                .orElseThrow();
     }
 
     private InvalidLlmResponseException assertRejectedAt(

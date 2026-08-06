@@ -53,9 +53,52 @@ evidence. See
 
 ## Prompt releases
 
-Prompt bundle `cv-cover-letter-1.4.0` treats projects, volunteering, caring
-responsibilities, career breaks, education, training, certifications and
-licences as first-class evidence without relabelling them as paid employment.
+Prompt bundle `cv-cover-letter-1.5.6`, output schema `3.7.0` and evaluation
+policy `1.5.4` render projects as projects, keep paid employment separate, cap
+the CV at 8–12 unique confirmed skills where available, omit unsupported empty
+sections, and use the correct UK generic greeting/sign-off pair. A
+post-grounding quality policy rejects repeated narrative, repeated
+qualifications, missing selected evidence and project fields assembled from
+different evidence entries. Release `1.5.1` requires an explicit complete
+claim-path audit for every non-empty final field, including generic narrative
+and dynamic array indexes. Release `1.5.2` narrows the provider output ledger
+to complete `SUPPORTED` and `REWORDED` final-content claims; unsupported or
+unconfirmed material is omitted and may be described only as neutral missing
+information.
+
+Release `1.5.3` fixes the application opening to exactly `Please consider my
+application for this role.` and the closing to exactly `Thank you for
+considering my application.`. Each bookend has its own isolated `SUPPORTED`
+claim containing only its exact final pointer and exactly the canonical
+generation-intent, job-title and company evidence IDs. Every other
+non-identity final claim must include purpose-compatible confirmed claimant
+evidence; canonical job or request evidence may supplement but cannot replace
+it. Release `1.5.4` makes that isolation structural in the private provider
+wire contract. Schema `3.5.0` requires
+`canonicalApplicationClaims.opening` and `.closing` with fixed IDs
+`CLAIM-9001` and `CLAIM-9002`, singleton scalar canonical evidence fields and
+one fixed bookend path each. Ordinary claims exclude both paths and all 9xxx
+IDs and are capped at 38. Parser `3.3.0` validates that raw envelope before it
+deterministically projects the two siblings into the unchanged public claims
+ledger. It does not split or repair a grouped claim and does not retry the
+provider; any mismatch still fails closed under claim policy `2.10.0`. The
+local four-disposition claim policy remains compatible with historical data.
+Release `1.5.5` makes every required `coreSkills.evidence` value exactly empty.
+Release `1.5.6` additionally restricts ordinary claim paths to the exact
+claim-bearing leaves (`qualificationName`, never `qualificationTitle`) and
+excludes canonical bookends, core skills and hidden evidence. Its private
+ordinary-claim array is capped at 26, reserving two public-ledger entries for
+the canonical claims and up to 12 for deterministic skill provenance within
+the unchanged 40-claim public bound. Parser `3.4.0`
+then projects skills deterministically from approved CV skill facts: it keeps
+unique exact approved proposals, discards unsupported or duplicate values,
+fills in evidence order to `min(8, available)`, caps the result at 12, fixes
+`evidence` to empty and creates one exact, server-owned claim using the
+selected fact ID for each skill. Versioned
+catalogues use only CV `EVIDENCE_SNAPSHOT` `DEMONSTRATED_SKILL` facts; legacy
+catalogues use `PROFILE.SKILL` facts. Claim policy `2.11.0` applies only to this
+new projection contract. Immutable release `1.5.5` is the immediate emergency
+rollback and retains schema `3.6.0`, parser `3.3.0` and claim policy `2.10.0`.
 
 Prompt template, rules, output schema and evaluation-policy versions are
 selected as one reviewed bundle. Checksums, an approved-release index and

@@ -8,5 +8,5 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @Setter
 @ConfigurationProperties(prefix = "prompt")
 public class PromptBundleProperties {
-    private String selectedReleaseId = "cv-cover-letter-1.2.0";
+    private String selectedReleaseId = "cv-cover-letter-1.5.6";
 }

@@ -31,10 +31,36 @@ public class GlobalExceptionHandler {
         return response(HttpStatus.BAD_REQUEST, message, request);
     }
 
-    @ExceptionHandler({InvalidLlmResponseException.class, DownstreamServiceException.class})
-    ResponseEntity<ApiError> badGateway(RuntimeException exception, HttpServletRequest request) {
+    @ExceptionHandler(InvalidLlmResponseException.class)
+    ResponseEntity<ApiError> invalidModelOutput(
+            InvalidLlmResponseException exception,
+            HttpServletRequest request
+    ) {
+        log.warn(
+                "CV/cover-letter generation rejected downstream response path={} reasonType={} reason={}",
+                request.getRequestURI(),
+                exception.getClass().getSimpleName(),
+                exception.getMessage());
+        return response(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                exception.getMessage(),
+                request);
+    }
+
+    @ExceptionHandler(DownstreamServiceException.class)
+    ResponseEntity<ApiError> badGateway(
+            DownstreamServiceException exception,
+            HttpServletRequest request
+    ) {
+        log.warn(
+                "CV/cover-letter downstream call failed path={} reason={}",
+                request.getRequestURI(),
+                exception.getMessage());
         if (exception.getCause() != null) {
-            log.error("Downstream CV/cover-letter generation error for {}", request.getRequestURI(), exception);
+            log.error(
+                    "Downstream CV/cover-letter generation error for {}",
+                    request.getRequestURI(),
+                    exception);
         }
         return response(HttpStatus.BAD_GATEWAY, exception.getMessage(), request);
     }

@@ -96,6 +96,16 @@ If injection or data disclosure is suspected:
 Physical trusted/untrusted separation remains active when selecting an approved
 rollback bundle. Older bundles have fewer explicit safety instructions and
 their exemplar output is compiled into a closed structural schema, but local
-parser `3.0.0` response, text, array and active-content limits still apply.
+response, text, array and active-content limits with applied parser metadata
+`3.2.0` still apply. Active release `1.5.6` uses schema `3.7.0` to isolate its
+two canonical application claims, require exact-empty private skill evidence
+and constrain ordinary claims to exact final leaves. This blocks fabricated
+paths such as `qualificationTitle` and prevents the provider from claiming
+core-skill or hidden evidence paths. Parser `3.4.0` validates the raw object,
+then projects skills only from server-owned approved CV skill records and
+regenerates their opaque-ID provenance under claim policy `2.11.0`. It never
+places free-text evidence in the trusted schema and does not retry invalid
+provider output. Rollback release `1.5.5` retains schema `3.6.0`, parser `3.3.0`
+and claim policy `2.10.0`; release `1.5.3` retains parser metadata `3.2.0`.
 Rollback is an emergency containment action, not evidence that the newer
 evaluation policy passed.

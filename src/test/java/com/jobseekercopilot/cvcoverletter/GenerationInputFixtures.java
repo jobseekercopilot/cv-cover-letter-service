@@ -33,6 +33,8 @@ public final class GenerationInputFixtures {
             UUID.fromString("80000000-0000-4000-8000-000000000002");
     public static final UUID COVER_EXPERIENCE_FACT_ID =
             UUID.fromString("80000000-0000-4000-8000-000000000003");
+    public static final UUID CV_PROJECT_TITLE_FACT_ID =
+            UUID.fromString("80000000-0000-4000-8000-000000000004");
 
     private GenerationInputFixtures() {
     }
@@ -60,6 +62,10 @@ public final class GenerationInputFixtures {
                                 "90000000-0000-4000-8000-000000000001",
                                 EvidenceCategory.PROJECT,
                                 List.of(
+                                        fact(
+                                                CV_PROJECT_TITLE_FACT_ID,
+                                                "HEADING",
+                                                "Job Seeker Copilot"),
                                         fact(
                                                 CV_SKILL_FACT_ID,
                                                 "DEMONSTRATED_SKILL",

@@ -19,6 +19,31 @@ public class ValidatedClaimLedgerFactory {
 
     public ValidatedClaimLedger create(
             UUID operationId, List<GeneratedClaim> generatedClaims) {
+        return create(
+                operationId,
+                generatedClaims,
+                ClaimEvidenceValidator.POLICY_VERSION,
+                LlmResponseParser.PARSER_VERSION);
+    }
+
+    public ValidatedClaimLedger create(
+            UUID operationId,
+            List<GeneratedClaim> generatedClaims,
+            String parserVersion) {
+        return create(
+                operationId,
+                generatedClaims,
+                LlmResponseParser.PARSER_VERSION.equals(parserVersion)
+                        ? ClaimEvidenceValidator.POLICY_VERSION
+                        : ClaimEvidenceValidator.ROLLBACK_POLICY_VERSION,
+                parserVersion);
+    }
+
+    public ValidatedClaimLedger create(
+            UUID operationId,
+            List<GeneratedClaim> generatedClaims,
+            String policyVersion,
+            String parserVersion) {
         if (operationId == null) {
             throw new IllegalArgumentException(
                     "Generation operation ID is required.");
@@ -27,15 +52,23 @@ public class ValidatedClaimLedgerFactory {
             throw new IllegalStateException(
                     "Validated generation claim ledger is missing.");
         }
+        if (parserVersion == null || parserVersion.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Applied parser version is required.");
+        }
+        if (policyVersion == null || policyVersion.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Applied claim policy version is required.");
+        }
         List<ValidatedClaim> claims = generatedClaims.stream()
                 .map(this::copy)
                 .toList();
-        String sha256 = digest(claims);
+        String sha256 = digest(claims, policyVersion, parserVersion);
         return new ValidatedClaimLedger(
                 ledgerId(operationId, sha256),
                 sha256,
-                ClaimEvidenceValidator.POLICY_VERSION,
-                LlmResponseParser.PARSER_VERSION,
+                policyVersion,
+                parserVersion,
                 claims);
     }
 
@@ -57,11 +90,15 @@ public class ValidatedClaimLedgerFactory {
                 source.getReviewText());
     }
 
-    private String digest(List<ValidatedClaim> claims) {
+    private String digest(
+            List<ValidatedClaim> claims,
+            String policyVersion,
+            String parserVersion
+    ) {
         MessageDigest digest = sha256();
         update(digest, DIGEST_FORMAT);
-        update(digest, ClaimEvidenceValidator.POLICY_VERSION);
-        update(digest, LlmResponseParser.PARSER_VERSION);
+        update(digest, policyVersion);
+        update(digest, parserVersion);
         update(digest, claims.size());
         for (ValidatedClaim claim : claims) {
             update(digest, claim.claimId());
