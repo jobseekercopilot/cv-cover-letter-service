@@ -97,10 +97,12 @@ Physical trusted/untrusted separation remains active when selecting an approved
 rollback bundle. Older bundles have fewer explicit safety instructions and
 their exemplar output is compiled into a closed structural schema, but local
 response, text, array and active-content limits with applied parser metadata
-`3.2.0` still apply. Active release `1.5.4` uses schema `3.5.0` to isolate its
-two canonical application claims in a dedicated private provider object.
-Parser `3.3.0` validates that raw object before deterministic projection into
-the unchanged public claim ledger; it does not split, repair or retry invalid
-provider output. Rollback release `1.5.3` retains parser metadata `3.2.0`.
+`3.2.0` still apply. Active release `1.5.5` uses schema `3.6.0` to isolate its
+two canonical application claims in a dedicated private provider object and
+to constrain every private core-skill evidence scalar to the exact empty
+string. Parser `3.3.0` validates that raw object before deterministic projection
+into the unchanged public claim ledger; it does not trim, split, repair or
+retry invalid provider output. Rollback release `1.5.4` retains schema `3.5.0`
+and parser metadata `3.3.0`; release `1.5.3` retains parser metadata `3.2.0`.
 Rollback is an emergency containment action, not evidence that the newer
 evaluation policy passed.

@@ -30,7 +30,7 @@ class LlmResponseParserTest {
                 new ClaimEvidenceValidator(),
                 new GeneratedDocumentQualityValidator());
         try (InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.5.4/output-schema.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.5/output-schema.json")) {
             if (input == null) {
                 throw new IllegalStateException("Active output schema fixture is missing.");
             }
@@ -92,6 +92,42 @@ class LlmResponseParserTest {
         ((ObjectNode) terminalLineSeparator.at("/claims/0"))
                 .put("reviewText", "\n");
         assertRejectedAt(terminalLineSeparator, "$.claims[0].reviewText");
+    }
+
+    @Test
+    void requiresCoreSkillEvidenceToBeExactlyEmptyAtTheActiveSchemaBoundary()
+            throws Exception {
+        JsonNode accepted = objectMapper.readTree(
+                CvCoverLetterServiceTest.activeValidJson());
+        ObjectNode skill = objectMapper.createObjectNode();
+        skill.put("name", "Java");
+        skill.put("evidence", "");
+        ((ArrayNode) accepted.at("/cv/coreSkills")).add(skill);
+
+        GeneratedApplicationDocuments documents = parser.parse(
+                objectMapper.writeValueAsString(accepted), schema);
+        assertEquals(1, documents.getCv().getCoreSkills().size());
+        assertEquals("", documents.getCv().getCoreSkills().get(0).getEvidence());
+
+        for (String forbidden : new String[] {
+                "Built useful Java services.",
+                " ",
+                "\n"
+        }) {
+            JsonNode nonEmpty = accepted.deepCopy();
+            ((ObjectNode) nonEmpty.at("/cv/coreSkills/0"))
+                    .put("evidence", forbidden);
+            assertRejectedAt(nonEmpty, "$.cv.coreSkills[0].evidence");
+        }
+
+        JsonNode missing = accepted.deepCopy();
+        ((ObjectNode) missing.at("/cv/coreSkills/0")).remove("evidence");
+        assertRejectedAt(missing, "$.cv.coreSkills[0].evidence");
+
+        JsonNode nullEvidence = accepted.deepCopy();
+        ((ObjectNode) nullEvidence.at("/cv/coreSkills/0"))
+                .putNull("evidence");
+        assertRejectedAt(nullEvidence, "$.cv.coreSkills[0].evidence");
     }
 
     @Test

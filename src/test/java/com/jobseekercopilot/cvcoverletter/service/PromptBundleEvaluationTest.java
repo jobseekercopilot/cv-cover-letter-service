@@ -36,7 +36,7 @@ class PromptBundleEvaluationTest {
     void setUp() throws IOException {
         objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBundleProperties bundleProperties = new PromptBundleProperties();
-        bundleProperties.setSelectedReleaseId("cv-cover-letter-1.5.4");
+        bundleProperties.setSelectedReleaseId("cv-cover-letter-1.5.5");
         PromptBundleRegistry registry =
                 new PromptBundleRegistry(objectMapper, new DefaultResourceLoader(), bundleProperties);
         registry.initialize();
@@ -48,7 +48,7 @@ class PromptBundleEvaluationTest {
         normalizer = new GenerationInputNormalizer(
                 Clock.fixed(Instant.parse("2026-07-24T13:00:00Z"), ZoneOffset.UTC));
         try (InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.5.4/evaluation-policy.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.5/evaluation-policy.json")) {
             if (input == null) {
                 throw new IllegalStateException("Prompt evaluation policy fixture is missing.");
             }
@@ -62,7 +62,7 @@ class PromptBundleEvaluationTest {
 
         assertEquals(policy.policyVersion(), prompt.getGenerationMetadata().evaluationPolicyVersion());
         assertEquals(
-                "fe5c28016164034b0f0faca0e6d620b653c562b7b6a598ee5b521cb538117e65",
+                "7e2a94a62be6e999473b1a0db547b42031e6ccddf247ee84415eccbc9b564005",
                 sha256(boundaryMaterial(prompt)),
                 "The golden LLM boundary changed; review the trusted instructions, untrusted envelope, "
                         + "output schema and rollback metadata together.");
@@ -116,6 +116,16 @@ class PromptBundleEvaluationTest {
         assertEquals(1, claims.path("evidenceIds").path("minItems").asInt());
         assertEquals(1, claims.path("contentPaths").path("minItems").asInt());
         assertEquals("[\"\"]", claims.path("reviewText").path("enum").toString());
+        assertEquals(
+                "[\"\"]",
+                prompt.getOutputSchema().at(
+                        "/properties/cv/properties/coreSkills/items/properties/evidence/enum")
+                        .toString());
+        assertEquals(
+                "^[\\s\\S]{0}$",
+                prompt.getOutputSchema().at(
+                        "/properties/cv/properties/coreSkills/items/properties/evidence/pattern")
+                        .asText());
         assertTrue(prompt.getTrustedInstructions().contains(
                 "Omit unsupported or unconfirmed material from the final documents and claims."));
         assertTrue(prompt.getTrustedInstructions().contains(

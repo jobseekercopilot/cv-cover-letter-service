@@ -5,13 +5,13 @@ Each approved release under `src/main/resources/prompts/bundles` packages the
 template, generation rules, output schema and synthetic evaluation policy with
 immutable component checksums. `index.json` is the only runtime allowlist.
 
-The active `cv-cover-letter-1.5.4` release converts the normalised profile and
+The active `cv-cover-letter-1.5.5` release converts the normalised profile and
 canonical job into a stable approved-evidence catalogue and treats that
 catalogue and normalisation warnings as untrusted data. It places the safety
 rules before that evidence and forbids direct, indirect, encoded, nested,
 Unicode-obfuscated and schema-escape instructions in source content from
-changing the task. The release also owns exact bounded JSON Schema `3.5.0` and
-evaluation policy `1.5.2`, used at the provider boundary and by the local
+changing the task. The release also owns exact bounded JSON Schema `3.6.0` and
+evaluation policy `1.5.3`, used at the provider boundary and by the local
 response parser and synthetic evaluation checks. The domain bundle cannot name
 a model provider or transport API; provider mechanics belong behind LLM
 Gateway.
@@ -48,6 +48,14 @@ cannot use either bookend path or any 9xxx ID and are capped at 38. Parser
 the two siblings into the unchanged public claims ledger. It never splits or
 repairs a grouped claim and does not retry generation; invalid output remains
 fail-closed under unchanged claim policy `2.10.0`.
+
+Release `1.5.5` closes the remaining private skill-field mismatch. Rules
+`1.5.5` and schema `3.6.0` require every `coreSkills.evidence` value to equal
+the empty string, so only the skill name is final claim-bearing content and its
+claim evidence IDs retain provenance. The parser does not trim, discard or
+repair a non-empty value; strict schema validation rejects it before claim
+validation. Parser `3.3.0` remains the applied parser because its validated
+canonical-sibling projection algorithm is unchanged.
 
 Runtime assembly preserves those domains as separate LLM Gateway v2 fields:
 reviewed bundle text becomes `trustedInstructions`, normalised evidence becomes
@@ -104,10 +112,12 @@ Rollback restores prompt construction only. The LLM Gateway v2 physical
 trusted/untrusted separation remains enforced for every approved release. It
 does not reverse documents already generated or stored, so operators must use
 the recorded release and component hashes when identifying affected outputs.
-Release `cv-cover-letter-1.5.3` is the immediate approved emergency rollback
-for `1.5.4`; its immutable files must not be edited to adopt the newer private
-wire shape. It retains the ordinary claim-array contract and records applied
-parser metadata `3.2.0`.
+Release `cv-cover-letter-1.5.4` is the immediate approved emergency rollback
+for `1.5.5`; its immutable files must not be edited to adopt the exact-empty
+skill constraint. It retains schema `3.5.0`, the dedicated canonical-claim
+wire shape and applied parser metadata `3.3.0`. Release `1.5.3` remains a
+deeper rollback with the ordinary claim-array contract and parser metadata
+`3.2.0`.
 
 The oldest approved releases contain output exemplars rather than the active
 bounded schema. They are compiled into closed structural schemas at runtime and
