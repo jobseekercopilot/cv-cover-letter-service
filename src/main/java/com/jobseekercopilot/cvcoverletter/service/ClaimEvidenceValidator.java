@@ -28,7 +28,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.18.0";
+    static final String POLICY_VERSION = "2.19.0";
     static final String CORE_SKILL_PROJECTION_POLICY_VERSION = "2.11.0";
     static final String ROLLBACK_POLICY_VERSION = "2.10.0";
     private static final int MAX_CLAIMS = 200;
@@ -53,10 +53,11 @@ public class ClaimEvidenceValidator {
             "(?i)\\b(?:right to work|work authori[sz]ation|visa|sponsorship"
                     + "|available (?:immediately|from)|notice period"
                     + "|salary|compensation|£\\s*\\d+|\\$\\s*\\d+"
-                    + "|passionate|enthusiastic|excited|motivated|keen"
                     + "|phd|doctorate|mba|master'?s degree"
                     + "|aws|amazon web services|azure|gcp|google cloud"
                     + "|docker|kubernetes|terraform|react|angular|python|java|spring)\\b");
+    private static final Pattern MOTIVATIONAL_TONE = Pattern.compile(
+            "(?i)\\b(?:passionate|enthusiastic|excited|motivated|keen)\\b");
     private static final Pattern PROJECT_CONTENT_PATH =
             Pattern.compile("^/cv/projects/(\\d+)/.+$");
 
@@ -2703,6 +2704,14 @@ public class ClaimEvidenceValidator {
                 claimPath,
                 "sensitive or specific claim is absent from approved evidence at "
                         + contentPath);
+        if (!contentPath.startsWith("/coverLetter/")) {
+            requireMatchesAreSupported(
+                    MOTIVATIONAL_TONE.matcher(content),
+                    evidenceText,
+                    claimPath,
+                    "motivational claim is absent from approved evidence at "
+                            + contentPath);
+        }
     }
 
     private boolean isCanonicalApplicationBookend(

@@ -1330,6 +1330,9 @@ class ClaimEvidenceValidatorTest {
         assertUnsafePersonalSummary(
                 "A Java developer with a PhD.",
                 "sensitive or specific claim is absent");
+        assertUnsafePersonalSummary(
+                "A passionate Java developer.",
+                "motivational claim is absent");
 
         ObjectNode fabricatedTitle = validOutput();
         ((ObjectNode) fabricatedTitle.path("coverLetter")).put("jobTitle", "Senior Architect");
@@ -1579,9 +1582,20 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
-    void rejectsUnsupportedMotivationAvailabilitySalaryAndRightToWork() throws Exception {
+    void acceptsMotivationalToneButRejectsUnsupportedCandidateFacts()
+            throws Exception {
+        ObjectNode motivational = validOutput();
+        ((ArrayNode) motivational.at("/coverLetter/bodyParagraphs"))
+                .set(
+                        0,
+                        objectMapper.getNodeFactory().textNode(
+                                "I am excited and passionate about this role."));
+        GeneratedApplicationDocuments accepted = parse(motivational);
+        assertEquals(
+                "I am excited and passionate about this role.",
+                accepted.getCoverLetter().getBodyParagraphs().get(0));
+
         for (String unsupported : List.of(
-                "I am passionate about this role.",
                 "I am available immediately.",
                 "My salary expectation is £70,000.",
                 "I have the right to work in the UK."

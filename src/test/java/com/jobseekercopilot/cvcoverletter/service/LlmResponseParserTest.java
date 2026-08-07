@@ -95,7 +95,7 @@ class LlmResponseParserTest {
                         .equals(claim.getContentPaths()))
                 .count());
         assertEquals("3.5.2", parser.parserVersion(schema));
-        assertEquals("2.18.0", parser.claimPolicyVersion(schema));
+        assertEquals("2.19.0", parser.claimPolicyVersion(schema));
     }
 
     @Test
@@ -107,7 +107,7 @@ class LlmResponseParserTest {
                 inlineNarrativeSchema);
 
         assertEquals("3.6.0", parser.parserVersion(inlineNarrativeSchema));
-        assertEquals("2.18.0", parser.claimPolicyVersion(inlineNarrativeSchema));
+        assertEquals("2.19.0", parser.claimPolicyVersion(inlineNarrativeSchema));
         assertEquals(
                 List.of("Delivered a reliable service."),
                 result.getCv().getProjects().get(0).getHighlights());
