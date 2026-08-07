@@ -31,6 +31,7 @@ rejected-generation-quarantine:
   max-artifact-bytes: ${REJECTED_GENERATION_QUARANTINE_MAX_ARTIFACT_BYTES:262144}
   max-artifacts: ${REJECTED_GENERATION_QUARANTINE_MAX_ARTIFACTS:1000}
   max-replay-events: ${REJECTED_GENERATION_QUARANTINE_MAX_REPLAY_EVENTS:100}
+  allow-operation-bound-context-drift: ${REJECTED_GENERATION_ALLOW_OPERATION_BOUND_CONTEXT_DRIFT:false}
 
 services:
   llm-gateway:

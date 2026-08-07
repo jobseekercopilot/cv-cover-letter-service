@@ -35,6 +35,7 @@ injection:
 | `REJECTED_GENERATION_QUARANTINE_MAX_ARTIFACT_BYTES` | 16 KiB to 1 MiB; default 256 KiB plaintext |
 | `REJECTED_GENERATION_QUARANTINE_MAX_ARTIFACTS` | 1 to 10,000; default 1,000 |
 | `REJECTED_GENERATION_QUARANTINE_MAX_REPLAY_EVENTS` | 1 to 1,000; default 100 |
+| `REJECTED_GENERATION_ALLOW_OPERATION_BOUND_CONTEXT_DRIFT` | `false` by default; incident-only compatibility switch |
 
 Missing, weak, reused, malformed, relative-path, symlink, or unwritable enabled
 configuration prevents startup. The container runs as the unprivileged
@@ -106,6 +107,16 @@ artifact. A replay result is either `ACCEPTED` with the recovered bounded draft
 or `REJECTED` with the current structured diagnostic. Both explicitly report
 `providerInvocationCount: 0` and append a tamper-evident audit event. Repeated
 replay is bounded and does not change billing or ordinary document state.
+
+If a code change causes the rebuilt derived LLM request digest to drift while
+the operation, owner, prompt release, bundle, schema and evaluation policy all
+remain exact, the compatibility switch may be enabled for an approved
+incident recovery. The current owner-bound source request is still used for
+all parsing, evidence grounding and quality validation; provider invocation
+remains impossible. Any immutable prompt provenance mismatch still returns
+`409`. Each accepted drift is logged with the operation and prompt release,
+and the switch should be disabled again after the retained operation is
+published.
 
 ## Explicit deletion and retention
 

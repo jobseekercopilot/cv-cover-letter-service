@@ -3,6 +3,7 @@ package com.jobseekercopilot.cvcoverletter.quarantine;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobseekercopilot.cvcoverletter.dto.PromptGenerationMetadata;
+import com.jobseekercopilot.cvcoverletter.config.RejectedGenerationQuarantineProperties;
 import com.jobseekercopilot.cvcoverletter.dto.RejectedGenerationDeletionResponse;
 import com.jobseekercopilot.cvcoverletter.dto.RejectedGenerationMetadataResponse;
 import com.jobseekercopilot.cvcoverletter.exception.RejectedGenerationNotFoundException;
@@ -38,21 +39,25 @@ public class RejectedGenerationQuarantineService {
     private final EncryptedRejectedGenerationRepository repository;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final RejectedGenerationQuarantineProperties properties;
 
     @Autowired
     public RejectedGenerationQuarantineService(
             EncryptedRejectedGenerationRepository repository,
-            ObjectMapper objectMapper) {
-        this(repository, objectMapper, Clock.systemUTC());
+            ObjectMapper objectMapper,
+            RejectedGenerationQuarantineProperties properties) {
+        this(repository, objectMapper, Clock.systemUTC(), properties);
     }
 
     RejectedGenerationQuarantineService(
             EncryptedRejectedGenerationRepository repository,
             ObjectMapper objectMapper,
-            Clock clock) {
+            Clock clock,
+            RejectedGenerationQuarantineProperties properties) {
         this.repository = repository;
         this.objectMapper = objectMapper;
         this.clock = clock;
+        this.properties = properties;
     }
 
     public boolean isEnabled() {
@@ -162,19 +167,32 @@ public class RejectedGenerationQuarantineService {
             GenerationRequest request,
             PromptGenerationMetadata metadata) {
         String requestSha256 = sha256(writeJson(request));
-        if (!constantTimeEquals(artifact.generationRequestSha256(), requestSha256)
-                || !artifact.promptReleaseId().equals(metadata.releaseId())
-                || !artifact.promptBundleSha256().equals(metadata.bundleSha256())
-                || !artifact.schemaId().equals(metadata.schemaId())
-                || !artifact.schemaVersion().equals(metadata.schemaVersion())
-                || !artifact.schemaSha256().equals(metadata.schemaSha256())
-                || !artifact.evaluationPolicyVersion().equals(
+        boolean metadataMatches =
+                artifact.promptReleaseId().equals(metadata.releaseId())
+                && artifact.promptBundleSha256().equals(metadata.bundleSha256())
+                && artifact.schemaId().equals(metadata.schemaId())
+                && artifact.schemaVersion().equals(metadata.schemaVersion())
+                && artifact.schemaSha256().equals(metadata.schemaSha256())
+                && artifact.evaluationPolicyVersion().equals(
                         metadata.evaluationPolicyVersion())
-                || !artifact.evaluationPolicySha256().equals(
-                        metadata.evaluationPolicySha256())) {
+                && artifact.evaluationPolicySha256().equals(
+                        metadata.evaluationPolicySha256());
+        if (!metadataMatches) {
             throw new RejectedGenerationReplayConflictException(
                     "Replay input does not match the quarantined generation context.");
         }
+        if (constantTimeEquals(
+                artifact.generationRequestSha256(), requestSha256)) {
+            return;
+        }
+        if (!properties.isAllowOperationBoundContextDrift()) {
+            throw new RejectedGenerationReplayConflictException(
+                    "Replay input does not match the quarantined generation context.");
+        }
+        log.warn(
+                "Operation-bound rejected generation replay allowed after derived request drift operationId={} promptRelease={} providerInvocationCount=0",
+                artifact.operationId(),
+                artifact.promptReleaseId());
     }
 
     public synchronized RejectedGenerationReplayAuditEvent recordReplay(
