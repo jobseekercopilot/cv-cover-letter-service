@@ -2,7 +2,7 @@
 
 Prompt release `cv-cover-letter-1.5.11`, output schema `3.10.0`, evaluation
 policy `1.5.8`, parser `3.6.0`, claim policy `2.15.0` and deterministic quality
-policy `1.4.0`
+policy `1.5.0`
 establish the current claim-provenance and document-quality boundary.
 
 Release `1.5.1` makes the provider perform an explicit final-pointer coverage
@@ -155,7 +155,7 @@ fail-closed in parser and claim validation.
 Version routing remains schema-bound; a release is excluded when a shared
 schema cannot safely distinguish its semantics. Active release `1.5.11` uses
 schema `3.10.0`, evaluation policy `1.5.8`, parser `3.6.0`,
-claim policy `2.15.0` and quality policy `1.4.0`. Immutable immediate rollback
+claim policy `2.15.0` and quality policy `1.5.0`. Immutable immediate rollback
 `1.5.6` retains schema `3.7.0`, evaluation policy `1.5.4`, parser `3.4.0` and
 claim policy `2.11.0`. Release `1.5.7` is preserved in version-control history
 but is not packaged or included in the approved index because it shares schema
@@ -284,8 +284,9 @@ normalised and accepted. It:
 1. requires canonical job titles, company, generic greeting and UK sign-off;
 2. limits skills to 12, rejects normalised duplicates, applies no minimum or
    quota, and rejects a literal skills list in the cover letter;
-3. rejects duplicate normalised narrative and repeated substantive
-   qualification phrases, including phrases embedded in longer paragraphs;
+3. rejects duplicate normalised narrative and duplicate CV qualification
+   records, while allowing grounded qualification evidence to be developed
+   across multiple cover-letter paragraphs;
 4. treats selected evidence as available source material rather than a
    mandatory inclusion quota, so an unused selection does not discard an
    otherwise valid generated pair;

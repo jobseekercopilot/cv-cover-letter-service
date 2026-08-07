@@ -122,7 +122,7 @@ or arbitrary quota. Every projected skill has empty hidden evidence and one
 exact server-owned claim using the selected fact ID. A revision-declared skill
 is valid only for CV `coreSkills`; it cannot support CV narrative or
 cover-letter prose. Demonstrated career evidence may support naturally woven
-cover-letter skill references, but quality policy `1.4.0` rejects a literal
+cover-letter skill references, but quality policy `1.5.0` rejects a literal
 skills list. Legacy input continues to use `PROFILE.SKILL` records and retains
 its historical minimum-fill behaviour. This is one local validation pass, not
 a provider retry.
@@ -202,7 +202,7 @@ template, rules and schema versions and their hashes. Request/response logs
 also record LLM contract `2.0`, the schema-applied parser version, claim policy
 version, the actual model ID and the gateway-owned deployment, admission and
 pricing-policy versions. Active release `1.5.11` records parser `3.6.0`, claim
-policy `2.15.0` and quality policy `1.4.0`; immediate rollback schema `3.7.0`
+policy `2.15.0` and quality policy `1.5.0`; immediate rollback schema `3.7.0`
 records parser `3.4.0` and claim policy `2.11.0`; schema `3.6.0` records parser
 `3.3.0` and claim policy `2.10.0`; selecting release `1.5.3` retains parser
 `3.2.0`. The consumer accepts gateway audit fields only from the mandatory
