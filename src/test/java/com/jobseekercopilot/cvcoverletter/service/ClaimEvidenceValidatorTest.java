@@ -1195,7 +1195,7 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
-    void canonicalizationCannotBypassSelectedEvidenceQuality()
+    void unusedSelectedEvidenceDoesNotRejectAnOtherwiseGroundedDraft()
             throws Exception {
         useVersionedCatalog();
         ObjectNode output = versionedOutput();
@@ -1215,9 +1215,11 @@ class ClaimEvidenceValidatorTest {
                 List.copyOf(records),
                 catalog.sectionOrder());
 
-        assertRejected(
-                output,
-                "a selected evidence entry is missing from final content");
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertFalse(accepted.getClaims().stream()
+                .flatMap(claim -> claim.getEvidenceIds().stream())
+                .anyMatch("85000000-0000-4000-8000-000000000001"::equals));
     }
 
     @Test
@@ -2023,7 +2025,7 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
-    void rejectsASelectedEvidenceEntryMissingFromFinalContent()
+    void acceptsASelectedEvidenceEntryMissingFromFinalContent()
             throws Exception {
         useVersionedCatalog();
         List<ApprovedEvidenceRecord> records =
@@ -2041,22 +2043,27 @@ class ClaimEvidenceValidatorTest {
                 List.copyOf(records),
                 catalog.sectionOrder());
 
-        assertRejected(
-                versionedOutput(),
-                "a selected evidence entry is missing from final content");
+        GeneratedApplicationDocuments accepted = parse(versionedOutput());
+
+        assertFalse(accepted.getClaims().stream()
+                .flatMap(claim -> claim.getEvidenceIds().stream())
+                .anyMatch("82000000-0000-4000-8000-000000000001"::equals));
     }
 
     @Test
-    void cvClaimWithSharedStableIdDoesNotCoverACoverLetterSelection()
+    void cvClaimWithSharedStableIdMayLeaveCoverLetterSelectionUnused()
             throws Exception {
         useVersionedCatalog();
         String sharedId = com.jobseekercopilot.cvcoverletter
                 .GenerationInputFixtures.CV_PROJECT_FACT_ID.toString();
         addCoverSelectionSharingEvidenceId(sharedId);
 
-        assertRejected(
-                versionedOutput(),
-                "a selected evidence entry is missing from final content");
+        GeneratedApplicationDocuments accepted = parse(versionedOutput());
+
+        assertTrue(accepted.getClaims().stream()
+                .filter(claim -> claim.getEvidenceIds().contains(sharedId))
+                .allMatch(claim -> claim.getContentPaths().stream()
+                        .allMatch(path -> path.startsWith("/cv/"))));
     }
 
     @Test
