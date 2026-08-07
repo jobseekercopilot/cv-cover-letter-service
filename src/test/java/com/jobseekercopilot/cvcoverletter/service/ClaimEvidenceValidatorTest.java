@@ -709,6 +709,63 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
+    void acceptsARewordedProjectGroundedByOneProjectSelectionDespiteExtraCitations()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        ((ObjectNode) output.at("/cv/projects/0"))
+                .put("title", "Job Seeker Copilot Platform");
+        String qualificationFactId =
+                "81000000-0000-4000-8000-000000000002";
+        List<ApprovedEvidenceRecord> records =
+                new java.util.ArrayList<>(catalog.records());
+        records.add(new ApprovedEvidenceRecord(
+                qualificationFactId,
+                EvidenceSource.EVIDENCE_SNAPSHOT,
+                "/evidenceSnapshots/cv/selections/1/facts/0",
+                "Level 3 Software Development",
+                "QUALIFICATION_TITLE",
+                "QUALIFICATION_TRAINING",
+                EvidencePurpose.CV));
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                List.copyOf(records),
+                catalog.sectionOrder());
+
+        ObjectNode qualification = objectMapper.createObjectNode();
+        qualification.put(
+                "qualificationName",
+                "Level 3 Software Development");
+        qualification.put("issuingBody", "");
+        qualification.put("status", "");
+        qualification.put("grade", "");
+        qualification.put("dateAchieved", "");
+        qualification.put("expectedCompletion", "");
+        ((ArrayNode) output.at("/cv/qualifications"))
+                .add(qualification);
+        ((ArrayNode) output.at("/claims/1/evidenceIds"))
+                .add(qualificationFactId);
+        ((ArrayNode) output.at("/claims/1/contentPaths"))
+                .add("/cv/qualifications/0/qualificationName");
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        String projectFactId = com.jobseekercopilot.cvcoverletter
+                .GenerationInputFixtures.CV_PROJECT_FACT_ID.toString();
+        assertTrue(accepted.getClaims().stream()
+                .filter(claim -> claim.getContentPaths().stream()
+                        .anyMatch(path -> path.startsWith(
+                                "/cv/projects/0/")))
+                .anyMatch(claim -> claim.getEvidenceIds()
+                        .contains(projectFactId)));
+        assertTrue(accepted.getClaims().stream()
+                .filter(claim -> claim.getContentPaths().contains(
+                        "/cv/qualifications/0/qualificationName"))
+                .anyMatch(claim -> claim.getEvidenceIds()
+                        .contains(qualificationFactId)));
+    }
+
+    @Test
     void splitsTwoSelectedProjectsIntoExactOnceProjectClaims()
             throws Exception {
         useVersionedCatalog();
