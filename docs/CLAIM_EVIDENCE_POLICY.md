@@ -1,7 +1,7 @@
 # Claim evidence policy
 
 Prompt release `cv-cover-letter-1.5.9`, output schema `3.8.0`, evaluation
-policy `1.5.7`, parser `3.5.2`, claim policy `2.13.0` and deterministic quality
+policy `1.5.7`, parser `3.5.2`, claim policy `2.14.0` and deterministic quality
 policy `1.2.0`
 establish the current claim-provenance and document-quality boundary.
 
@@ -112,7 +112,7 @@ projected skill using the exact selected fact ID in projected order. The
 provider is called once; projection is not a retry or a weakening of schema,
 evidence, topology or exact-once validation.
 
-Active policy `2.13.0` retains the `3.8.0` non-skill normalisation and rebuilds
+Active policy `2.14.0` retains the `3.8.0` non-skill normalisation and rebuilds
 `cv.coreSkills` from exact, approved, CV-only candidates. For versioned input,
 the candidate set is the union of CV-purpose `EVIDENCE_SNAPSHOT`
 `DEMONSTRATED_SKILL` records representing demonstrated career wins and the
@@ -129,6 +129,14 @@ prose. Demonstrated career evidence may support naturally woven cover-letter
 skill references. Legacy positional profile input retains its historical
 minimum-fill compatibility behaviour.
 
+Policy `2.14.0` also bounds deterministic evidence enrichment to the schema's
+30-reference maximum for each claim. Provider-submitted references retain
+their order and take priority; approved, purpose-compatible supplemental
+references are appended only while capacity remains. An already over-bound
+provider claim is never repaired or truncated and still fails closed. This
+prevents post-schema normalisation from creating a claim that the final
+validator must reject.
+
 Release `1.5.9` sends declared-skill values as dedicated service-projected
 core-skill candidates without their stable IDs. The complete internal catalogue
 retains those IDs for deterministic projection and final provenance, while the
@@ -141,7 +149,7 @@ fail-closed in parser and claim validation.
 Version routing remains schema-bound; a release is excluded when a shared
 schema cannot safely distinguish its semantics. Active release `1.5.9` uses
 schema `3.8.0`, evaluation policy `1.5.7`, parser `3.5.2`,
-claim policy `2.13.0` and quality policy `1.2.0`. Immutable immediate rollback
+claim policy `2.14.0` and quality policy `1.2.0`. Immutable immediate rollback
 `1.5.6` retains schema `3.7.0`, evaluation policy `1.5.4`, parser `3.4.0` and
 claim policy `2.11.0`. Release `1.5.7` is preserved in version-control history
 but is not packaged or included in the approved index because it shares schema

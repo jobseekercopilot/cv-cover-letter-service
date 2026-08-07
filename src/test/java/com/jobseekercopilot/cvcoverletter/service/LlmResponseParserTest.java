@@ -86,7 +86,7 @@ class LlmResponseParserTest {
                         .equals(claim.getContentPaths()))
                 .count());
         assertEquals("3.5.2", parser.parserVersion(schema));
-        assertEquals("2.13.0", parser.claimPolicyVersion(schema));
+        assertEquals("2.14.0", parser.claimPolicyVersion(schema));
     }
 
     @Test

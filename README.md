@@ -67,7 +67,7 @@ Prompt bundle `cv-cover-letter-1.5.9`, output schema `3.8.0`, evaluation policy
 `1.5.7` and parser `3.5.2` render projects as projects, keep paid employment
 separate, select at most 12 exact job-relevant CV skills without a minimum or
 quota, omit unsupported empty sections, and use the correct UK generic
-greeting/sign-off pair. Claim policy `2.13.0` and post-grounding quality policy
+greeting/sign-off pair. Claim policy `2.14.0` and post-grounding quality policy
 `1.2.0` reject unsupported skills, literal cover-letter skill lists, repeated
 narrative, repeated qualifications, missing selected evidence and project
 fields assembled from different evidence entries. Release `1.5.1` requires an explicit complete
@@ -124,7 +124,7 @@ smaller of 12 and the remaining 40-claim capacity, and fills in evidence order
 to `min(8, available)`. It fails safely if that minimum cannot fit.
 
 Active release `1.5.9` retains schema `3.8.0` and parser `3.5.2` but replaces
-that versioned skill projection under claim policy `2.13.0`. Revision-bound
+that versioned skill projection under claim policy `2.14.0`. Revision-bound
 profile skills are CV-only exact candidates alongside demonstrated skill facts;
 the service de-duplicates them by normalised value and prefers demonstrated
 support. It keeps only exact model-selected candidates relevant to the job,
