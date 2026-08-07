@@ -42,7 +42,7 @@ class LlmResponseParserTest {
             schema = objectMapper.readTree(input);
         }
         try (InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.5.10/output-schema.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.11/output-schema.json")) {
             if (input == null) {
                 throw new IllegalStateException(
                         "Inline narrative output schema fixture is missing.");

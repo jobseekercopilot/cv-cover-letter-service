@@ -38,9 +38,9 @@ public class PromptBuilderService {
     private static final String SEPARATE_WARNINGS_MARKER =
             "[INPUT WARNINGS SUPPLIED THROUGH THE UNTRUSTED INPUT CHANNEL]";
     private static final Set<String> RULES_VERSIONS_WITH_CANONICAL_PROFILE_SKILLS =
-            Set.of("1.5.8", "1.5.9", "1.5.10");
+            Set.of("1.5.8", "1.5.9", "1.5.10", "1.5.11");
     private static final Set<String> SEPARATED_DECLARED_SKILLS_RULES_VERSIONS =
-            Set.of("1.5.9", "1.5.10");
+            Set.of("1.5.9", "1.5.10", "1.5.11");
 
     private final ObjectMapper objectMapper;
     private final PromptBundleRegistry promptBundleRegistry;

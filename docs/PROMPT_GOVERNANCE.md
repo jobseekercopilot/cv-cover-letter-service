@@ -5,12 +5,12 @@ Each approved release under `src/main/resources/prompts/bundles` packages the
 template, generation rules, output schema and synthetic evaluation policy with
 immutable component checksums. `index.json` is the only runtime allowlist.
 
-The active `cv-cover-letter-1.5.10` release converts the normalised profile and
+The active `cv-cover-letter-1.5.11` release converts the normalised profile and
 canonical job into a stable approved-evidence catalogue and treats that
 catalogue and normalisation warnings as untrusted data. It places the safety
 rules before that evidence and forbids direct, indirect, encoded, nested,
 Unicode-obfuscated and schema-escape instructions in source content from
-changing the task. The release also owns exact bounded JSON Schema `3.9.0` and
+changing the task. The release also owns exact bounded JSON Schema `3.10.0` and
 evaluation policy `1.5.8`, used at the provider boundary and by the local
 response parser and synthetic evaluation checks. The domain bundle cannot name
 a model provider or transport API; provider mechanics belong behind LLM
@@ -112,7 +112,7 @@ from the model-facing catalogue, so a declared core-skill proposal cannot
 accidentally cite its service-only ID in narrative provenance. Snapshot evidence
 IDs remain available for ordinary claim citations.
 
-Active release `1.5.10` adds schema `3.9.0` and parser `3.6.0`. Project
+Active release `1.5.11` adds schema `3.10.0` and parser `3.6.0`. Project
 highlights, work responsibilities and cover-letter body paragraphs are closed
 objects containing text, disposition and approved evidence IDs. The parser
 projects them into the unchanged public document and ledger shapes, while the

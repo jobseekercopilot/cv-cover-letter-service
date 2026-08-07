@@ -1,6 +1,6 @@
 # Claim evidence policy
 
-Prompt release `cv-cover-letter-1.5.10`, output schema `3.9.0`, evaluation
+Prompt release `cv-cover-letter-1.5.11`, output schema `3.10.0`, evaluation
 policy `1.5.8`, parser `3.6.0`, claim policy `2.14.0` and deterministic quality
 policy `1.2.0`
 establish the current claim-provenance and document-quality boundary.
@@ -38,7 +38,7 @@ quota.
 Claimed unsafe prose, missing claimant evidence outside the exact exception,
 ambiguous project evidence and every other omitted narrative still reject.
 
-Active `1.5.10` makes the high-volume narrative provenance structural. Every
+Active `1.5.11` makes the high-volume narrative provenance structural. Every
 project highlight, work responsibility and cover-letter body paragraph carries
 its final text, disposition and approved evidence IDs in one closed object.
 Parser `3.6.0` projects those objects into bounded exact-path claims before

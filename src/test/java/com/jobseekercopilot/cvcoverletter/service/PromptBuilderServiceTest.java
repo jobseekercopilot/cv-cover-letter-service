@@ -31,7 +31,7 @@ class PromptBuilderServiceTest {
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBuilderService service = new PromptBuilderService(
                 objectMapper,
-                registry(objectMapper, "cv-cover-letter-1.5.10"),
+                registry(objectMapper, "cv-cover-letter-1.5.11"),
                 new LlmProperties(),
                 new ClaimEvidenceCatalogFactory());
         var input = new GenerationInputNormalizer(
@@ -75,7 +75,7 @@ class PromptBuilderServiceTest {
 
         CvCoverLetterPrompt prompt = new PromptBuilderService(
                 objectMapper,
-                registry(objectMapper, "cv-cover-letter-1.5.10"),
+                registry(objectMapper, "cv-cover-letter-1.5.11"),
                 new LlmProperties(),
                 new ClaimEvidenceCatalogFactory())
                 .buildPrompt(new GenerationInputNormalizer(
@@ -102,7 +102,7 @@ class PromptBuilderServiceTest {
 
         CvCoverLetterPrompt active = new PromptBuilderService(
                 objectMapper,
-                registry(objectMapper, "cv-cover-letter-1.5.10"),
+                registry(objectMapper, "cv-cover-letter-1.5.11"),
                 new LlmProperties(),
                 new ClaimEvidenceCatalogFactory())
                 .buildPrompt(input);
@@ -142,7 +142,7 @@ class PromptBuilderServiceTest {
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBuilderService service = new PromptBuilderService(
                 objectMapper,
-                registry(objectMapper, "cv-cover-letter-1.5.10"),
+                registry(objectMapper, "cv-cover-letter-1.5.11"),
                 properties,
                 new ClaimEvidenceCatalogFactory());
         GenerationInputNormalizer normalizer = new GenerationInputNormalizer(
@@ -153,9 +153,12 @@ class PromptBuilderServiceTest {
 
         assertTrue(result.getTrustedInstructions().contains("TRUTHFULNESS RULES"));
         assertTrue(result.getTrustedInstructions().contains("UK English"));
-        assertTrue(result.getTrustedInstructions().contains("Aim for 5 to 7 concise paragraphs"));
+        assertTrue(result.getTrustedInstructions().contains(
+                "Use 3 to 24 concise bodyParagraphs"));
+        assertTrue(result.getTrustedInstructions().contains(
+                "inventory selections by document purpose"));
         assertTrue(result.getTrustedInstructions().contains("specific to the job"));
-        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.5.10"));
+        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.5.11"));
         assertTrue(result.getTrustedInstructions().contains(
                 "Generic, professional and application prose is"));
         assertTrue(result.getTrustedInstructions().contains(
@@ -181,7 +184,7 @@ class PromptBuilderServiceTest {
         assertTrue(result.getOutputSchema().path("additionalProperties").isBoolean());
         assertTrue(result.getOutputSchema().at("/properties/cv/properties/title/pattern").isTextual());
         assertTrue(result.getOutputSchema().at(
-                "/properties/coverLetter/properties/bodyParagraphs/maxItems").asInt() == 5);
+                "/properties/coverLetter/properties/bodyParagraphs/maxItems").asInt() == 24);
         assertTrue(result.getOutputSchema().at(
                 "/properties/cv/properties/coreSkills/maxItems").asInt() == 12);
         assertTrue(result.getOutputSchema().at(
@@ -299,7 +302,7 @@ class PromptBuilderServiceTest {
         assertFalse(result.getOutputSchema().toString().contains("REJECTED"));
         assertTrue(result.getOutputSchema().toString().contains("PROFILE.SKILL.1"));
         assertFalse(result.getOutputSchema().toString().contains("Build useful and reliable services."));
-        assertTrue(result.getGenerationMetadata().schemaVersion().equals("3.9.0"));
+        assertTrue(result.getGenerationMetadata().schemaVersion().equals("3.10.0"));
         assertTrue(result.getEvidenceCatalog().records().stream()
                 .anyMatch(record -> record.evidenceId().equals("JOB.TITLE")));
         assertFalse(result.getTrustedInstructions().contains("Build useful and reliable services."));

@@ -2,9 +2,9 @@
 
 CV and Cover Letter Service treats model output as untrusted until it passes
 the exact reviewed schema and local safe-content policy. The active prompt
-release is `cv-cover-letter-1.5.10`; it owns output schema `3.9.0` and
+release is `cv-cover-letter-1.5.11`; it owns output schema `3.10.0` and
 evaluation policy `1.5.8` at
-`src/main/resources/prompts/bundles/cv-cover-letter-1.5.10/`. Its reviewed
+`src/main/resources/prompts/bundles/cv-cover-letter-1.5.11/`. Its reviewed
 `output-schema.json` checksum is pinned in that release's immutable manifest.
 
 ## One contract at both boundaries
@@ -30,7 +30,7 @@ service's deliberately smaller subset.
 | CV or cover-letter titles | 200 characters |
 | Role, job, company, qualification and employer names | 80–160 characters by field |
 | CV summaries and tailored descriptions | 2,000 characters |
-| Cover-letter body | 3–5 body paragraphs; 3,000 characters per paragraph |
+| Cover-letter body | 3–24 body paragraphs; 3,000 characters per paragraph; enough paragraphs to cover every selected entry |
 | Skills | 0–12 exact job-relevant items; no active minimum or quota; private `evidence` is exactly empty |
 | Projects | 10 entries; 8 highlights per project |
 | Qualifications and work-history entries | 20 items each |
@@ -45,7 +45,7 @@ service's deliberately smaller subset.
 | Active projected public claim ledger | 4–40 claims |
 | Immediate rollback projected public claim ledger | 3–40 claims |
 
-The active `1.5.10` provider ledger contains only `SUPPORTED` and `REWORDED`
+The active `1.5.11` provider ledger contains only `SUPPORTED` and `REWORDED`
 final-content claims. Each ordinary claim requires at least one approved
 evidence ID and one final path, and `reviewText` is exactly empty. Unsupported
 or unconfirmed material is omitted from both the documents and claims; a neutral
@@ -56,7 +56,7 @@ objects carry the two canonical application claims and the personal-summary
 claim; they are projected into that unchanged public ledger DTO only after raw
 schema validation.
 
-Schema `3.9.0` additionally represents every project highlight, work
+Schema `3.10.0` additionally represents every project highlight, work
 responsibility and cover-letter body paragraph as a closed provider object with
 `text`, `disposition` and one to 30 approved `evidenceIds`. Parser `3.6.0`
 validates that raw shape, replaces each object with its text for the existing
