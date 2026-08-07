@@ -70,6 +70,34 @@ public class GlobalExceptionHandler {
         return response(HttpStatus.PAYMENT_REQUIRED, exception.getMessage(), request);
     }
 
+    @ExceptionHandler(RejectedGenerationNotFoundException.class)
+    ResponseEntity<ApiError> rejectedGenerationNotFound(
+            RejectedGenerationNotFoundException exception,
+            HttpServletRequest request) {
+        return response(HttpStatus.NOT_FOUND, "Rejected generation artifact was not found.", request);
+    }
+
+    @ExceptionHandler(RejectedGenerationReplayConflictException.class)
+    ResponseEntity<ApiError> rejectedGenerationConflict(
+            RejectedGenerationReplayConflictException exception,
+            HttpServletRequest request) {
+        return response(HttpStatus.CONFLICT, exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(RejectedGenerationQuarantineException.class)
+    ResponseEntity<ApiError> rejectedGenerationQuarantineFailure(
+            RejectedGenerationQuarantineException exception,
+            HttpServletRequest request) {
+        log.error(
+                "Rejected generation quarantine operation failed path={} failureType={}",
+                request.getRequestURI(),
+                exception.getClass().getSimpleName());
+        return response(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "Rejected generation quarantine is temporarily unavailable.",
+                request);
+    }
+
     @ExceptionHandler(Exception.class)
     ResponseEntity<ApiError> internalError(Exception exception, HttpServletRequest request) {
         log.error("Unexpected CV/cover-letter generation error for {}", request.getRequestURI(), exception);

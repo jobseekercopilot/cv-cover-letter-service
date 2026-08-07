@@ -51,6 +51,16 @@ the conservative reservation size without calling a provider.
 evidence. See
 [`docs/DRAFT_GENERATION_BOUNDARY.md`](docs/DRAFT_GENERATION_BOUNDARY.md).
 
+When the optional rejected-generation quarantine is enabled, an otherwise
+complete typed model response that fails deterministic validation is encrypted
+and retained for at most 24 hours under its owner-bound operation ID. A
+separately authenticated internal operator endpoint can replay that exact
+response through the immutable original prompt context and current validators
+without calling the model, billing, document storage, or application tracking.
+It never publishes a replay automatically. Configuration, recovery, deletion,
+key rotation, and incident safeguards are documented in
+[`docs/REJECTED_GENERATION_QUARANTINE_RUNBOOK.md`](docs/REJECTED_GENERATION_QUARANTINE_RUNBOOK.md).
+
 ## Prompt releases
 
 Prompt bundle `cv-cover-letter-1.5.9`, output schema `3.8.0`, evaluation policy

@@ -21,6 +21,17 @@ llm:
 prompt:
   selected-release-id: ${PROMPT_BUNDLE_RELEASE:cv-cover-letter-1.5.9}
 
+rejected-generation-quarantine:
+  enabled: ${REJECTED_GENERATION_QUARANTINE_ENABLED:false}
+  storage-directory: ${REJECTED_GENERATION_QUARANTINE_DIRECTORY:/var/lib/cv-cover-letter/rejected-generations}
+  encryption-key-base64: ${REJECTED_GENERATION_QUARANTINE_KEY_BASE64:}
+  operator-token: ${REJECTED_GENERATION_OPERATOR_TOKEN:}
+  retention: ${REJECTED_GENERATION_QUARANTINE_RETENTION:PT24H}
+  cleanup-interval: ${REJECTED_GENERATION_QUARANTINE_CLEANUP_INTERVAL:PT15M}
+  max-artifact-bytes: ${REJECTED_GENERATION_QUARANTINE_MAX_ARTIFACT_BYTES:262144}
+  max-artifacts: ${REJECTED_GENERATION_QUARANTINE_MAX_ARTIFACTS:1000}
+  max-replay-events: ${REJECTED_GENERATION_QUARANTINE_MAX_REPLAY_EVENTS:100}
+
 services:
   llm-gateway:
     base-url: ${LLM_GATEWAY_BASE_URL:http://localhost:8090}

@@ -34,6 +34,20 @@ Gateway's durable coordinator records a completed draft response, an ambiguous
 model outcome must remain visible for explicit recovery rather than silently
 invoking the provider twice.
 
+If the bounded provider response is received but deterministic response,
+evidence, or quality validation rejects it, the optional quarantine captures
+the exact typed response before returning `422`. Capture is keyed by the durable
+operation ID, owner-bound, encrypted, size/count limited, and automatically
+expired. The prompt and selected evidence are not copied; only their canonical
+request digest and immutable prompt/schema provenance are retained.
+
+An operator replay supplies the original owner-bound `GenerateRequest`. The
+service rebuilds the recorded immutable prompt release, requires its canonical
+request digest to match, and runs the stored response through current
+validators and renderers. Replay reports `providerInvocationCount: 0` and has
+no Payment, Document Store, Application Tracker, approval, export, or
+publication side effect.
+
 ## Transitional endpoint
 
 `POST /api/v1/cv-cover-letter/generate` retains the pre-`3.2.0` combined

@@ -10,10 +10,16 @@ import com.jobseekercopilot.cvcoverletter.dto.DraftGenerationResponse;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateCvCoverLetterResponse;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateRequest;
 import com.jobseekercopilot.cvcoverletter.dto.PromptGenerationMetadata;
+import com.jobseekercopilot.cvcoverletter.dto.RejectedGenerationReplayResponse;
 import com.jobseekercopilot.cvcoverletter.exception.DownstreamServiceException;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidLlmResponseException;
+import com.jobseekercopilot.cvcoverletter.exception.RejectedGenerationQuarantineException;
 import com.jobseekercopilot.cvcoverletter.model.CvCoverLetterPrompt;
 import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput;
+import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationQuarantineService;
+import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationArtifact;
+import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationCaptureContext;
+import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationReplayAuditEvent;
 import com.jobseekercopilot.generated.applicationtrackerservice.api.ApplicationRecordsApi;
 import com.jobseekercopilot.generated.applicationtrackerservice.model.ApplicationRecordResponse;
 import com.jobseekercopilot.generated.applicationtrackerservice.model.CreateApplicationRequest;
@@ -37,6 +43,8 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.web.client.RestClientException;
 
 import java.util.UUID;
+import java.time.Instant;
+import java.util.List;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -44,7 +52,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -59,6 +69,7 @@ class CvCoverLetterServiceTest {
     @Mock private PaymentBillingClient paymentBillingClient;
     @Mock private GeneratedDocumentsApi documentStoreApi;
     @Mock private ApplicationRecordsApi applicationTrackerApi;
+    @Mock private RejectedGenerationQuarantineService quarantineService;
 
     private CvCoverLetterService service;
     private GenerateRequest request;
@@ -79,12 +90,13 @@ class CvCoverLetterServiceTest {
                 new CoverLetterDocumentRenderer(),
                 new ValidatedClaimLedgerFactory(),
                 documentStoreApi,
-                applicationTrackerApi);
+                applicationTrackerApi,
+                quarantineService);
 
         request = validRequest();
         normalizedInput = new GenerationInputNormalizer().normalize("user-123", request);
         when(inputNormalizer.normalize("user-123", request)).thenReturn(normalizedInput);
-        when(promptBuilderService.buildPrompt(normalizedInput))
+        lenient().when(promptBuilderService.buildPrompt(normalizedInput))
                 .thenReturn(prompt(
                         activeOutputSchema(), promptMetadata()));
         lenient().when(paymentBillingClient.reserve(any(), any())).thenReturn(
@@ -193,16 +205,125 @@ class CvCoverLetterServiceTest {
     @Test
     void draftRejectsNonEmptyCoreSkillEvidenceAfterOneProviderCall()
             throws Exception {
+        UUID operationId = UUID.randomUUID();
+        when(quarantineService.isEnabled()).thenReturn(true);
         when(llmGatewayApi.generateV2(any())).thenReturn(
                 successfulResponse(activeJsonWithNonEmptyCoreSkillEvidence()));
 
         assertThrows(
                 InvalidLlmResponseException.class,
                 () -> service.generateDraft(
-                        "user-123", UUID.randomUUID(), request));
+                        "user-123", operationId, request));
 
         verify(llmGatewayApi).generateV2(any());
+        ArgumentCaptor<RejectedGenerationCaptureContext> capture =
+                ArgumentCaptor.forClass(RejectedGenerationCaptureContext.class);
+        verify(quarantineService).capture(capture.capture());
+        assertEquals(operationId, capture.getValue().operationId());
+        assertEquals("user-123", capture.getValue().ownerId());
+        assertEquals(
+                activeJsonWithNonEmptyCoreSkillEvidence(),
+                capture.getValue().generationResponse().getOutput());
         verifyNoInteractions(
+                paymentBillingClient,
+                documentStoreApi,
+                applicationTrackerApi);
+    }
+
+    @Test
+    void quarantineStorageFailureNeverTriggersAnotherProviderCall() {
+        UUID operationId = UUID.randomUUID();
+        when(quarantineService.isEnabled()).thenReturn(true);
+        doThrow(new RejectedGenerationQuarantineException("disk unavailable"))
+                .when(quarantineService).capture(any());
+        when(llmGatewayApi.generateV2(any())).thenReturn(
+                successfulResponse(activeJsonWithNonEmptyCoreSkillEvidence()));
+
+        InvalidLlmResponseException rejection = assertThrows(
+                InvalidLlmResponseException.class,
+                () -> service.generateDraft("user-123", operationId, request));
+
+        assertEquals(1, rejection.getSuppressed().length);
+        verify(llmGatewayApi, org.mockito.Mockito.times(1)).generateV2(any());
+        verifyNoInteractions(
+                paymentBillingClient,
+                documentStoreApi,
+                applicationTrackerApi);
+    }
+
+    @Test
+    void acceptedReplayReturnsTheRecoveredDraftWithoutCallingAnyProviderOrOwnerSideEffect()
+            throws Exception {
+        UUID operationId = UUID.randomUUID();
+        GenerationResponse captured = successfulResponse(activeValidJson());
+        RejectedGenerationArtifact artifact = rejectedArtifact(operationId);
+        when(quarantineService.load("user-123", operationId)).thenReturn(
+                new RejectedGenerationQuarantineService.LoadedRejectedGeneration(
+                        artifact,
+                        captured));
+        when(promptBuilderService.buildPrompt(
+                normalizedInput,
+                artifact.promptReleaseId())).thenReturn(
+                prompt(activeOutputSchema(), promptMetadata()));
+        RejectedGenerationReplayAuditEvent replayEvent = replayEvent(
+                2,
+                "ACCEPTED",
+                null);
+        when(quarantineService.recordReplay(
+                any(), any(), any(), any(), any(), any(), isNull()))
+                .thenReturn(replayEvent);
+
+        RejectedGenerationReplayResponse result =
+                service.replayRejectedDraft("user-123", operationId, request);
+
+        assertEquals("ACCEPTED", result.outcome());
+        assertEquals(0, result.providerInvocationCount());
+        assertEquals("Java Developer CV", result.draft().cvTitle());
+        assertEquals(7300L, result.draft().usage().totalTokens());
+        verify(quarantineService).requireMatchingReplayContext(
+                any(), any(), any());
+        verifyNoInteractions(
+                llmGatewayApi,
+                paymentBillingClient,
+                documentStoreApi,
+                applicationTrackerApi);
+    }
+
+    @Test
+    void rejectedReplayReturnsStructuredDiagnosticsAndStillMakesNoProviderCall()
+            throws Exception {
+        UUID operationId = UUID.randomUUID();
+        GenerationResponse captured = successfulResponse(
+                activeJsonWithNonEmptyCoreSkillEvidence());
+        RejectedGenerationArtifact artifact = rejectedArtifact(operationId);
+        when(quarantineService.load("user-123", operationId)).thenReturn(
+                new RejectedGenerationQuarantineService.LoadedRejectedGeneration(
+                        artifact,
+                        captured));
+        when(promptBuilderService.buildPrompt(
+                normalizedInput,
+                artifact.promptReleaseId())).thenReturn(
+                prompt(activeOutputSchema(), promptMetadata()));
+        when(quarantineService.diagnostic(any())).thenReturn(
+                new com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationDiagnostic(
+                        "OUTPUT_VALIDATION",
+                        "$.cv.coreSkills[0].evidence",
+                        "Expected an empty value."));
+        when(quarantineService.recordReplay(
+                any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(replayEvent(2, "REJECTED", null));
+
+        RejectedGenerationReplayResponse result =
+                service.replayRejectedDraft("user-123", operationId, request);
+
+        assertEquals("REJECTED", result.outcome());
+        assertEquals(0, result.providerInvocationCount());
+        assertNull(result.draft());
+        assertEquals(
+                "$.cv.coreSkills[0].evidence",
+                result.diagnostic().path());
+        verifyNoInteractions(
+                llmGatewayApi,
                 paymentBillingClient,
                 documentStoreApi,
                 applicationTrackerApi);
@@ -523,6 +644,47 @@ class CvCoverLetterServiceTest {
                 .schemaVersion("3.8.0")
                 .audit(generationAudit())
                 .usage(usage());
+    }
+
+    private RejectedGenerationArtifact rejectedArtifact(UUID operationId) {
+        return new RejectedGenerationArtifact(
+                1,
+                operationId,
+                "user-123",
+                Instant.parse("2026-08-07T20:00:00Z"),
+                Instant.parse("2026-08-08T20:00:00Z"),
+                "cv-cover-letter-1.5.9",
+                "a".repeat(64),
+                "cv-cover-letter-output",
+                "3.8.0",
+                "d".repeat(64),
+                "1.5.7",
+                "e".repeat(64),
+                "3.5.2",
+                "2.13.0",
+                "f".repeat(64),
+                "0".repeat(64),
+                "{}",
+                "gpt-4.1-mini-2025-04-14",
+                4200L,
+                3100L,
+                7300L,
+                List.of(replayEvent(1, "REJECTED", null)));
+    }
+
+    private RejectedGenerationReplayAuditEvent replayEvent(
+            long sequence,
+            String outcome,
+            com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationDiagnostic diagnostic) {
+        return new RejectedGenerationReplayAuditEvent(
+                sequence,
+                Instant.parse("2026-08-07T20:00:00Z"),
+                sequence == 1 ? "CAPTURED" : "REPLAYED",
+                outcome,
+                "a".repeat(64),
+                diagnostic,
+                sequence == 1 ? null : "b".repeat(64),
+                "c".repeat(64));
     }
 
     private GenerationUsage usage() {
