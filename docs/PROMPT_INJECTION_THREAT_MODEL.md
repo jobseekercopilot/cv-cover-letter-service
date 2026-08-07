@@ -97,15 +97,31 @@ Physical trusted/untrusted separation remains active when selecting an approved
 rollback bundle. Older bundles have fewer explicit safety instructions and
 their exemplar output is compiled into a closed structural schema, but local
 response, text, array and active-content limits with applied parser metadata
-`3.2.0` still apply. Active release `1.5.6` uses schema `3.7.0` to isolate its
-two canonical application claims, require exact-empty private skill evidence
-and constrain ordinary claims to exact final leaves. This blocks fabricated
-paths such as `qualificationTitle` and prevents the provider from claiming
-core-skill or hidden evidence paths. Parser `3.4.0` validates the raw object,
-then projects skills only from server-owned approved CV skill records and
-regenerates their opaque-ID provenance under claim policy `2.11.0`. It never
-places free-text evidence in the trusted schema and does not retry invalid
-provider output. Rollback release `1.5.5` retains schema `3.6.0`, parser `3.3.0`
-and claim policy `2.10.0`; release `1.5.3` retains parser metadata `3.2.0`.
-Rollback is an emergency containment action, not evidence that the newer
-evaluation policy passed.
+`3.2.0` still apply.
+
+Active release `1.5.7` uses schema `3.8.0` to isolate its two canonical
+application claims and required `CLAIM-9003` personal-summary claim, require
+exact-empty private skill evidence and constrain ordinary claims to exact final
+leaves. Ordinary claims cannot claim document titles, the personal summary,
+canonical bookends, core skills or hidden evidence, and fabricated paths such
+as `qualificationTitle` reject. The personal-summary sibling has a fixed path
+and shape but its approved opaque evidence IDs remain untrusted request data;
+free-text evidence is never placed in the trusted schema.
+
+Parser `3.5.0` validates the complete raw object and active content before any
+normalisation. Claim policy `2.12.0` can then attach canonical title paths using
+server-owned `JOB.TITLE` provenance, clear only an optional non-empty
+`tailoredDescription` that no accepted claim owns, and project skills only from
+server-owned approved CV skill records. These deterministic operations cannot
+turn source text into trusted instructions. In particular, unsafe markup
+rejects during raw validation, while an invalid claimed description remains
+present for the ordinary claim checks; neither is sanitised by the clearing
+rule. Skill projection uses only capacity remaining after non-skill
+normalisation, preserves the required minimum of up to eight, caps at 12 and
+never retries invalid provider output.
+
+Immutable rollback release `1.5.6` retains schema `3.7.0`, evaluation policy
+`1.5.4`, parser `3.4.0` and claim policy `2.11.0`; release `1.5.5` retains
+schema `3.6.0`, parser `3.3.0` and claim policy `2.10.0`; release `1.5.3`
+retains parser metadata `3.2.0`. Rollback is an emergency containment action,
+not evidence that the newer evaluation policy passed.

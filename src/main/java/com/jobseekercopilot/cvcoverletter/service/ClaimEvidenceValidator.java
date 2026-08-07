@@ -28,7 +28,8 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.11.0";
+    static final String POLICY_VERSION = "2.12.0";
+    static final String CORE_SKILL_PROJECTION_POLICY_VERSION = "2.11.0";
     static final String ROLLBACK_POLICY_VERSION = "2.10.0";
     private static final int MAX_CLAIMS = 40;
     private static final int MAX_CLAIM_REFERENCES = 30;
@@ -78,6 +79,7 @@ public class ClaimEvidenceValidator {
                 documents,
                 catalog,
                 enforceCanonicalApplicationBookends,
+                false,
                 false);
     }
 
@@ -87,6 +89,23 @@ public class ClaimEvidenceValidator {
             ClaimEvidenceCatalog catalog,
             boolean enforceCanonicalApplicationBookends,
             boolean projectCoreSkills
+    ) {
+        validate(
+                output,
+                documents,
+                catalog,
+                enforceCanonicalApplicationBookends,
+                projectCoreSkills,
+                false);
+    }
+
+    public void validate(
+            JsonNode output,
+            GeneratedApplicationDocuments documents,
+            ClaimEvidenceCatalog catalog,
+            boolean enforceCanonicalApplicationBookends,
+            boolean projectCoreSkills,
+            boolean useAdaptiveCoreSkillBudget
     ) {
         if (catalog == null || catalog.records() == null || catalog.records().isEmpty()) {
             throw new IllegalStateException("Approved claim evidence catalogue is missing.");
@@ -135,6 +154,19 @@ public class ClaimEvidenceValidator {
         validateSubmittedEvidence(
                 documents.getClaims(),
                 evidenceById);
+        if (useAdaptiveCoreSkillBudget) {
+            validateSubmittedPersonalSummaryEvidence(
+                    documents.getClaims(),
+                    evidenceById);
+            validateAdaptiveClaimLedger(
+                    output,
+                    documents,
+                    catalog.records(),
+                    evidenceById,
+                    versionedEvidence,
+                    enforceCanonicalApplicationBookends);
+            return;
+        }
         List<GeneratedClaim> submittedClaims =
                 normalizeCompleteOneBasedBodyParagraphPaths(
                         output,
@@ -192,7 +224,8 @@ public class ClaimEvidenceValidator {
                 output,
                 claims,
                 evidenceById,
-                projectCoreSkills);
+                projectCoreSkills,
+                false);
         claims = normalizeDuplicateClaimIds(
                 splitOversizedContentPathClaims(
                         isolateStructuredProjectClaims(
@@ -201,7 +234,154 @@ public class ClaimEvidenceValidator {
                                 evidenceById,
                                 versionedEvidence)));
         documents.setClaims(claims);
+        validateFinalClaimLedger(
+                output,
+                claims,
+                expectedPaths,
+                evidenceById,
+                versionedEvidence,
+                enforceCanonicalApplicationBookends);
+    }
 
+    static String policyVersion(
+            boolean projectsCoreSkills,
+            boolean usesAdaptiveCoreSkillBudget
+    ) {
+        if (usesAdaptiveCoreSkillBudget) {
+            return POLICY_VERSION;
+        }
+        return projectsCoreSkills
+                ? CORE_SKILL_PROJECTION_POLICY_VERSION
+                : ROLLBACK_POLICY_VERSION;
+    }
+
+    private void validateAdaptiveClaimLedger(
+            JsonNode output,
+            GeneratedApplicationDocuments documents,
+            List<ApprovedEvidenceRecord> records,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            boolean versionedEvidence,
+            boolean enforceCanonicalApplicationBookends
+    ) {
+        List<GeneratedClaim> submittedClaims =
+                normalizeCompleteOneBasedBodyParagraphPaths(
+                        output,
+                        documents.getClaims(),
+                        versionedEvidence);
+        submittedClaims = removeSubmittedCoreSkillCoverage(submittedClaims);
+        documents.setClaims(submittedClaims);
+
+        Set<String> submittedPaths = claimBearingPaths(output);
+        validateSubmittedContentPaths(
+                submittedClaims,
+                submittedPaths,
+                claimContentTopologyPaths(output));
+        canonicalizeCitedAtomicContent(
+                output,
+                expandContainerContentPaths(
+                        submittedClaims,
+                        submittedPaths),
+                evidenceById);
+        canonicalizeOptionalAtomicContent(output, evidenceById);
+        canonicalizeDocumentIdentity(output, evidenceById);
+        pruneUnsupportedWorkHistory(output, evidenceById);
+        canonicalizeUnclaimedProjectDescriptions(
+                output,
+                submittedClaims,
+                evidenceById);
+        clearUnclaimedTailoredDescriptions(output, submittedClaims);
+        canonicalizeUnclaimedApplicationBookends(
+                output,
+                submittedClaims,
+                evidenceById,
+                versionedEvidence);
+
+        Set<String> nonSkillExpectedPaths = claimBearingPaths(output).stream()
+                .filter(path -> !isProjectedCoreSkillPath(path))
+                .filter(path -> !isCanonicalDocumentTitlePath(path))
+                .collect(java.util.stream.Collectors.toCollection(
+                        LinkedHashSet::new));
+        List<GeneratedClaim> claims = normalizeDuplicateClaimIds(
+                normalizeDuplicateCoverage(
+                        splitPurposeSpanningClaims(
+                                expandContainerContentPaths(
+                                        submittedClaims,
+                                        nonSkillExpectedPaths),
+                                evidenceById)));
+        claims = addExactCoverageClaims(
+                output,
+                claims,
+                evidenceById,
+                nonSkillExpectedPaths,
+                versionedEvidence,
+                Map.of());
+        claims = enrichAtomicEvidenceReferences(
+                output,
+                claims,
+                evidenceById,
+                false,
+                true);
+        claims = normalizeDuplicateClaimIds(
+                splitOversizedContentPathClaims(
+                        isolateStructuredProjectClaims(
+                                output,
+                                claims,
+                                evidenceById,
+                                versionedEvidence)));
+        claims = ensureCanonicalTitleCoverage(
+                claims,
+                evidenceById,
+                "/cv/title",
+                "/cv/targetRole",
+                EvidencePurpose.CV);
+        claims = ensureCanonicalTitleCoverage(
+                claims,
+                evidenceById,
+                "/coverLetter/title",
+                "/coverLetter/jobTitle",
+                EvidencePurpose.COVER_LETTER);
+        claims = normalizeDuplicateClaimIds(claims);
+
+        int remainingClaimCapacity = MAX_CLAIMS - claims.size();
+        Map<String, String> projectedCoreSkillEvidenceByPath =
+                canonicalizeCoreSkills(
+                        output,
+                        records,
+                        versionedEvidence,
+                        remainingClaimCapacity);
+        Set<String> expectedPaths = claimBearingPaths(output);
+        claims = addExactCoverageClaims(
+                output,
+                claims,
+                evidenceById,
+                expectedPaths,
+                versionedEvidence,
+                projectedCoreSkillEvidenceByPath);
+        claims = enrichAtomicEvidenceReferences(
+                output,
+                claims,
+                evidenceById,
+                true,
+                true);
+        claims = normalizeDuplicateClaimIds(claims);
+        documents.setClaims(claims);
+        validateFinalClaimLedger(
+                output,
+                claims,
+                expectedPaths,
+                evidenceById,
+                versionedEvidence,
+                enforceCanonicalApplicationBookends);
+    }
+
+    private void validateFinalClaimLedger(
+            JsonNode output,
+            List<GeneratedClaim> claims,
+            Set<String> expectedPaths,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            boolean versionedEvidence,
+            boolean enforceCanonicalApplicationBookends
+    ) {
         require(claims.size() <= MAX_CLAIMS,
                 "$.claims",
                 "normalized claim ledger exceeds the bounded claim count");
@@ -229,16 +409,23 @@ public class ClaimEvidenceValidator {
         }
     }
 
-    static String policyVersion(boolean projectsCoreSkills) {
-        return projectsCoreSkills
-                ? POLICY_VERSION
-                : ROLLBACK_POLICY_VERSION;
+    private Map<String, String> canonicalizeCoreSkills(
+            JsonNode output,
+            List<ApprovedEvidenceRecord> records,
+            boolean versionedEvidence
+    ) {
+        return canonicalizeCoreSkills(
+                output,
+                records,
+                versionedEvidence,
+                MAX_PROJECTED_CORE_SKILLS);
     }
 
     private Map<String, String> canonicalizeCoreSkills(
             JsonNode output,
             List<ApprovedEvidenceRecord> records,
-            boolean versionedEvidence
+            boolean versionedEvidence,
+            int remainingClaimCapacity
     ) {
         JsonNode coreSkills = output.at("/cv/coreSkills");
         if (!(coreSkills instanceof ArrayNode coreSkillArray)) {
@@ -256,10 +443,21 @@ public class ClaimEvidenceValidator {
                     record);
         }
 
+        int minimum = Math.min(
+                MIN_PROJECTED_CORE_SKILLS,
+                availableByNormalisedValue.size());
+        int projectionLimit = Math.min(
+                MAX_PROJECTED_CORE_SKILLS,
+                Math.max(0, remainingClaimCapacity));
+        require(
+                projectionLimit >= minimum,
+                "$.cv.coreSkills",
+                "remaining claim capacity cannot preserve the minimum approved core-skill projection");
+
         List<ApprovedEvidenceRecord> selected = new ArrayList<>();
         Set<String> selectedValues = new LinkedHashSet<>();
         for (JsonNode proposedSkill : coreSkillArray) {
-            if (selected.size() >= MAX_PROJECTED_CORE_SKILLS) {
+            if (selected.size() >= projectionLimit) {
                 break;
             }
             JsonNode proposedName = proposedSkill.path("name");
@@ -279,13 +477,10 @@ public class ClaimEvidenceValidator {
             selected.add(exact);
         }
 
-        int minimum = Math.min(
-                MIN_PROJECTED_CORE_SKILLS,
-                availableByNormalisedValue.size());
         for (ApprovedEvidenceRecord available :
                 availableByNormalisedValue.values()) {
             if (selected.size() >= minimum
-                    || selected.size() >= MAX_PROJECTED_CORE_SKILLS) {
+                    || selected.size() >= projectionLimit) {
                 break;
             }
             if (selectedValues.add(normalise(available.value()))) {
@@ -306,6 +501,16 @@ public class ClaimEvidenceValidator {
                     skill.evidenceId());
         }
         return evidenceByProjectedPath;
+    }
+
+    private boolean isProjectedCoreSkillPath(String path) {
+        return path != null
+                && path.matches("/cv/coreSkills/\\d+/name");
+    }
+
+    private boolean isCanonicalDocumentTitlePath(String path) {
+        return "/cv/title".equals(path)
+                || "/coverLetter/title".equals(path);
     }
 
     private boolean approvedCoreSkill(
@@ -391,6 +596,33 @@ public class ClaimEvidenceValidator {
                         evidencePath,
                         "evidence ID is not approved");
             }
+        }
+    }
+
+    private void validateSubmittedPersonalSummaryEvidence(
+            List<GeneratedClaim> claims,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById
+    ) {
+        for (int claimIndex = 0; claimIndex < claims.size(); claimIndex++) {
+            GeneratedClaim claim = claims.get(claimIndex);
+            if (claim == null
+                    || !isFinalContent(claim.getDisposition())
+                    || !safe(claim.getContentPaths()).contains(
+                            "/cv/personalSummary")) {
+                continue;
+            }
+            boolean hasConfirmedClaimantEvidence = safe(claim.getEvidenceIds())
+                    .stream()
+                    .flatMap(evidenceId -> evidenceById
+                            .getOrDefault(evidenceId, List.of())
+                            .stream())
+                    .anyMatch(record -> record.purpose()
+                                    .supports(EvidencePurpose.CV)
+                            && candidateEvidence(record.source()));
+            require(
+                    hasConfirmedClaimantEvidence,
+                    "$.claims[" + claimIndex + "].evidenceIds",
+                    "candidate claim has no confirmed claimant evidence");
         }
     }
 
@@ -802,6 +1034,93 @@ public class ClaimEvidenceValidator {
         replaceText(output, "/coverLetter/signOff", "Yours faithfully");
     }
 
+    private List<GeneratedClaim> ensureCanonicalTitleCoverage(
+            List<GeneratedClaim> claims,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            String titlePath,
+            String preferredIdentityPath,
+            EvidencePurpose purpose
+    ) {
+        boolean alreadyCovered = claims.stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(claim -> isFinalContent(claim.getDisposition()))
+                .anyMatch(claim -> safe(claim.getContentPaths())
+                                .contains(titlePath)
+                        && safe(claim.getEvidenceIds()).contains(
+                                JOB_TITLE_EVIDENCE_ID));
+        if (alreadyCovered) {
+            return claims;
+        }
+        boolean canonicalEvidenceAvailable = evidenceById
+                .getOrDefault(JOB_TITLE_EVIDENCE_ID, List.of())
+                .stream()
+                .anyMatch(record -> record.purpose().supports(purpose));
+        if (!canonicalEvidenceAvailable) {
+            return claims;
+        }
+
+        int compatibleIndex = -1;
+        for (int index = 0; index < claims.size(); index++) {
+            GeneratedClaim claim = claims.get(index);
+            if (claim == null
+                    || !isFinalContent(claim.getDisposition())
+                    || claim.getClaimId() == null
+                    || claim.getClaimId().startsWith("CLAIM-9")
+                    || !safe(claim.getEvidenceIds()).contains(
+                            JOB_TITLE_EVIDENCE_ID)
+                    || safe(claim.getContentPaths()).size()
+                            >= MAX_CLAIM_REFERENCES
+                    || !safe(claim.getContentPaths()).stream()
+                            .allMatch(path -> purpose == EvidencePurpose.CV
+                                    ? path != null
+                                            && path.startsWith("/cv/")
+                                    : path != null
+                                            && path.startsWith(
+                                                    "/coverLetter/"))) {
+                continue;
+            }
+            if (!safe(claim.getContentPaths()).contains(
+                    preferredIdentityPath)) {
+                continue;
+            }
+            compatibleIndex = index;
+            break;
+        }
+
+        List<GeneratedClaim> normalized = new ArrayList<>(claims);
+        if (compatibleIndex >= 0) {
+            GeneratedClaim source = claims.get(compatibleIndex);
+            GeneratedClaim copy = copyWithClaimId(
+                    source,
+                    source.getClaimId());
+            List<String> paths = new ArrayList<>(
+                    safe(source.getContentPaths()));
+            paths.add(titlePath);
+            copy.setContentPaths(List.copyOf(paths));
+            normalized.set(compatibleIndex, copy);
+            return List.copyOf(normalized);
+        }
+
+        Set<String> usedClaimIds = claims.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(GeneratedClaim::getClaimId)
+                .filter(StringUtils::hasText)
+                .collect(java.util.stream.Collectors.toSet());
+        int nextClaimNumber = 3000;
+        String claimId;
+        do {
+            claimId = "CLAIM-" + nextClaimNumber++;
+        } while (usedClaimIds.contains(claimId));
+        GeneratedClaim generated = new GeneratedClaim();
+        generated.setClaimId(claimId);
+        generated.setDisposition(ClaimDisposition.SUPPORTED);
+        generated.setEvidenceIds(List.of(JOB_TITLE_EVIDENCE_ID));
+        generated.setContentPaths(List.of(titlePath));
+        generated.setReviewText("");
+        normalized.add(generated);
+        return List.copyOf(normalized);
+    }
+
     private String exactEvidenceValue(
             Map<String, List<ApprovedEvidenceRecord>> evidenceById,
             String evidenceId
@@ -916,6 +1235,28 @@ public class ClaimEvidenceValidator {
                             descriptionPath,
                             description.value());
                 }
+            }
+        }
+    }
+
+    private void clearUnclaimedTailoredDescriptions(
+            JsonNode output,
+            List<GeneratedClaim> claims
+    ) {
+        Set<String> claimedPaths = claims.stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(claim -> isFinalContent(claim.getDisposition()))
+                .flatMap(claim -> safe(claim.getContentPaths()).stream())
+                .collect(java.util.stream.Collectors.toSet());
+        JsonNode workHistory = output.at("/cv/workHistory");
+        for (int index = 0; index < workHistory.size(); index++) {
+            String descriptionPath =
+                    "/cv/workHistory/" + index + "/tailoredDescription";
+            JsonNode description = output.at(descriptionPath);
+            if (description.isTextual()
+                    && StringUtils.hasText(description.textValue())
+                    && !claimedPaths.contains(descriptionPath)) {
+                replaceText(output, descriptionPath, "");
             }
         }
     }
@@ -1318,7 +1659,8 @@ public class ClaimEvidenceValidator {
             JsonNode output,
             List<GeneratedClaim> claims,
             Map<String, List<ApprovedEvidenceRecord>> evidenceById,
-            boolean projectedCoreSkills
+            boolean projectedCoreSkills,
+            boolean preserveCanonicalTitleProvenance
     ) {
         List<GeneratedClaim> normalized = new ArrayList<>(claims.size());
         for (GeneratedClaim claim : claims) {
@@ -1334,6 +1676,10 @@ public class ClaimEvidenceValidator {
             LinkedHashSet<String> evidenceIds =
                     new LinkedHashSet<>(safe(claim.getEvidenceIds()));
             for (String contentPath : claim.getContentPaths()) {
+                if (preserveCanonicalTitleProvenance
+                        && isCanonicalDocumentTitlePath(contentPath)) {
+                    continue;
+                }
                 Predicate<ApprovedEvidenceRecord> atomicEvidence =
                         atomicEvidenceFor(contentPath);
                 boolean projectedCoreSkill = projectedCoreSkills

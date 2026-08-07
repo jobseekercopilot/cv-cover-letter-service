@@ -122,10 +122,10 @@ class CvCoverLetterServiceTest {
                 "gpt-4.1-mini-2025-04-14",
                 actual.audit().modelId());
         assertEquals("1.0", actual.inputSchemaVersion());
-        assertEquals(12, actual.claimLedger().claims().size());
+        assertEquals(10, actual.claimLedger().claims().size());
         assertEquals(64, actual.claimLedger().ledgerSha256().length());
-        assertEquals("2.11.0", actual.claimLedger().policyVersion());
-        assertEquals("3.4.0", actual.claimLedger().parserVersion());
+        assertEquals("2.12.0", actual.claimLedger().policyVersion());
+        assertEquals("3.5.0", actual.claimLedger().parserVersion());
         verify(llmGatewayApi).generateV2(any());
         verifyNoInteractions(
                 paymentBillingClient,
@@ -296,7 +296,7 @@ class CvCoverLetterServiceTest {
         assertEquals("trusted generation rules", llmRequest.getTrustedInstructions());
         assertEquals("{\"job\":\"input-secret-sentinel\"}", llmRequest.getUntrustedInput());
         assertEquals("cv-cover-letter-output", llmRequest.getOutput().getSchemaId());
-        assertEquals("3.7.0", llmRequest.getOutput().getSchemaVersion());
+        assertEquals("3.8.0", llmRequest.getOutput().getSchemaVersion());
         assertEquals(0.25, llmRequest.getLimits().getTemperature());
         assertEquals(2500, llmRequest.getLimits().getMaxOutputTokens());
 
@@ -321,9 +321,9 @@ class CvCoverLetterServiceTest {
         assertEquals("Java Developer CV", actual.getCvTitle());
         assertEquals("Java Developer CV", actual.getCvContent().lines().findFirst().orElseThrow());
         assertEquals("1.0", actual.getInputSchemaVersion());
-        assertEquals("cv-cover-letter-1.5.6", actual.getGenerationMetadata().releaseId());
-        assertEquals("1.5.6", actual.getGenerationMetadata().rulesVersion());
-        assertEquals("3.7.0", actual.getGenerationMetadata().schemaVersion());
+        assertEquals("cv-cover-letter-1.5.7", actual.getGenerationMetadata().releaseId());
+        assertEquals("1.5.7", actual.getGenerationMetadata().rulesVersion());
+        assertEquals("3.8.0", actual.getGenerationMetadata().schemaVersion());
         assertEquals(normalizedInput.warnings(), actual.getInputWarnings());
         org.junit.jupiter.api.Assertions.assertTrue(
                 actual.getCoverLetterContent().contains("Dear Hiring Manager,"));
@@ -352,15 +352,15 @@ class CvCoverLetterServiceTest {
         org.junit.jupiter.api.Assertions.assertTrue(
                 output.getAll().contains("pricingVersion=openai-standard-2026-07-25"));
         org.junit.jupiter.api.Assertions.assertTrue(
-                output.getAll().contains("promptRelease=cv-cover-letter-1.5.6"));
+                output.getAll().contains("promptRelease=cv-cover-letter-1.5.7"));
         org.junit.jupiter.api.Assertions.assertTrue(
                 output.getAll().contains("templateVersion=1.2.0"));
         org.junit.jupiter.api.Assertions.assertTrue(
-                output.getAll().contains("rulesVersion=1.5.6"));
+                output.getAll().contains("rulesVersion=1.5.7"));
         org.junit.jupiter.api.Assertions.assertTrue(
-                output.getAll().contains("schemaVersion=3.7.0"));
+                output.getAll().contains("schemaVersion=3.8.0"));
         org.junit.jupiter.api.Assertions.assertTrue(
-                output.getAll().contains("parserVersion=3.4.0"));
+                output.getAll().contains("parserVersion=3.5.0"));
         assertFalse(output.getAll().contains("input-secret-sentinel"));
         assertFalse(output.getAll().contains("response-secret-sentinel"));
     }
@@ -520,7 +520,7 @@ class CvCoverLetterServiceTest {
                 .output(output)
                 .finishReason(GenerationResponse.FinishReasonEnum.COMPLETED)
                 .schemaId("cv-cover-letter-output")
-                .schemaVersion("3.7.0")
+                .schemaVersion("3.8.0")
                 .audit(generationAudit())
                 .usage(usage());
     }
@@ -593,18 +593,18 @@ class CvCoverLetterServiceTest {
 
     private PromptGenerationMetadata promptMetadata() {
         return new PromptGenerationMetadata(
-                "cv-cover-letter-1.5.6",
+                "cv-cover-letter-1.5.7",
                 "cv-cover-letter",
-                "1.5.6",
+                "1.5.7",
                 "a".repeat(64),
                 "1.2.0",
                 "b".repeat(64),
-                "1.5.6",
+                "1.5.7",
                 "c".repeat(64),
                 "cv-cover-letter-output",
-                "3.7.0",
+                "3.8.0",
                 "d".repeat(64),
-                "1.5.4",
+                "1.5.5",
                 "e".repeat(64)
         );
     }
@@ -707,13 +707,10 @@ class CvCoverLetterServiceTest {
                   "generationNotes": {"assumptionsMade":[],"missingInformation":[],"tailoringSummary":"Focused on Java."},
                   "claims": [
                     {"claimId":"CLAIM-001","disposition":"SUPPORTED","evidenceIds":["JOB.TITLE"],"contentPaths":["/cv/targetRole"],"reviewText":""},
-                    {"claimId":"CLAIM-002","disposition":"REWORDED","evidenceIds":["PROFILE.SKILL.1","JOB.DESCRIPTION"],"contentPaths":["/cv/personalSummary"],"reviewText":""},
-                    {"claimId":"CLAIM-003","disposition":"REWORDED","evidenceIds":["JOB.TITLE"],"contentPaths":["/coverLetter/title"],"reviewText":""},
                     {"claimId":"CLAIM-004","disposition":"SUPPORTED","evidenceIds":["JOB.TITLE"],"contentPaths":["/coverLetter/jobTitle"],"reviewText":""},
                     {"claimId":"CLAIM-005","disposition":"SUPPORTED","evidenceIds":["JOB.COMPANY"],"contentPaths":["/coverLetter/companyName"],"reviewText":""},
                     {"claimId":"CLAIM-007","disposition":"REWORDED","evidenceIds":["PROFILE.EMPLOYMENT.1.RESPONSIBILITIES","PROFILE.SKILL.1"],"contentPaths":["/coverLetter/bodyParagraphs/0"],"reviewText":""},
-                    {"claimId":"CLAIM-008","disposition":"REWORDED","evidenceIds":["JOB.DESCRIPTION"],"contentPaths":["/coverLetter/bodyParagraphs/1","/coverLetter/bodyParagraphs/2"],"reviewText":""},
-                    {"claimId":"CLAIM-010","disposition":"REWORDED","evidenceIds":["PROFILE.TARGET_ROLE.1"],"contentPaths":["/cv/title"],"reviewText":""}
+                    {"claimId":"CLAIM-008","disposition":"REWORDED","evidenceIds":["JOB.DESCRIPTION"],"contentPaths":["/coverLetter/bodyParagraphs/1","/coverLetter/bodyParagraphs/2"],"reviewText":""}
                   ],
                   "canonicalApplicationClaims": {
                     "opening": {
@@ -734,6 +731,13 @@ class CvCoverLetterServiceTest {
                       "contentPath": "/coverLetter/closingParagraph",
                       "reviewText": ""
                     }
+                  },
+                  "personalSummaryClaim": {
+                    "claimId": "CLAIM-9003",
+                    "disposition": "REWORDED",
+                    "evidenceIds": ["PROFILE.SKILL.1", "JOB.DESCRIPTION"],
+                    "contentPath": "/cv/personalSummary",
+                    "reviewText": ""
                   }
                 }
                 """;
@@ -741,7 +745,7 @@ class CvCoverLetterServiceTest {
 
     private com.fasterxml.jackson.databind.JsonNode activeOutputSchema() throws Exception {
         try (java.io.InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.5.6/output-schema.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.7/output-schema.json")) {
             if (input == null) {
                 throw new IllegalStateException("Active output schema fixture is missing.");
             }

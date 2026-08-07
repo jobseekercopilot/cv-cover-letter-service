@@ -53,8 +53,8 @@ evidence. See
 
 ## Prompt releases
 
-Prompt bundle `cv-cover-letter-1.5.6`, output schema `3.7.0` and evaluation
-policy `1.5.4` render projects as projects, keep paid employment separate, cap
+Prompt bundle `cv-cover-letter-1.5.7`, output schema `3.8.0` and evaluation
+policy `1.5.5` render projects as projects, keep paid employment separate, cap
 the CV at 8–12 unique confirmed skills where available, omit unsupported empty
 sections, and use the correct UK generic greeting/sign-off pair. A
 post-grounding quality policy rejects repeated narrative, repeated
@@ -89,16 +89,32 @@ claim-bearing leaves (`qualificationName`, never `qualificationTitle`) and
 excludes canonical bookends, core skills and hidden evidence. Its private
 ordinary-claim array is capped at 26, reserving two public-ledger entries for
 the canonical claims and up to 12 for deterministic skill provenance within
-the unchanged 40-claim public bound. Parser `3.4.0`
-then projects skills deterministically from approved CV skill facts: it keeps
+the unchanged 40-claim public bound. Parser `3.4.0` then projects skills
+deterministically from approved CV skill facts: it keeps
 unique exact approved proposals, discards unsupported or duplicate values,
 fills in evidence order to `min(8, available)`, caps the result at 12, fixes
 `evidence` to empty and creates one exact, server-owned claim using the
 selected fact ID for each skill. Versioned
 catalogues use only CV `EVIDENCE_SNAPSHOT` `DEMONSTRATED_SKILL` facts; legacy
-catalogues use `PROFILE.SKILL` facts. Claim policy `2.11.0` applies only to this
-new projection contract. Immutable release `1.5.5` is the immediate emergency
-rollback and retains schema `3.6.0`, parser `3.3.0` and claim policy `2.10.0`.
+catalogues use `PROFILE.SKILL` facts. Claim policy `2.11.0` applies only to
+that fixed-reservation projection contract.
+
+Active release `1.5.7` adds the required private `personalSummaryClaim` sibling
+with fixed ID `CLAIM-9003`, exact `/cv/personalSummary` path, empty review text,
+`SUPPORTED` or `REWORDED` disposition and confirmed CV-purpose claimant
+evidence. Schema `3.8.0` also removes both document-title paths and the personal
+summary from ordinary claims and permits at most 29 ordinary claims. Parser
+`3.5.0` projects all three private siblings. Claim policy `2.12.0` attaches each
+canonical title path to a same-purpose identity claim citing `JOB.TITLE` (or
+creates a bounded one-path identity claim), and clears a non-empty optional
+`tailoredDescription` when no accepted ordinary claim owns it. It normalises
+the non-skill ledger first, caps accepted unique approved proposals at the
+smaller of 12 and the remaining 40-claim capacity, and fills in evidence order
+to `min(8, available)`. It fails safely if that minimum cannot fit.
+Immutable release `1.5.6` is the immediate emergency rollback and retains
+schema `3.7.0`, evaluation policy `1.5.4`, parser `3.4.0` and claim policy
+`2.11.0`; release `1.5.5` remains an approved deeper compatibility release at
+schema `3.6.0`, parser `3.3.0` and claim policy `2.10.0`.
 
 Prompt template, rules, output schema and evaluation-policy versions are
 selected as one reviewed bundle. Checksums, an approved-release index and
