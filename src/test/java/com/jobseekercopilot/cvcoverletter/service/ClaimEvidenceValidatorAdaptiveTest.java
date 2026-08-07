@@ -107,6 +107,59 @@ class ClaimEvidenceValidatorAdaptiveTest {
     }
 
     @Test
+    void dropsFinalClaimsThatOnlyReferenceEmptyOptionalContent()
+            throws Exception {
+        ObjectNode output = activeOutput();
+        ArrayNode histories = (ArrayNode) output.at("/cv/workHistory");
+        histories.add(workHistory("", true));
+        ArrayNode claims = (ArrayNode) output.path("claims");
+        claims.add(claim(
+                "CLAIM-801",
+                List.of("PROFILE.EMPLOYMENT.1.JOB_TITLE"),
+                List.of("/cv/workHistory/0/tailoredDescription")));
+
+        GeneratedApplicationDocuments accepted = parser.parse(
+                objectMapper.writeValueAsString(output),
+                schema,
+                baseCatalog());
+
+        assertTrue(accepted.getClaims().stream()
+                .noneMatch(claim -> "CLAIM-801"
+                        .equals(claim.getClaimId())));
+        assertEquals("", accepted.getCv().getWorkHistory().get(0)
+                .getTailoredDescription());
+    }
+
+    @Test
+    void retainsPopulatedPathsWhenAClaimAlsoReferencesEmptyOptionalContent()
+            throws Exception {
+        ObjectNode output = activeOutput();
+        ArrayNode histories = (ArrayNode) output.at("/cv/workHistory");
+        histories.add(workHistory("", true));
+        ArrayNode claims = (ArrayNode) output.path("claims");
+        claims.add(claim(
+                "CLAIM-802",
+                List.of("PROFILE.EMPLOYMENT.1.JOB_TITLE"),
+                List.of(
+                        "/cv/workHistory/0/jobTitle",
+                        "/cv/workHistory/0/tailoredDescription")));
+
+        GeneratedApplicationDocuments accepted = parser.parse(
+                objectMapper.writeValueAsString(output),
+                schema,
+                baseCatalog());
+
+        GeneratedClaim normalized = accepted.getClaims().stream()
+                .filter(claim -> "CLAIM-802"
+                        .equals(claim.getClaimId()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(
+                List.of("/cv/workHistory/0/jobTitle"),
+                normalized.getContentPaths());
+    }
+
+    @Test
     void adaptsProjectionToEightAtTheFinalFortyClaimBoundary()
             throws Exception {
         CapacityFixture fixture = capacityFixture();
