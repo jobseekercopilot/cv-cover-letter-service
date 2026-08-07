@@ -56,10 +56,11 @@ class OpenApiBreakingTests(unittest.TestCase):
         self.assertTrue(any("enum values were removed" in finding for finding in findings))
 
     def test_breaking_change_requires_new_major_version(self) -> None:
+        current_major = int(self.contract["info"]["version"].split(".", maxsplit=1)[0])
         same_major = copy.deepcopy(self.contract)
-        same_major["info"]["version"] = "3.2.0"
+        same_major["info"]["version"] = f"{current_major}.999.0"
         new_major = copy.deepcopy(self.contract)
-        new_major["info"]["version"] = "4.0.0"
+        new_major["info"]["version"] = f"{current_major + 1}.0.0"
 
         self.assertFalse(major_version_allows_breaking(self.contract, same_major))
         self.assertTrue(major_version_allows_breaking(self.contract, new_major))
