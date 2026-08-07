@@ -15,7 +15,7 @@ evaluation policy `1.5.8`, used at the provider boundary and by the local
 response parser and synthetic evaluation checks. The domain bundle cannot name
 a model provider or transport API; provider mechanics belong behind LLM
 Gateway. Applied parser `3.6.0`, claim policy `2.15.0` and deterministic quality
-policy `1.4.0` complete the active local validation route.
+policy `1.5.0` complete the active local validation route.
 
 Release `1.5.0` adds a dedicated project structure, separates employment from
 project evidence, caps and deduplicates confirmed skills, requires the correct
@@ -102,7 +102,7 @@ job-relevant candidates; the service discards unsupported, duplicate and
 job-advert-only proposals and does not fill a minimum or quota. Revision-declared
 facts are service-projected only into CV `coreSkills` and cannot be cited for CV
 narrative or cover-letter prose. Cover-letter skills must instead be supported
-by demonstrated career evidence, and quality policy `1.4.0` rejects a literal
+by demonstrated career evidence, and quality policy `1.5.0` rejects a literal
 skills-list heading. The legacy positional profile catalogue retains its
 historical minimum-fill compatibility behaviour.
 

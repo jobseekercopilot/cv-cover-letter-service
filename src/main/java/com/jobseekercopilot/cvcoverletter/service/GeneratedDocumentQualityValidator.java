@@ -27,7 +27,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class GeneratedDocumentQualityValidator {
-    static final String POLICY_VERSION = "1.4.0";
+    static final String POLICY_VERSION = "1.5.0";
     private static final int MAX_SKILLS = 12;
     private static final Pattern COVER_LETTER_SKILL_LIST = Pattern.compile(
             "(?i)^\\s*(?:key skills|technical skills|skills\\s*&\\s*expertise)"
@@ -56,7 +56,7 @@ public class GeneratedDocumentQualityValidator {
         List<TextUnit> coverNarrative = coverLetterNarrative(output);
         validateNoCoverLetterSkillList(coverNarrative);
         validateDuplicateNarrative(output, "/coverLetter", coverNarrative);
-        validateQualifications(documents, catalog.records(), coverNarrative);
+        validateQualifications(documents);
         validateSelectedEvidenceCoverage(documents, catalog);
         validateStructuredProjects(documents, catalog);
     }
@@ -166,9 +166,7 @@ public class GeneratedDocumentQualityValidator {
     }
 
     private void validateQualifications(
-            GeneratedApplicationDocuments documents,
-            List<ApprovedEvidenceRecord> records,
-            List<TextUnit> coverNarrative
+            GeneratedApplicationDocuments documents
     ) {
         Set<String> qualificationKeys = new HashSet<>();
         List<GeneratedQualification> qualifications =
@@ -194,43 +192,6 @@ public class GeneratedDocumentQualityValidator {
                     "qualification is repeated");
         }
 
-        Set<String> qualificationFacts = records.stream()
-                .filter(record ->
-                        record.purpose().supports(EvidencePurpose.COVER_LETTER))
-                .filter(record -> "EDUCATION".equals(record.category())
-                        || "QUALIFICATION_TRAINING".equals(record.category()))
-                .filter(record -> "HEADING".equals(record.factType())
-                        || "PROGRAMME_OR_SUBJECT".equals(record.factType())
-                        || "QUALIFICATION_TITLE".equals(record.factType()))
-                .map(ApprovedEvidenceRecord::value)
-                .filter(StringUtils::hasText)
-                .map(this::normalise)
-                .filter(this::substantiveQualificationPhrase)
-                .collect(java.util.stream.Collectors.toSet());
-        for (String fact : qualificationFacts) {
-            long occurrences = coverNarrative.stream()
-                    .map(TextUnit::text)
-                    .filter(text -> containsBoundedPhrase(text, fact))
-                    .count();
-            require(occurrences <= 1,
-                    "$.coverLetter",
-                    "qualification evidence is repeated");
-        }
-    }
-
-    private boolean substantiveQualificationPhrase(String phrase) {
-        return phrase.length() >= 12
-                && phrase.split("\\s+").length >= 2;
-    }
-
-    private boolean containsBoundedPhrase(String text, String phrase) {
-        String normalized = normalise(text);
-        return Pattern.compile(
-                        "(?<![\\p{L}\\p{N}])"
-                                + Pattern.quote(phrase)
-                                + "(?![\\p{L}\\p{N}])")
-                .matcher(normalized)
-                .find();
     }
 
     private void validateSelectedEvidenceCoverage(

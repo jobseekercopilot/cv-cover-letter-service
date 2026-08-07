@@ -68,9 +68,9 @@ Prompt bundle `cv-cover-letter-1.5.11`, output schema `3.10.0`, evaluation polic
 separate, select at most 12 exact job-relevant CV skills without a minimum or
 quota, omit unsupported empty sections, and use the correct UK generic
 greeting/sign-off pair. Claim policy `2.15.0` and post-grounding quality policy
-`1.4.0` reject unsupported skills, literal cover-letter skill lists, repeated
-narrative, repeated qualifications, misplaced selected evidence and project
-fields assembled from different evidence entries. Schema `3.10.0` requires
+`1.5.0` reject unsupported skills, literal cover-letter skill lists, duplicate
+narrative, duplicate CV qualification records, misplaced selected evidence and
+project fields assembled from different evidence entries. Schema `3.10.0` requires
 evidence beside every project highlight, work responsibility and cover-letter
 body paragraph; parser `3.6.0` projects those items into the public ledger so
 their provenance cannot be omitted independently. Release `1.5.1` requires an explicit complete
@@ -81,7 +81,7 @@ unconfirmed material is omitted and may be described only as neutral missing
 information.
 
 Selected evidence remains a model-facing completeness target, but quality
-policy `1.4.0` does not discard an otherwise valid generated pair merely
+policy `1.5.0` does not discard an otherwise valid generated pair merely
 because one selected entry was unused. Every retained factual claim must still
 cite compatible approved evidence, and used structured evidence must still
 appear in its governed section. A project must still cite exactly one PROJECT
@@ -147,7 +147,7 @@ support. It keeps only exact model-selected candidates relevant to the job,
 caps them at 12 and does not fill a minimum or arbitrary quota. A declared-only
 profile skill may appear only in CV `coreSkills`; it cannot ground CV narrative
 or cover-letter prose. Cover letters may weave skills supported by demonstrated
-career evidence into prose, but quality policy `1.4.0` rejects a literal skills
+career evidence into prose, but quality policy `1.5.0` rejects a literal skills
 list. Schema `2.0` continues to reject browser-positioned profile employment and
 qualification records.
 

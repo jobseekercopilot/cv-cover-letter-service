@@ -2190,7 +2190,7 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
-    void rejectsAQualificationPhraseRepeatedInsideLongerCoverParagraphs()
+    void acceptsGroundedQualificationEvidenceAcrossCoverParagraphs()
             throws Exception {
         useVersionedCatalog();
         String qualificationId =
@@ -2225,7 +2225,12 @@ class ClaimEvidenceValidatorTest {
         ((ArrayNode) output.at("/claims/7/evidenceIds"))
                 .add(qualificationId);
 
-        assertRejected(output, "qualification evidence is repeated");
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertEquals(2, accepted.getCoverLetter().getBodyParagraphs().stream()
+                .filter(paragraph -> paragraph.contains(
+                        "BMus Music Performance / Composition"))
+                .count());
     }
 
     @Test
