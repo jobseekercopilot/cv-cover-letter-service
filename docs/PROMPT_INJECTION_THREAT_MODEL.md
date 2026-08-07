@@ -99,7 +99,7 @@ their exemplar output is compiled into a closed structural schema, but the
 response, text, array and active-content limits pinned by the selected bundle
 still apply.
 
-Active prompt release `1.5.8` pins schema `3.8.0`, evaluation policy `1.5.6`,
+Active prompt release `1.5.9` pins schema `3.8.0`, evaluation policy `1.5.7`,
 parser `3.5.0`, claim policy `2.13.0` and quality policy `1.2.0`. Schema `3.8.0`
 isolates the two canonical application claims and required `CLAIM-9003`
 personal-summary claim, requires exact-empty private skill evidence and

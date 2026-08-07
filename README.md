@@ -53,8 +53,8 @@ evidence. See
 
 ## Prompt releases
 
-Prompt bundle `cv-cover-letter-1.5.8`, output schema `3.8.0`, evaluation policy
-`1.5.6` and parser `3.5.0` render projects as projects, keep paid employment
+Prompt bundle `cv-cover-letter-1.5.9`, output schema `3.8.0`, evaluation policy
+`1.5.7` and parser `3.5.0` render projects as projects, keep paid employment
 separate, select at most 12 exact job-relevant CV skills without a minimum or
 quota, omit unsupported empty sections, and use the correct UK generic
 greeting/sign-off pair. Claim policy `2.13.0` and post-grounding quality policy
@@ -113,7 +113,7 @@ the non-skill ledger first, caps accepted unique approved proposals at the
 smaller of 12 and the remaining 40-claim capacity, and fills in evidence order
 to `min(8, available)`. It fails safely if that minimum cannot fit.
 
-Active release `1.5.8` retains schema `3.8.0` and parser `3.5.0` but replaces
+Active release `1.5.9` retains schema `3.8.0` and parser `3.5.0` but replaces
 that versioned skill projection under claim policy `2.13.0`. Revision-bound
 profile skills are CV-only exact candidates alongside demonstrated skill facts;
 the service de-duplicates them by normalised value and prefers demonstrated
@@ -124,6 +124,10 @@ or cover-letter prose. Cover letters may weave skills supported by demonstrated
 career evidence into prose, but quality policy `1.2.0` rejects a literal skills
 list. Schema `2.0` continues to reject browser-positioned profile employment and
 qualification records.
+
+The model sees declared-skill values through a dedicated service-projected
+candidate list, never their internal evidence IDs. This preserves exact skill
+selection while making those IDs impossible to cite in model-authored claims.
 
 Immutable release `1.5.6` is the immediate emergency rollback and retains
 schema `3.7.0`, evaluation policy `1.5.4`, parser `3.4.0` and claim policy

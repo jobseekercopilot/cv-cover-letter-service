@@ -5,13 +5,13 @@ Each approved release under `src/main/resources/prompts/bundles` packages the
 template, generation rules, output schema and synthetic evaluation policy with
 immutable component checksums. `index.json` is the only runtime allowlist.
 
-The active `cv-cover-letter-1.5.8` release converts the normalised profile and
+The active `cv-cover-letter-1.5.9` release converts the normalised profile and
 canonical job into a stable approved-evidence catalogue and treats that
 catalogue and normalisation warnings as untrusted data. It places the safety
 rules before that evidence and forbids direct, indirect, encoded, nested,
 Unicode-obfuscated and schema-escape instructions in source content from
 changing the task. The release also owns exact bounded JSON Schema `3.8.0` and
-evaluation policy `1.5.6`, used at the provider boundary and by the local
+evaluation policy `1.5.7`, used at the provider boundary and by the local
 response parser and synthetic evaluation checks. The domain bundle cannot name
 a model provider or transport API; provider mechanics belong behind LLM
 Gateway. Applied parser `3.5.0`, claim policy `2.13.0` and deterministic quality
@@ -90,8 +90,8 @@ and the capacity remaining within the 40-claim public bound, then fills in
 evidence order to `min(8, available)`. Inability to preserve that minimum fails
 closed; it does not trigger another provider call.
 
-Active release `1.5.8` retains the `3.8.0` private wire shape and parser
-`3.5.0`, while rules `1.5.8`, evaluation policy `1.5.6` and claim policy
+Active release `1.5.9` retains the `3.8.0` private wire shape and parser
+`3.5.0`, while rules `1.5.9`, evaluation policy `1.5.7` and claim policy
 `2.13.0` replace that versioned minimum-fill behaviour. The approved CV skill
 catalogue is the union of purpose-compatible `DEMONSTRATED_SKILL` snapshot
 facts and revision-bound profile `DECLARED_SKILL` facts. Exact normalised
@@ -103,6 +103,13 @@ narrative or cover-letter prose. Cover-letter skills must instead be supported
 by demonstrated career evidence, and quality policy `1.2.0` rejects a literal
 skills-list heading. The legacy positional profile catalogue retains its
 historical minimum-fill compatibility behaviour.
+
+Release `1.5.9` keeps revision-declared records in the server-owned validation
+catalogue but exposes only their exact values to the model through
+`serviceProjectedCoreSkillCandidates`. Their stable evidence IDs are withheld
+from the model-facing catalogue, so a declared core-skill proposal cannot
+accidentally cite its service-only ID in narrative provenance. Snapshot evidence
+IDs remain available for ordinary claim citations.
 
 Runtime assembly preserves those domains as separate LLM Gateway v2 fields:
 reviewed bundle text becomes `trustedInstructions`, normalised evidence becomes
