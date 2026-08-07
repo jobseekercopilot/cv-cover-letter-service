@@ -2516,6 +2516,59 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
+    void normalizesACompleteVersionedOneBasedProjectHighlightLedger()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        addProjectHighlights(output, 2);
+        shiftProjectHighlightPathsOneBased(output);
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertEquals(
+                java.util.stream.IntStream.range(0, 2)
+                        .mapToObj(index ->
+                                "/cv/projects/0/highlights/" + index)
+                        .toList(),
+                accepted.getClaims().stream()
+                        .flatMap(claim ->
+                                claim.getContentPaths().stream())
+                        .filter(path -> path.startsWith(
+                                "/cv/projects/0/highlights/"))
+                        .sorted()
+                        .toList());
+    }
+
+    @Test
+    void rejectsIncompleteOrMixedOneBasedProjectHighlightLedgers()
+            throws Exception {
+        useVersionedCatalog();
+
+        ObjectNode incomplete = versionedOutput();
+        addProjectHighlights(incomplete, 2);
+        shiftProjectHighlightPathsOneBased(incomplete);
+        removeContentPath(
+                incomplete,
+                1,
+                "/cv/projects/0/highlights/1");
+        assertRejected(
+                incomplete,
+                "content path is not an approved final claim path");
+
+        ObjectNode mixed = versionedOutput();
+        addProjectHighlights(mixed, 2);
+        shiftProjectHighlightPathsOneBased(mixed);
+        replaceContentPath(
+                mixed,
+                1,
+                "/cv/projects/0/highlights/1",
+                "/cv/projects/0/highlights/0");
+        assertRejected(
+                mixed,
+                "content path is not an approved final claim path");
+    }
+
+    @Test
     void rejectsSkillListsAboveTheGovernedQualityLimit()
             throws Exception {
         ObjectNode output = validOutput();
@@ -2909,6 +2962,53 @@ class ClaimEvidenceValidatorTest {
             shifts.put(
                     "/coverLetter/bodyParagraphs/" + index,
                     "/coverLetter/bodyParagraphs/" + (index + 1));
+        }
+        for (JsonNode claim : output.path("claims")) {
+            ArrayNode contentPaths =
+                    (ArrayNode) claim.path("contentPaths");
+            for (int index = 0;
+                    index < contentPaths.size();
+                    index++) {
+                String shifted =
+                        shifts.get(contentPaths.get(index).asText());
+                if (shifted != null) {
+                    contentPaths.set(
+                            index,
+                            objectMapper.getNodeFactory()
+                                    .textNode(shifted));
+                }
+            }
+        }
+    }
+
+    private void addProjectHighlights(
+            ObjectNode output,
+            int count
+    ) {
+        ArrayNode highlights =
+                (ArrayNode) output.at("/cv/projects/0/highlights");
+        ArrayNode contentPaths =
+                (ArrayNode) output.at("/claims/1/contentPaths");
+        for (int index = 0; index < count; index++) {
+            highlights.add(index == 0
+                    ? "Applied Java skills to useful services."
+                    : "Developed useful services with Java.");
+            contentPaths.add(
+                    "/cv/projects/0/highlights/" + index);
+        }
+    }
+
+    private void shiftProjectHighlightPathsOneBased(
+            ObjectNode output
+    ) {
+        int highlightCount =
+                output.at("/cv/projects/0/highlights").size();
+        java.util.Map<String, String> shifts =
+                new java.util.LinkedHashMap<>();
+        for (int index = 0; index < highlightCount; index++) {
+            shifts.put(
+                    "/cv/projects/0/highlights/" + index,
+                    "/cv/projects/0/highlights/" + (index + 1));
         }
         for (JsonNode claim : output.path("claims")) {
             ArrayNode contentPaths =
