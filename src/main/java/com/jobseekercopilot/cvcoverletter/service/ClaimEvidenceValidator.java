@@ -28,7 +28,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.16.0";
+    static final String POLICY_VERSION = "2.17.0";
     static final String CORE_SKILL_PROJECTION_POLICY_VERSION = "2.11.0";
     static final String ROLLBACK_POLICY_VERSION = "2.10.0";
     private static final int MAX_CLAIMS = 200;
@@ -1866,6 +1866,13 @@ public class ClaimEvidenceValidator {
                                 .toList();
             }
             if (matchingEvidenceIds.isEmpty()) {
+                matchingEvidenceIds = contextualNarrativeEvidenceIds(
+                        claims,
+                        contentPath,
+                        evidenceById,
+                        purpose);
+            }
+            if (matchingEvidenceIds.isEmpty()) {
                 continue;
             }
             String generatedClaimId;
@@ -1882,6 +1889,40 @@ public class ClaimEvidenceValidator {
             normalized.add(generated);
         }
         return List.copyOf(normalized);
+    }
+
+    private List<String> contextualNarrativeEvidenceIds(
+            List<GeneratedClaim> claims,
+            String contentPath,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            EvidencePurpose purpose
+    ) {
+        String contextPrefix;
+        Matcher workResponsibility = Pattern.compile(
+                "^/cv/workHistory/(\\d+)/responsibilities/\\d+$")
+                .matcher(contentPath);
+        if (workResponsibility.matches()) {
+            contextPrefix = "/cv/workHistory/"
+                    + workResponsibility.group(1)
+                    + "/";
+        } else if (contentPath.matches(
+                "^/coverLetter/bodyParagraphs/\\d+$")) {
+            contextPrefix = "/coverLetter/bodyParagraphs/";
+        } else {
+            return List.of();
+        }
+        return claims.stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(claim -> isFinalContent(claim.getDisposition()))
+                .filter(claim -> safe(claim.getContentPaths()).stream()
+                        .anyMatch(path -> path.startsWith(contextPrefix)))
+                .flatMap(claim -> safe(claim.getEvidenceIds()).stream())
+                .filter(evidenceById::containsKey)
+                .filter(evidenceId -> evidenceById.get(evidenceId).stream()
+                        .anyMatch(record -> record.purpose().supports(purpose)))
+                .distinct()
+                .limit(MAX_CLAIM_REFERENCES)
+                .toList();
     }
 
     private List<GeneratedClaim> enrichAtomicEvidenceReferences(
