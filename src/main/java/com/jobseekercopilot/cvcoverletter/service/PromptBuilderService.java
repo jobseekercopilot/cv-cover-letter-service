@@ -23,7 +23,7 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class PromptBuilderService {
     static final int MAX_TRUSTED_INSTRUCTION_CHARACTERS = 12_000;
-    static final int MAX_UNTRUSTED_INPUT_CHARACTERS = 40_000;
+    static final int MAX_UNTRUSTED_INPUT_CHARACTERS = 170_000;
     static final int MAX_OUTPUT_SCHEMA_CHARACTERS = 20_000;
     private static final Pattern UNRESOLVED_PLACEHOLDER = Pattern.compile("\\{\\{[A-Z0-9_]+}}");
     private static final String SEPARATE_SCHEMA_MARKER =

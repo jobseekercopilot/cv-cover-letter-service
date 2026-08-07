@@ -53,6 +53,11 @@ The total normalised prompt-bound text is limited to 40,000 characters.
 Trusted owner, contact details, provenance IDs, source versions, and timestamps
 never reach prompt construction.
 
+Prompt construction serialises the accepted content into a server-owned evidence
+catalogue that includes opaque evidence IDs and provenance metadata. That assembled
+untrusted envelope is independently limited to 170,000 characters. The larger
+envelope limit does not increase any source-field or normalised-text allowance.
+
 ## Missing, duplicate, and conflicting data
 
 Warnings are emitted in stable request-field order and returned in

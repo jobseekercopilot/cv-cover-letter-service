@@ -8,15 +8,59 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobseekercopilot.cvcoverletter.config.LlmProperties;
 import com.jobseekercopilot.cvcoverletter.config.PromptBundleProperties;
+import com.jobseekercopilot.cvcoverletter.dto.EvidenceSnapshotFactInput;
 import com.jobseekercopilot.cvcoverletter.model.CvCoverLetterPrompt;
 import com.jobseekercopilot.cvcoverletter.model.EvidenceSource;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.DefaultResourceLoader;
 
 class PromptBuilderServiceTest {
+
+    @Test
+    void acceptsNinetyEightFactsAtExpandedUntrustedBoundary() {
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        var request = validVersionedRequest();
+        List.of(
+                        request.getEvidenceSnapshots().getCv(),
+                        request.getEvidenceSnapshots().getCoverLetter())
+                .forEach(snapshot -> {
+                    var selection = snapshot.getSelections().get(0);
+                    var facts = new ArrayList<EvidenceSnapshotFactInput>();
+                    for (int index = 0; index < 49; index++) {
+                        UUID factId = UUID.nameUUIDFromBytes((
+                                snapshot.getPurpose().name() + ":" + index)
+                                .getBytes(StandardCharsets.UTF_8));
+                        facts.add(new EvidenceSnapshotFactInput(
+                                factId,
+                                "DESCRIPTION",
+                                "Evidence " + index + " " + "x".repeat(100),
+                                false));
+                    }
+                    selection.setFacts(facts);
+                });
+
+        CvCoverLetterPrompt prompt = new PromptBuilderService(
+                objectMapper,
+                registry(objectMapper, "cv-cover-letter-1.5.8"),
+                new LlmProperties(),
+                new ClaimEvidenceCatalogFactory())
+                .buildPrompt(new GenerationInputNormalizer(
+                        Clock.fixed(
+                                Instant.parse("2026-07-24T13:00:00Z"),
+                                ZoneOffset.UTC))
+                        .normalize("owner-secret-123", request));
+
+        assertTrue(prompt.getUntrustedInput().length() > 40_000);
+        assertTrue(prompt.getUntrustedInput().length()
+                <= PromptBuilderService.MAX_UNTRUSTED_INPUT_CHARACTERS);
+    }
 
     @Test
     void onlyTheCanonicalSkillsReleasePublishesRevisionDeclaredSkills() {
