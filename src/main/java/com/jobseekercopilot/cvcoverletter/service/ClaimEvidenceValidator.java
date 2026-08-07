@@ -28,10 +28,10 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.15.0";
+    static final String POLICY_VERSION = "2.16.0";
     static final String CORE_SKILL_PROJECTION_POLICY_VERSION = "2.11.0";
     static final String ROLLBACK_POLICY_VERSION = "2.10.0";
-    private static final int MAX_CLAIMS = 40;
+    private static final int MAX_CLAIMS = 200;
     private static final int MAX_CLAIM_REFERENCES = 30;
     private static final int MAX_REVIEW_TEXT_LENGTH = 500;
     private static final int LEGACY_MIN_PROJECTED_CORE_SKILLS = 8;
