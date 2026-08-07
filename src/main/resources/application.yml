@@ -16,7 +16,7 @@ llm:
   task-type: ${LLM_TASK_TYPE:CV_COVER_LETTER_GENERATION}
   language: ${LLM_LANGUAGE:UK English}
   temperature: ${LLM_TEMPERATURE:0.0}
-  max-tokens: ${LLM_MAX_TOKENS:4096}
+  max-tokens: ${LLM_MAX_TOKENS:8192}
 
 prompt:
   selected-release-id: ${PROMPT_BUNDLE_RELEASE:cv-cover-letter-1.5.9}
