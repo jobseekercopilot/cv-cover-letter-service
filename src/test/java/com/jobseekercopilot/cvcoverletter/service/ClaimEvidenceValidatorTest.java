@@ -54,6 +54,36 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
+    void supplementalEvidenceNormalizationCannotExceedTheSchemaBound() {
+        List<String> primary = new java.util.ArrayList<>();
+        for (int index = 0; index < 29; index++) {
+            primary.add("PRIMARY-" + index);
+        }
+
+        List<String> normalized =
+                new ClaimEvidenceValidator().mergeBoundedEvidenceReferences(
+                        primary,
+                        List.of(
+                                "PRIMARY-0",
+                                "SUPPLEMENTAL-1",
+                                "SUPPLEMENTAL-2"));
+
+        assertEquals(30, normalized.size());
+        assertEquals(primary, normalized.subList(0, primary.size()));
+        assertEquals("SUPPLEMENTAL-1", normalized.get(29));
+        assertFalse(normalized.contains("SUPPLEMENTAL-2"));
+
+        List<String> invalidProviderReferences = new java.util.ArrayList<>(primary);
+        invalidProviderReferences.add("PRIMARY-29");
+        invalidProviderReferences.add("PRIMARY-30");
+        assertEquals(
+                invalidProviderReferences,
+                new ClaimEvidenceValidator().mergeBoundedEvidenceReferences(
+                        invalidProviderReferences,
+                        List.of("SUPPLEMENTAL-1")));
+    }
+
+    @Test
     void acceptsCompleteLedgerAndKeepsReviewOnlyClaimsOutOfFinalContent() throws Exception {
         ObjectNode output = validOutput();
         ArrayNode claims = (ArrayNode) output.path("claims");

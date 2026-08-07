@@ -28,7 +28,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.13.0";
+    static final String POLICY_VERSION = "2.14.0";
     static final String CORE_SKILL_PROJECTION_POLICY_VERSION = "2.11.0";
     static final String ROLLBACK_POLICY_VERSION = "2.10.0";
     private static final int MAX_CLAIMS = 40;
@@ -1719,10 +1719,9 @@ public class ClaimEvidenceValidator {
                     unclaimedPaths.add(contentPath);
                     continue;
                 }
-                LinkedHashSet<String> mergedEvidence =
-                        new LinkedHashSet<>(safe(owner.getEvidenceIds()));
-                mergedEvidence.addAll(safe(claim.getEvidenceIds()));
-                owner.setEvidenceIds(List.copyOf(mergedEvidence));
+                owner.setEvidenceIds(mergeBoundedEvidenceReferences(
+                        safe(owner.getEvidenceIds()),
+                        safe(claim.getEvidenceIds())));
             }
             if (unclaimedPaths.isEmpty()) {
                 continue;
@@ -1860,8 +1859,8 @@ public class ClaimEvidenceValidator {
             EvidencePurpose purpose = documentPurpose(
                     claim.getContentPaths(),
                     "$.claims");
-            LinkedHashSet<String> evidenceIds =
-                    new LinkedHashSet<>(safe(claim.getEvidenceIds()));
+            LinkedHashSet<String> supplementalEvidenceIds =
+                    new LinkedHashSet<>();
             for (String contentPath : claim.getContentPaths()) {
                 if (preserveCanonicalTitleProvenance
                         && isCanonicalDocumentTitlePath(contentPath)) {
@@ -1907,20 +1906,42 @@ public class ClaimEvidenceValidator {
                                     value.textValue(),
                                     record.value()));
                     if (exactApprovedFact || exactApprovedNarrative) {
-                        evidenceIds.add(evidenceId);
+                        supplementalEvidenceIds.add(evidenceId);
                     }
                     if (exactSupportedTerm) {
-                        evidenceIds.add(evidenceId);
+                        supplementalEvidenceIds.add(evidenceId);
                     }
                 });
             }
             GeneratedClaim copy = copyWithClaimId(
                     claim,
                     claim.getClaimId());
-            copy.setEvidenceIds(List.copyOf(evidenceIds));
+            copy.setEvidenceIds(mergeBoundedEvidenceReferences(
+                    safe(claim.getEvidenceIds()),
+                    supplementalEvidenceIds));
             normalized.add(copy);
         }
         return List.copyOf(normalized);
+    }
+
+    List<String> mergeBoundedEvidenceReferences(
+            List<String> primary,
+            Iterable<String> supplemental
+    ) {
+        LinkedHashSet<String> merged = new LinkedHashSet<>(safe(primary));
+        if (merged.size() > MAX_CLAIM_REFERENCES) {
+            return List.copyOf(merged);
+        }
+        for (String evidenceId : supplemental) {
+            if (merged.contains(evidenceId)) {
+                continue;
+            }
+            if (merged.size() == MAX_CLAIM_REFERENCES) {
+                break;
+            }
+            merged.add(evidenceId);
+        }
+        return List.copyOf(merged);
     }
 
     private List<GeneratedClaim> isolateStructuredProjectClaims(
