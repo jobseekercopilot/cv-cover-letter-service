@@ -28,7 +28,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.17.0";
+    static final String POLICY_VERSION = "2.18.0";
     static final String CORE_SKILL_PROJECTION_POLICY_VERSION = "2.11.0";
     static final String ROLLBACK_POLICY_VERSION = "2.10.0";
     private static final int MAX_CLAIMS = 200;
@@ -1869,6 +1869,7 @@ public class ClaimEvidenceValidator {
                 matchingEvidenceIds = contextualNarrativeEvidenceIds(
                         claims,
                         contentPath,
+                        value,
                         evidenceById,
                         purpose);
             }
@@ -1894,28 +1895,44 @@ public class ClaimEvidenceValidator {
     private List<String> contextualNarrativeEvidenceIds(
             List<GeneratedClaim> claims,
             String contentPath,
+            JsonNode contentValue,
             Map<String, List<ApprovedEvidenceRecord>> evidenceById,
             EvidencePurpose purpose
     ) {
-        String contextPrefix;
+        List<GeneratedClaim> contextualClaims;
         Matcher workResponsibility = Pattern.compile(
                 "^/cv/workHistory/(\\d+)/responsibilities/\\d+$")
                 .matcher(contentPath);
         if (workResponsibility.matches()) {
-            contextPrefix = "/cv/workHistory/"
+            String contextPrefix = "/cv/workHistory/"
                     + workResponsibility.group(1)
                     + "/";
+            contextualClaims = finalClaimsWithin(
+                    claims,
+                    contextPrefix);
         } else if (contentPath.matches(
                 "^/coverLetter/bodyParagraphs/\\d+$")) {
-            contextPrefix = "/coverLetter/bodyParagraphs/";
+            contextualClaims = finalClaimsWithin(
+                    claims,
+                    "/coverLetter/bodyParagraphs/");
+            if (contextualClaims.isEmpty()
+                    && contentValue.isTextual()) {
+                contextualClaims = claims.stream()
+                        .filter(java.util.Objects::nonNull)
+                        .filter(claim -> isFinalContent(
+                                claim.getDisposition()))
+                        .filter(this::isStructuredCvSiblingClaim)
+                        .filter(claim -> hasNarrativeAnchor(
+                                claim,
+                                contentValue.textValue(),
+                                evidenceById,
+                                purpose))
+                        .toList();
+            }
         } else {
             return List.of();
         }
-        return claims.stream()
-                .filter(java.util.Objects::nonNull)
-                .filter(claim -> isFinalContent(claim.getDisposition()))
-                .filter(claim -> safe(claim.getContentPaths()).stream()
-                        .anyMatch(path -> path.startsWith(contextPrefix)))
+        return contextualClaims.stream()
                 .flatMap(claim -> safe(claim.getEvidenceIds()).stream())
                 .filter(evidenceById::containsKey)
                 .filter(evidenceId -> evidenceById.get(evidenceId).stream()
@@ -1923,6 +1940,68 @@ public class ClaimEvidenceValidator {
                 .distinct()
                 .limit(MAX_CLAIM_REFERENCES)
                 .toList();
+    }
+
+    private List<GeneratedClaim> finalClaimsWithin(
+            List<GeneratedClaim> claims,
+            String contextPrefix
+    ) {
+        return claims.stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(claim -> isFinalContent(claim.getDisposition()))
+                .filter(claim -> safe(claim.getContentPaths()).stream()
+                        .anyMatch(path -> path.startsWith(contextPrefix)))
+                .toList();
+    }
+
+    private boolean isStructuredCvSiblingClaim(GeneratedClaim claim) {
+        return safe(claim.getContentPaths()).stream()
+                .anyMatch(path -> path.startsWith("/cv/projects/")
+                        || path.startsWith("/cv/workHistory/")
+                        || path.startsWith("/cv/qualifications/")
+                        || path.startsWith("/cv/coreSkills/"));
+    }
+
+    private boolean hasNarrativeAnchor(
+            GeneratedClaim claim,
+            String narrative,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            EvidencePurpose purpose
+    ) {
+        return safe(claim.getEvidenceIds()).stream()
+                .flatMap(evidenceId -> evidenceById
+                        .getOrDefault(evidenceId, List.of())
+                        .stream())
+                .filter(record -> record.purpose().supports(purpose))
+                .filter(record -> factType(
+                        record,
+                        "HEADING",
+                        "PROJECT_TITLE",
+                        "ROLE_TITLE",
+                        "QUALIFICATION_TITLE",
+                        "QUALIFICATION_NAME",
+                        "DECLARED_SKILL",
+                        "DEMONSTRATED_SKILL"))
+                .anyMatch(record -> containsWholeEvidenceValue(
+                        narrative,
+                        record.value()));
+    }
+
+    private boolean containsWholeEvidenceValue(
+            String narrative,
+            String evidenceValue
+    ) {
+        String normalizedNarrative = normalise(narrative);
+        String normalizedEvidence = normalise(evidenceValue);
+        if (normalizedEvidence.length() < 3) {
+            return false;
+        }
+        return Pattern.compile(
+                        "(?<![\\p{L}\\p{N}])"
+                                + Pattern.quote(normalizedEvidence)
+                                + "(?![\\p{L}\\p{N}])")
+                .matcher(normalizedNarrative)
+                .find();
     }
 
     private List<GeneratedClaim> enrichAtomicEvidenceReferences(
