@@ -160,7 +160,7 @@ class ClaimEvidenceValidatorAdaptiveTest {
     }
 
     @Test
-    void adaptsProjectionToEightAtTheFinalFortyClaimBoundary()
+    void projectsAllTwelveSkillsWithTheExpandedClaimCapacity()
             throws Exception {
         CapacityFixture fixture = capacityFixture();
         GeneratedApplicationDocuments documents = parseWithoutValidation(
@@ -174,16 +174,16 @@ class ClaimEvidenceValidatorAdaptiveTest {
                 true,
                 true);
 
-        assertEquals(40, documents.getClaims().size());
+        assertEquals(44, documents.getClaims().size());
         assertEquals(
-                8,
+                12,
                 projectedSkillClaims(documents).size(),
                 documents.getClaims().stream()
                         .map(claim -> claim.getClaimId()
                                 + "=" + claim.getContentPaths())
                         .toList()
                         .toString());
-        assertEquals(8, fixture.output().at("/cv/coreSkills").size());
+        assertEquals(12, fixture.output().at("/cv/coreSkills").size());
         assertTrue(projectedSkillClaims(documents).stream()
                 .allMatch(claim -> claim.getEvidenceIds().size() == 1
                         && claim.getContentPaths().size() == 1));
