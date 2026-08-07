@@ -2494,6 +2494,114 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
+    void inheritsOnlyFromStructuredCvClaimsWithAnExactNarrativeAnchor()
+            throws Exception {
+        useVersionedCatalog();
+        useSchemaFixture("cv-cover-letter-1.5.9");
+        ObjectNode output = (ObjectNode) objectMapper.readTree(
+                CvCoverLetterServiceTest.activeValidJson());
+        String projectTitleFact = com.jobseekercopilot.cvcoverletter
+                .GenerationInputFixtures.CV_PROJECT_TITLE_FACT_ID
+                .toString();
+        String projectDescriptionFact = com.jobseekercopilot.cvcoverletter
+                .GenerationInputFixtures.CV_PROJECT_FACT_ID
+                .toString();
+        List<ApprovedEvidenceRecord> sharedRecords =
+                new java.util.ArrayList<>(catalog.records());
+        catalog.records().stream()
+                .filter(record -> record.evidenceId().equals(
+                                projectTitleFact)
+                        || record.evidenceId().equals(
+                                projectDescriptionFact))
+                .map(record -> new ApprovedEvidenceRecord(
+                        record.evidenceId(),
+                        record.source(),
+                        record.sourcePath(),
+                        record.value(),
+                        record.factType(),
+                        record.category(),
+                        EvidencePurpose.COVER_LETTER))
+                .forEach(sharedRecords::add);
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                List.copyOf(sharedRecords),
+                catalog.sectionOrder());
+
+        ObjectNode project = ((ArrayNode) output.at("/cv/projects"))
+                .addObject();
+        project.put("title", "Job Seeker Copilot");
+        project.put("role", "");
+        project.put("context", "");
+        project.put("startDate", "");
+        project.put("endDate", "");
+        project.put("description", "Built useful services.");
+        project.putArray("highlights");
+        ((ObjectNode) output.at("/cv"))
+                .put("personalSummary",
+                        "A developer focused on dependable delivery.");
+        ((ArrayNode) output.at("/personalSummaryClaim/evidenceIds"))
+                .removeAll()
+                .add(projectDescriptionFact);
+
+        ArrayNode paragraphs = (ArrayNode) output.at(
+                "/coverLetter/bodyParagraphs");
+        List<String> anchoredParagraphs = List.of(
+                "Job Seeker Copilot demonstrates useful services.",
+                "Through Job Seeker Copilot, I deliver dependable solutions.",
+                "My Job Seeker Copilot work shows careful implementation.");
+        for (int index = 0; index < paragraphs.size(); index++) {
+            paragraphs.set(
+                    index,
+                    objectMapper.getNodeFactory().textNode(
+                            anchoredParagraphs.get(index)));
+        }
+        ArrayNode claims = (ArrayNode) output.path("claims");
+        claims.remove(4);
+        claims.remove(3);
+        ObjectNode projectClaim = claims.addObject();
+        projectClaim.put("claimId", "CLAIM-020");
+        projectClaim.put("disposition", "SUPPORTED");
+        projectClaim.putArray("evidenceIds")
+                .add(projectTitleFact)
+                .add(projectDescriptionFact);
+        projectClaim.putArray("contentPaths")
+                .add("/cv/projects/0/title")
+                .add("/cv/projects/0/description");
+        projectClaim.put("reviewText", "");
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertEquals(
+                3,
+                accepted.getClaims().stream()
+                        .filter(claim -> claim.getContentPaths().stream()
+                                .anyMatch(path -> path.startsWith(
+                                        "/coverLetter/bodyParagraphs/")))
+                        .filter(claim -> claim.getEvidenceIds().contains(
+                                projectTitleFact))
+                        .count());
+
+        ObjectNode withoutAnchor = output.deepCopy();
+        ArrayNode unanchoredParagraphs = (ArrayNode) withoutAnchor.at(
+                "/coverLetter/bodyParagraphs");
+        List<String> unanchoredText = List.of(
+                "I offer a careful and dependable approach.",
+                "I value thoughtful collaboration and clear communication.",
+                "I would welcome the opportunity to contribute.");
+        for (int index = 0; index < unanchoredParagraphs.size(); index++) {
+            unanchoredParagraphs.set(
+                    index,
+                    objectMapper.getNodeFactory().textNode(
+                            unanchoredText.get(index)));
+        }
+        InvalidLlmResponseException error = assertRejected(
+                withoutAnchor,
+                "final content contains unaccounted claim paths");
+        assertTrue(error.getMessage().contains(
+                "/coverLetter/bodyParagraphs/0"));
+    }
+
+    @Test
     void rejectsMalformedOneBasedBodyParagraphPointers()
             throws Exception {
         useVersionedCatalog();
