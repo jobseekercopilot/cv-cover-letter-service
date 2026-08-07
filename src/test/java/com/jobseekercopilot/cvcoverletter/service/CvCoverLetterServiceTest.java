@@ -136,7 +136,7 @@ class CvCoverLetterServiceTest {
         assertEquals("1.0", actual.inputSchemaVersion());
         assertEquals(10, actual.claimLedger().claims().size());
         assertEquals(64, actual.claimLedger().ledgerSha256().length());
-        assertEquals("2.16.0", actual.claimLedger().policyVersion());
+        assertEquals("2.17.0", actual.claimLedger().policyVersion());
         assertEquals("3.5.2", actual.claimLedger().parserVersion());
         verify(llmGatewayApi).generateV2(any());
         verifyNoInteractions(

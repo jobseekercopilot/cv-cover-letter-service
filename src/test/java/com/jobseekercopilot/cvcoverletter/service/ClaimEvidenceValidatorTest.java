@@ -135,7 +135,7 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
-    void rejectsTheExactRealProviderLedgerOmissionWithoutWeakeningCoverage()
+    void restoresGroundedNarrativeCoverageButStillRejectsIdentityOmissions()
             throws Exception {
         ObjectNode output = validOutput();
         ArrayNode claims = (ArrayNode) output.path("claims");
@@ -163,7 +163,12 @@ class ClaimEvidenceValidatorTest {
         InvalidLlmResponseException error =
                 assertRejected(output, "final content contains unaccounted claim paths");
 
-        omittedPaths.forEach(path ->
+        java.util.Set<String> identityPaths = java.util.Set.of(
+                "/cv/title",
+                "/cv/personalSummary",
+                "/coverLetter/title",
+                "/coverLetter/closingParagraph");
+        identityPaths.forEach(path ->
                 assertTrue(error.getMessage().contains(path), error.getMessage()));
     }
 
@@ -2444,7 +2449,7 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
-    void rejectsIncompleteOrAmbiguousOneBasedBodyParagraphLedgers()
+    void repairsGroundedBodyParagraphCoverageButRejectsInvalidPointers()
             throws Exception {
         useVersionedCatalog();
 
@@ -2454,9 +2459,7 @@ class ClaimEvidenceValidatorTest {
                 partial,
                 7,
                 "/coverLetter/bodyParagraphs/3");
-        assertRejected(
-                partial,
-                "final content contains unaccounted claim paths");
+        parse(partial);
 
         ObjectNode duplicate = versionedOutput();
         shiftBodyParagraphPathsOneBased(duplicate);
@@ -2465,9 +2468,7 @@ class ClaimEvidenceValidatorTest {
                         1,
                         objectMapper.getNodeFactory().textNode(
                                 "/coverLetter/bodyParagraphs/2"));
-        assertRejected(
-                duplicate,
-                "final content contains unaccounted claim paths");
+        parse(duplicate);
 
         ObjectNode mixed = versionedOutput();
         shiftBodyParagraphPathsOneBased(mixed);
