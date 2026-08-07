@@ -2,7 +2,7 @@
 
 Prompt release `cv-cover-letter-1.5.11`, output schema `3.10.0`, evaluation
 policy `1.5.8`, parser `3.6.0`, claim policy `2.14.0` and deterministic quality
-policy `1.3.0`
+policy `1.4.0`
 establish the current claim-provenance and document-quality boundary.
 
 Release `1.5.1` makes the provider perform an explicit final-pointer coverage
@@ -155,7 +155,7 @@ fail-closed in parser and claim validation.
 Version routing remains schema-bound; a release is excluded when a shared
 schema cannot safely distinguish its semantics. Active release `1.5.11` uses
 schema `3.10.0`, evaluation policy `1.5.8`, parser `3.6.0`,
-claim policy `2.14.0` and quality policy `1.3.0`. Immutable immediate rollback
+claim policy `2.14.0` and quality policy `1.4.0`. Immutable immediate rollback
 `1.5.6` retains schema `3.7.0`, evaluation policy `1.5.4`, parser `3.4.0` and
 claim policy `2.11.0`. Release `1.5.7` is preserved in version-control history
 but is not packaged or included in the approved index because it shares schema
@@ -293,7 +293,8 @@ normalised and accepted. It:
    their governed sections, and requires each included project to use one
    selected PROJECT entry;
 6. requires every project description and highlight to cite same-selection
-   project narrative evidence.
+   project narrative evidence. Supplemental non-PROJECT citations do not make
+   a project ambiguous when exactly one PROJECT selection grounds it.
 
 Project facts cannot satisfy the atomic employment fields. An optional
 employment narrative without an accepted claim is cleared rather than being

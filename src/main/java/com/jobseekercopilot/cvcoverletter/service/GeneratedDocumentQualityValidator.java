@@ -27,7 +27,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class GeneratedDocumentQualityValidator {
-    static final String POLICY_VERSION = "1.3.0";
+    static final String POLICY_VERSION = "1.4.0";
     private static final int MAX_SKILLS = 12;
     private static final Pattern COVER_LETTER_SKILL_LIST = Pattern.compile(
             "(?i)^\\s*(?:key skills|technical skills|skills\\s*&\\s*expertise)"
@@ -295,8 +295,7 @@ public class GeneratedDocumentQualityValidator {
                     "$.cv.projects[" + index + "].title",
                     "project title is missing");
             String prefix = "/cv/projects/" + index + "/";
-            Set<String> selections = new LinkedHashSet<>();
-            Set<String> categories = new LinkedHashSet<>();
+            Set<String> projectSelections = new LinkedHashSet<>();
             for (GeneratedClaim claim : claims) {
                 if (!isFinal(claim)) {
                     continue;
@@ -317,16 +316,17 @@ public class GeneratedDocumentQualityValidator {
                                         .supports(EvidencePurpose.CV)) {
                             continue;
                         }
-                        selections.add(selectionPath(record.sourcePath()));
-                        categories.add(record.category());
+                        if ("PROJECT".equals(record.category())) {
+                            projectSelections.add(
+                                    selectionPath(record.sourcePath()));
+                        }
                     }
                 }
             }
-            require(selections.size() == 1
-                            && categories.equals(Set.of("PROJECT")),
+            require(projectSelections.size() == 1,
                     "$.cv.projects[" + index + "]",
                     "project fields must come from one selected project entry");
-            String selection = selections.iterator().next();
+            String selection = projectSelections.iterator().next();
             require(StringUtils.hasText(
                             documents.getCv().getProjects().get(index)
                                     .getDescription()),
