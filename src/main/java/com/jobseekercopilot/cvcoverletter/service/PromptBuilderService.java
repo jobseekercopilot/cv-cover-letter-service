@@ -10,10 +10,12 @@ import com.jobseekercopilot.cvcoverletter.dto.InputWarning;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidGenerationInputException;
 import com.jobseekercopilot.cvcoverletter.model.ClaimEvidenceCatalog;
 import com.jobseekercopilot.cvcoverletter.model.CvCoverLetterPrompt;
+import com.jobseekercopilot.cvcoverletter.model.EvidenceSource;
 import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -34,8 +36,10 @@ public class PromptBuilderService {
             "[CANONICAL JOB FACTS SUPPLIED THROUGH THE UNTRUSTED INPUT CHANNEL]";
     private static final String SEPARATE_WARNINGS_MARKER =
             "[INPUT WARNINGS SUPPLIED THROUGH THE UNTRUSTED INPUT CHANNEL]";
-    private static final String CANONICAL_PROFILE_SKILLS_EVALUATION_POLICY =
-            "1.5.6";
+    private static final Set<String> RULES_VERSIONS_WITH_CANONICAL_PROFILE_SKILLS =
+            Set.of("1.5.8", "1.5.9");
+    private static final String SEPARATED_DECLARED_SKILLS_RULES_VERSION =
+            "1.5.9";
 
     private final ObjectMapper objectMapper;
     private final PromptBundleRegistry promptBundleRegistry;
@@ -49,8 +53,8 @@ public class PromptBuilderService {
             String rules = bundle.rules();
             String outputSchemaJson = bundle.outputSchemaJson();
             boolean includeRevisionDeclaredSkills =
-                    CANONICAL_PROFILE_SKILLS_EVALUATION_POLICY.equals(
-                            bundle.metadata().evaluationPolicyVersion());
+                    RULES_VERSIONS_WITH_CANONICAL_PROFILE_SKILLS.contains(
+                            bundle.metadata().rulesVersion());
             ClaimEvidenceCatalog evidenceCatalog = evidenceCatalogFactory.create(
                     input,
                     includeRevisionDeclaredSkills);
@@ -72,10 +76,17 @@ public class PromptBuilderService {
                 throw new IllegalStateException(
                         "Selected prompt bundle contains an unresolved contract placeholder.");
             }
-            String untrustedInput = toPrettyJson(new UntrustedGenerationInput(
-                    "UNTRUSTED_DATA_ONLY",
-                    evidenceCatalog,
-                    input.warnings()));
+            Object untrustedPromptInput =
+                    SEPARATED_DECLARED_SKILLS_RULES_VERSION.equals(
+                            bundle.metadata().rulesVersion())
+                            ? separatedDeclaredSkillInput(
+                                    evidenceCatalog,
+                                    input.warnings())
+                            : new UntrustedGenerationInput(
+                                    "UNTRUSTED_DATA_ONLY",
+                                    evidenceCatalog,
+                                    input.warnings());
+            String untrustedInput = toPrettyJson(untrustedPromptInput);
             JsonNode outputShape = objectMapper.readTree(outputSchemaJson);
             if (outputShape == null || !outputShape.isObject()) {
                 throw new IllegalStateException("Selected prompt bundle output schema is not an object.");
@@ -171,9 +182,41 @@ public class PromptBuilderService {
                 && schema.path("additionalProperties").isBoolean();
     }
 
+    private SeparatedDeclaredSkillInput separatedDeclaredSkillInput(
+            ClaimEvidenceCatalog evidenceCatalog,
+            List<InputWarning> inputWarnings
+    ) {
+        List<String> candidates = evidenceCatalog.records().stream()
+                .filter(record -> record.source()
+                        == EvidenceSource.PROFILE_REVISION)
+                .map(record -> record.value())
+                .distinct()
+                .toList();
+        ClaimEvidenceCatalog claimableEvidence = new ClaimEvidenceCatalog(
+                evidenceCatalog.catalogVersion(),
+                evidenceCatalog.records().stream()
+                        .filter(record -> record.source()
+                                != EvidenceSource.PROFILE_REVISION)
+                        .toList(),
+                evidenceCatalog.sectionOrder());
+        return new SeparatedDeclaredSkillInput(
+                "UNTRUSTED_DATA_ONLY",
+                claimableEvidence,
+                candidates,
+                inputWarnings);
+    }
+
     private record UntrustedGenerationInput(
             String classification,
             ClaimEvidenceCatalog approvedEvidence,
+            List<InputWarning> inputWarnings
+    ) {
+    }
+
+    private record SeparatedDeclaredSkillInput(
+            String classification,
+            ClaimEvidenceCatalog approvedEvidence,
+            List<String> serviceProjectedCoreSkillCandidates,
             List<InputWarning> inputWarnings
     ) {
     }

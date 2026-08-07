@@ -2,9 +2,9 @@
 
 CV and Cover Letter Service treats model output as untrusted until it passes
 the exact reviewed schema and local safe-content policy. The active prompt
-release is `cv-cover-letter-1.5.8`; it owns output schema `3.8.0` and
-evaluation policy `1.5.6` at
-`src/main/resources/prompts/bundles/cv-cover-letter-1.5.8/`. Its reviewed
+release is `cv-cover-letter-1.5.9`; it owns output schema `3.8.0` and
+evaluation policy `1.5.7` at
+`src/main/resources/prompts/bundles/cv-cover-letter-1.5.9/`. Its reviewed
 `output-schema.json` checksum is pinned in that release's immutable manifest.
 
 ## One contract at both boundaries
@@ -44,7 +44,7 @@ service's deliberately smaller subset.
 | Active projected public claim ledger | 4–40 claims |
 | Immediate rollback projected public claim ledger | 3–40 claims |
 
-The active `1.5.8` provider ledger contains only `SUPPORTED` and `REWORDED`
+The active `1.5.9` provider ledger contains only `SUPPORTED` and `REWORDED`
 final-content claims. Each ordinary claim requires at least one approved
 evidence ID and one final path, and `reviewText` is exactly empty. Unsupported
 or unconfirmed material is omitted from both the documents and claims; a neutral
@@ -180,7 +180,7 @@ Successful response metadata and structured logs record the prompt release,
 template, rules and schema versions and their hashes. Request/response logs
 also record LLM contract `2.0`, the schema-applied parser version, claim policy
 version, the actual model ID and the gateway-owned deployment, admission and
-pricing-policy versions. Active release `1.5.8` records parser `3.5.0`, claim
+pricing-policy versions. Active release `1.5.9` records parser `3.5.0`, claim
 policy `2.13.0` and quality policy `1.2.0`; immediate rollback schema `3.7.0`
 records parser `3.4.0` and claim policy `2.11.0`; schema `3.6.0` records parser
 `3.3.0` and claim policy `2.10.0`; selecting release `1.5.3` retains parser

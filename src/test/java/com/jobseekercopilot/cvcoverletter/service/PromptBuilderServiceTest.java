@@ -48,7 +48,7 @@ class PromptBuilderServiceTest {
 
         CvCoverLetterPrompt prompt = new PromptBuilderService(
                 objectMapper,
-                registry(objectMapper, "cv-cover-letter-1.5.8"),
+                registry(objectMapper, "cv-cover-letter-1.5.9"),
                 new LlmProperties(),
                 new ClaimEvidenceCatalogFactory())
                 .buildPrompt(new GenerationInputNormalizer(
@@ -75,7 +75,7 @@ class PromptBuilderServiceTest {
 
         CvCoverLetterPrompt active = new PromptBuilderService(
                 objectMapper,
-                registry(objectMapper, "cv-cover-letter-1.5.8"),
+                registry(objectMapper, "cv-cover-letter-1.5.9"),
                 new LlmProperties(),
                 new ClaimEvidenceCatalogFactory())
                 .buildPrompt(input);
@@ -89,9 +89,22 @@ class PromptBuilderServiceTest {
         assertTrue(active.getEvidenceCatalog().records().stream()
                 .anyMatch(record -> record.source()
                         == EvidenceSource.PROFILE_REVISION));
+        String declaredEvidenceId = active.getEvidenceCatalog().records().stream()
+                .filter(record -> record.source()
+                        == EvidenceSource.PROFILE_REVISION)
+                .map(record -> record.evidenceId())
+                .findFirst()
+                .orElseThrow();
+        assertFalse(active.getUntrustedInput().contains(declaredEvidenceId));
+        assertFalse(active.getUntrustedInput().contains("PROFILE_REVISION"));
+        assertTrue(active.getUntrustedInput().contains(
+                "serviceProjectedCoreSkillCandidates"));
+        assertTrue(active.getUntrustedInput().contains("Spring"));
         assertFalse(rollback.getEvidenceCatalog().records().stream()
                 .anyMatch(record -> record.source()
                         == EvidenceSource.PROFILE_REVISION));
+        assertFalse(rollback.getUntrustedInput().contains(
+                "serviceProjectedCoreSkillCandidates"));
     }
 
     @Test
@@ -100,7 +113,7 @@ class PromptBuilderServiceTest {
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBuilderService service = new PromptBuilderService(
                 objectMapper,
-                registry(objectMapper, "cv-cover-letter-1.5.8"),
+                registry(objectMapper, "cv-cover-letter-1.5.9"),
                 properties,
                 new ClaimEvidenceCatalogFactory());
         GenerationInputNormalizer normalizer = new GenerationInputNormalizer(
@@ -113,7 +126,7 @@ class PromptBuilderServiceTest {
         assertTrue(result.getTrustedInstructions().contains("UK English"));
         assertTrue(result.getTrustedInstructions().contains("Aim for 5 to 7 concise paragraphs"));
         assertTrue(result.getTrustedInstructions().contains("specific to the job"));
-        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.5.8"));
+        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.5.9"));
         assertTrue(result.getTrustedInstructions().contains(
                 "Generic, professional and application prose is"));
         assertTrue(result.getTrustedInstructions().contains(

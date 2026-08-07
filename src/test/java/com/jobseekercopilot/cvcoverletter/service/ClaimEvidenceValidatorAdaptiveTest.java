@@ -43,7 +43,7 @@ class ClaimEvidenceValidatorAdaptiveTest {
                 validator,
                 new GeneratedDocumentQualityValidator());
         try (InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.5.8/output-schema.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.9/output-schema.json")) {
             if (input == null) {
                 throw new IllegalStateException(
                         "Active adaptive schema fixture is missing.");

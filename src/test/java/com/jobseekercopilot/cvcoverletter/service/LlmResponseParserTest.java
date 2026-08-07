@@ -34,7 +34,7 @@ class LlmResponseParserTest {
                 new ClaimEvidenceValidator(),
                 new GeneratedDocumentQualityValidator());
         try (InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.5.8/output-schema.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.9/output-schema.json")) {
             if (input == null) {
                 throw new IllegalStateException("Active output schema fixture is missing.");
             }

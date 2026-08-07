@@ -1,7 +1,7 @@
 # Claim evidence policy
 
-Prompt release `cv-cover-letter-1.5.8`, output schema `3.8.0`, evaluation
-policy `1.5.6`, parser `3.5.0`, claim policy `2.13.0` and deterministic quality
+Prompt release `cv-cover-letter-1.5.9`, output schema `3.8.0`, evaluation
+policy `1.5.7`, parser `3.5.0`, claim policy `2.13.0` and deterministic quality
 policy `1.2.0`
 establish the current claim-provenance and document-quality boundary.
 
@@ -32,7 +32,7 @@ evidence. Immediate rollback release `1.5.6` adds the exact ordinary-path
 allowlist and fixed-budget deterministic skill projection. Historical `1.5.7`
 adds the dedicated personal-summary claim, deterministic title coverage,
 unclaimed optional-description clearing and adaptive minimum-eight skill
-budget described below. Active `1.5.8` retains that wire shape while replacing
+budget described below. Active `1.5.9` retains that wire shape while replacing
 the versioned skill policy with job-targeted selection without a minimum or
 quota.
 Claimed unsafe prose, missing claimant evidence outside the exact exception,
@@ -129,9 +129,14 @@ prose. Demonstrated career evidence may support naturally woven cover-letter
 skill references. Legacy positional profile input retains its historical
 minimum-fill compatibility behaviour.
 
+Release `1.5.9` sends declared-skill values as dedicated service-projected
+core-skill candidates without their stable IDs. The complete internal catalogue
+retains those IDs for deterministic projection and final provenance, while the
+model-facing approved-evidence catalogue contains only IDs the model may cite.
+
 Version routing remains schema-bound; a release is excluded when a shared
-schema cannot safely distinguish its semantics. Active release `1.5.8` uses
-schema `3.8.0`, evaluation policy `1.5.6`, parser `3.5.0`,
+schema cannot safely distinguish its semantics. Active release `1.5.9` uses
+schema `3.8.0`, evaluation policy `1.5.7`, parser `3.5.0`,
 claim policy `2.13.0` and quality policy `1.2.0`. Immutable immediate rollback
 `1.5.6` retains schema `3.7.0`, evaluation policy `1.5.4`, parser `3.4.0` and
 claim policy `2.11.0`. Release `1.5.7` is preserved in version-control history
@@ -199,7 +204,7 @@ The published and local claim-ledger contract retains four dispositions:
 - `CONFIRMATION_REQUIRED`: useful candidate material that requires user review;
 - `REJECTED`: unsupported material excluded from the documents.
 
-The active `1.5.8` provider schema emits only supported and reworded ordinary
+The active `1.5.9` provider schema emits only supported and reworded ordinary
 entries, the required supported-or-reworded personal-summary sibling and the
 two structurally fixed supported canonical application siblings. Ordinary
 claims require approved evidence IDs and one or more exact JSON Pointer paths
