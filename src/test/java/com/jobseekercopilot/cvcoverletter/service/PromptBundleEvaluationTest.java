@@ -36,7 +36,7 @@ class PromptBundleEvaluationTest {
     void setUp() throws IOException {
         objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBundleProperties bundleProperties = new PromptBundleProperties();
-        bundleProperties.setSelectedReleaseId("cv-cover-letter-1.5.6");
+        bundleProperties.setSelectedReleaseId("cv-cover-letter-1.5.7");
         PromptBundleRegistry registry =
                 new PromptBundleRegistry(objectMapper, new DefaultResourceLoader(), bundleProperties);
         registry.initialize();
@@ -48,7 +48,7 @@ class PromptBundleEvaluationTest {
         normalizer = new GenerationInputNormalizer(
                 Clock.fixed(Instant.parse("2026-07-24T13:00:00Z"), ZoneOffset.UTC));
         try (InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.5.6/evaluation-policy.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.7/evaluation-policy.json")) {
             if (input == null) {
                 throw new IllegalStateException("Prompt evaluation policy fixture is missing.");
             }
@@ -62,7 +62,7 @@ class PromptBundleEvaluationTest {
 
         assertEquals(policy.policyVersion(), prompt.getGenerationMetadata().evaluationPolicyVersion());
         assertEquals(
-                "fc1f0791d752097f5788bb5e40bc03b7cbf56c3711e75200cc19633d427b9d95",
+                "75a99285df70e42b79d737734bbb34fb5e60fe0ac16550cfda8ed9779f461533",
                 sha256(boundaryMaterial(prompt)),
                 "The golden LLM boundary changed; review the trusted instructions, untrusted envelope, "
                         + "output schema and rollback metadata together.");
@@ -99,9 +99,9 @@ class PromptBundleEvaluationTest {
         assertTrue(trustedInstructions.contains(
                 "Generic, professional and application prose is"));
         assertTrue(trustedInstructions.contains(
-                "ordinary claims[].contentPaths plus both sibling"));
+                "ordinary claims[].contentPaths, personalSummaryClaim"));
         assertTrue(trustedInstructions.contains(
-                "with no\nmissing, duplicate or wrong-purpose pointer"));
+                "with no missing, duplicate or wrong-purpose pointer"));
     }
 
     @Test
@@ -140,6 +140,17 @@ class PromptBundleEvaluationTest {
                 .matches(pathPattern));
         assertFalse("/cv/coreSkills/0/name".matches(pathPattern));
         assertFalse("/cv/coreSkills/0/evidence".matches(pathPattern));
+        assertFalse("/cv/title".matches(pathPattern));
+        assertFalse("/cv/personalSummary".matches(pathPattern));
+        assertFalse("/coverLetter/title".matches(pathPattern));
+        JsonNode personalSummaryClaim = prompt.getOutputSchema().at(
+                "/properties/personalSummaryClaim/properties");
+        assertEquals(
+                "[\"CLAIM-9003\"]",
+                personalSummaryClaim.path("claimId").path("enum").toString());
+        assertEquals(
+                "[\"/cv/personalSummary\"]",
+                personalSummaryClaim.path("contentPath").path("enum").toString());
     }
 
     @Test
@@ -160,7 +171,7 @@ class PromptBundleEvaluationTest {
         assertTrue(trustedInstructions.contains(
                 "catalogVersion 2.0"));
         assertTrue(trustedInstructions.contains(
-                "source is\nEVIDENCE_SNAPSHOT"));
+                "EVIDENCE_SNAPSHOT ID for catalogVersion 2.0"));
         assertTrue(trustedInstructions.contains(
                 "JOB.TITLE, JOB.COMPANY, JOB.DESCRIPTION and REQUEST.GENERATION_INTENT"));
         assertTrue(trustedInstructions.contains(
@@ -199,7 +210,7 @@ class PromptBundleEvaluationTest {
         assertTrue(prompt.getTrustedInstructions().contains(
                 "scalar generationIntentEvidenceId"));
         assertTrue(prompt.getTrustedInstructions().contains(
-                "Ordinary claims must never contain either bookend pointer"));
+                "Ordinary claims must never contain a private-sibling pointer"));
         assertTrue(prompt.getTrustedInstructions().contains(
                 "group bookends or cite claimant evidence"));
         assertTrue(prompt.getTrustedInstructions().contains(

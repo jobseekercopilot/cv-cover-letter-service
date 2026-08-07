@@ -33,10 +33,19 @@ public class ValidatedClaimLedgerFactory {
         return create(
                 operationId,
                 generatedClaims,
-                LlmResponseParser.PARSER_VERSION.equals(parserVersion)
-                        ? ClaimEvidenceValidator.POLICY_VERSION
-                        : ClaimEvidenceValidator.ROLLBACK_POLICY_VERSION,
+                policyVersion(parserVersion),
                 parserVersion);
+    }
+
+    private String policyVersion(String parserVersion) {
+        if (LlmResponseParser.PARSER_VERSION.equals(parserVersion)) {
+            return ClaimEvidenceValidator.POLICY_VERSION;
+        }
+        if (LlmResponseParser.CORE_SKILL_PROJECTION_PARSER_VERSION.equals(
+                parserVersion)) {
+            return ClaimEvidenceValidator.CORE_SKILL_PROJECTION_POLICY_VERSION;
+        }
+        return ClaimEvidenceValidator.ROLLBACK_POLICY_VERSION;
     }
 
     public ValidatedClaimLedger create(

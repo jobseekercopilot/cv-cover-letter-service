@@ -26,17 +26,20 @@ import org.springframework.web.util.HtmlUtils;
 @Component
 public class LlmResponseParser {
 
-    static final String PARSER_VERSION = "3.4.0";
+    static final String PARSER_VERSION = "3.5.0";
+    static final String CORE_SKILL_PROJECTION_PARSER_VERSION = "3.4.0";
     static final String DEDICATED_CANONICAL_PARSER_VERSION = "3.3.0";
     static final String LEGACY_PARSER_VERSION = "3.2.0";
     static final int MAX_RAW_RESPONSE_CHARACTERS = 100_000;
     static final int MAX_FALLBACK_TEXT_CHARACTERS = 4_000;
     static final int MAX_FALLBACK_ARRAY_ITEMS = 40;
-    private static final int ACTIVE_ORDINARY_CLAIM_LIMIT = 26;
-    private static final int ROLLBACK_ORDINARY_CLAIM_LIMIT = 38;
+    private static final int ACTIVE_ORDINARY_CLAIM_LIMIT = 29;
+    private static final int CORE_SKILL_PROJECTION_ORDINARY_CLAIM_LIMIT = 26;
+    private static final int DEDICATED_CANONICAL_ORDINARY_CLAIM_LIMIT = 38;
     private static final int MAX_HTML_DECODE_PASSES = 5;
     private static final String OPENING_CLAIM_ID = "CLAIM-9001";
     private static final String CLOSING_CLAIM_ID = "CLAIM-9002";
+    private static final String PERSONAL_SUMMARY_CLAIM_ID = "CLAIM-9003";
     private static final String GENERATION_INTENT_EVIDENCE_ID =
             "REQUEST.GENERATION_INTENT";
     private static final String JOB_TITLE_EVIDENCE_ID = "JOB.TITLE";
@@ -45,9 +48,20 @@ public class LlmResponseParser {
             "/coverLetter/openingParagraph";
     private static final String CLOSING_PARAGRAPH_PATH =
             "/coverLetter/closingParagraph";
+    private static final String PERSONAL_SUMMARY_PATH = "/cv/personalSummary";
     private static final String ORDINARY_CLAIM_ID_PATTERN =
             "^CLAIM-[0-8][0-9]{2,3}$";
+    private static final String EVIDENCE_ID_PATTERN =
+            "^[A-Za-z0-9._-]{3,160}$";
     private static final String ORDINARY_CONTENT_PATH_PATTERN =
+            "^(?:/cv/targetRole"
+                    + "|/cv/projects/[0-9]+/(?:title|role|context|startDate|endDate|description)"
+                    + "|/cv/projects/[0-9]+/highlights/[0-9]+"
+                    + "|/cv/qualifications/[0-9]+/(?:qualificationName|issuingBody|status|grade|dateAchieved|expectedCompletion)"
+                    + "|/cv/workHistory/[0-9]+/(?:jobTitle|employer|startDate|endDate|tailoredDescription)"
+                    + "|/cv/workHistory/[0-9]+/responsibilities/[0-9]+"
+                    + "|/coverLetter/(?:jobTitle|companyName|bodyParagraphs/[0-9]+))$";
+    private static final String CORE_SKILL_PROJECTION_ORDINARY_CONTENT_PATH_PATTERN =
             "^(?:/cv/(?:title|targetRole|personalSummary)"
                     + "|/cv/projects/[0-9]+/(?:title|role|context|startDate|endDate|description)"
                     + "|/cv/projects/[0-9]+/highlights/[0-9]+"
@@ -55,7 +69,7 @@ public class LlmResponseParser {
                     + "|/cv/workHistory/[0-9]+/(?:jobTitle|employer|startDate|endDate|tailoredDescription)"
                     + "|/cv/workHistory/[0-9]+/responsibilities/[0-9]+"
                     + "|/coverLetter/(?:title|jobTitle|companyName|bodyParagraphs/[0-9]+))$";
-    private static final String ROLLBACK_ORDINARY_CONTENT_PATH_PATTERN =
+    private static final String DEDICATED_CANONICAL_ORDINARY_CONTENT_PATH_PATTERN =
             "^(?:/cv(?:/[A-Za-z0-9_-]+)+|/coverLetter/"
                     + "(?:title|jobTitle|companyName|bodyParagraphs/[0-9]+))$";
     private static final Set<String> CANONICAL_APPLICATION_CLAIM_FIELDS = Set.of(
@@ -64,6 +78,12 @@ public class LlmResponseParser {
             "generationIntentEvidenceId",
             "jobTitleEvidenceId",
             "companyEvidenceId",
+            "contentPath",
+            "reviewText");
+    private static final Set<String> PERSONAL_SUMMARY_CLAIM_FIELDS = Set.of(
+            "claimId",
+            "disposition",
+            "evidenceIds",
             "contentPath",
             "reviewText");
 
@@ -112,8 +132,12 @@ public class LlmResponseParser {
         }
         boolean usesDedicatedCanonicalClaims =
                 usesDedicatedCanonicalApplicationClaims(schema);
+        boolean usesDedicatedPersonalSummaryClaim =
+                usesDedicatedPersonalSummaryClaim(schema);
         boolean projectsCoreSkills =
                 usesDeterministicCoreSkillProjection(schema);
+        boolean usesAdaptiveCoreSkillBudget =
+                usesAdaptiveCoreSkillProjection(schema);
 
         try {
             JsonNode output = objectMapper.readTree(rawResponse);
@@ -123,9 +147,15 @@ public class LlmResponseParser {
             validateSchema(output, schema, "$");
             validatePlainText(output, "$");
             GeneratedApplicationDocuments documents =
-                    bindDocuments(output, usesDedicatedCanonicalClaims);
+                    bindDocuments(
+                            output,
+                            usesDedicatedCanonicalClaims,
+                            usesDedicatedPersonalSummaryClaim);
             if (usesDedicatedCanonicalClaims) {
                 requireProjectedCanonicalApplicationClaims(documents);
+            }
+            if (usesDedicatedPersonalSummaryClaim) {
+                requireProjectedPersonalSummaryClaim(documents);
             }
             if (evidenceCatalog != null
                     && schema.path("properties").path("claims").isObject()) {
@@ -135,12 +165,15 @@ public class LlmResponseParser {
                         evidenceCatalog,
                         usesCanonicalApplicationBookendPolicy(
                                 schema),
-                        projectsCoreSkills);
+                        projectsCoreSkills,
+                        usesAdaptiveCoreSkillBudget);
                 validateSchema(output, schema, "$");
                 validatePlainText(output, "$");
                 var normalizedClaims = documents.getClaims();
                 documents = bindDocuments(
-                        output, usesDedicatedCanonicalClaims);
+                        output,
+                        usesDedicatedCanonicalClaims,
+                        usesDedicatedPersonalSummaryClaim);
                 documents.setClaims(normalizedClaims);
                 if (usesStructuredQualityPolicy(schema)) {
                     qualityValidator.validate(
@@ -157,25 +190,37 @@ public class LlmResponseParser {
     }
 
     String parserVersion(JsonNode schema) {
-        if (!usesDedicatedCanonicalApplicationClaims(schema)) {
+        boolean usesDedicatedCanonicalClaims =
+                usesDedicatedCanonicalApplicationClaims(schema);
+        boolean usesDedicatedPersonalSummaryClaim =
+                usesDedicatedPersonalSummaryClaim(schema);
+        if (!usesDedicatedCanonicalClaims) {
             return LEGACY_PARSER_VERSION;
         }
+        if (usesDedicatedPersonalSummaryClaim) {
+            return PARSER_VERSION;
+        }
         return usesDeterministicCoreSkillProjection(schema)
-                ? PARSER_VERSION
+                ? CORE_SKILL_PROJECTION_PARSER_VERSION
                 : DEDICATED_CANONICAL_PARSER_VERSION;
     }
 
     String claimPolicyVersion(JsonNode schema) {
         boolean dedicated =
                 usesDedicatedCanonicalApplicationClaims(schema);
+        boolean dedicatedPersonalSummary =
+                usesDedicatedPersonalSummaryClaim(schema);
         return ClaimEvidenceValidator.policyVersion(
                 dedicated
-                        && usesDeterministicCoreSkillProjection(schema));
+                        && usesDeterministicCoreSkillProjection(schema),
+                dedicatedPersonalSummary
+                        && usesAdaptiveCoreSkillProjection(schema));
     }
 
     private GeneratedApplicationDocuments bindDocuments(
             JsonNode output,
-            boolean usesDedicatedCanonicalClaims
+            boolean usesDedicatedCanonicalClaims,
+            boolean usesDedicatedPersonalSummaryClaim
     ) throws JsonProcessingException {
         if (!usesDedicatedCanonicalClaims) {
             return objectMapper.treeToValue(
@@ -200,8 +245,25 @@ public class LlmResponseParser {
             claims.add(toGeneratedClaim(canonicalClaims.opening()));
             claims.add(toGeneratedClaim(canonicalClaims.closing()));
         }
+        if (usesDedicatedPersonalSummaryClaim
+                && providerDocuments.personalSummaryClaim() != null) {
+            claims.add(toGeneratedClaim(
+                    providerDocuments.personalSummaryClaim()));
+        }
         documents.setClaims(List.copyOf(claims));
         return documents;
+    }
+
+    private GeneratedClaim toGeneratedClaim(
+            PersonalSummaryClaim providerClaim
+    ) {
+        GeneratedClaim claim = new GeneratedClaim();
+        claim.setClaimId(providerClaim.claimId());
+        claim.setDisposition(providerClaim.disposition());
+        claim.setEvidenceIds(providerClaim.evidenceIds());
+        claim.setContentPaths(List.of(providerClaim.contentPath()));
+        claim.setReviewText(providerClaim.reviewText());
+        return claim;
     }
 
     private GeneratedClaim toGeneratedClaim(
@@ -230,6 +292,32 @@ public class LlmResponseParser {
                 claims, OPENING_CLAIM_ID, OPENING_PARAGRAPH_PATH);
         requireProjectedCanonicalApplicationClaim(
                 claims, CLOSING_CLAIM_ID, CLOSING_PARAGRAPH_PATH);
+    }
+
+    private void requireProjectedPersonalSummaryClaim(
+            GeneratedApplicationDocuments documents
+    ) {
+        long matches = documents.getClaims() == null
+                ? 0
+                : documents.getClaims().stream()
+                        .filter(claim -> claim != null)
+                        .filter(claim -> PERSONAL_SUMMARY_CLAIM_ID.equals(
+                                claim.getClaimId()))
+                        .filter(claim -> claim.getDisposition()
+                                        == ClaimDisposition.SUPPORTED
+                                || claim.getDisposition()
+                                        == ClaimDisposition.REWORDED)
+                        .filter(claim -> claim.getEvidenceIds() != null
+                                && !claim.getEvidenceIds().isEmpty()
+                                && claim.getEvidenceIds().size() <= 30)
+                        .filter(claim -> List.of(PERSONAL_SUMMARY_PATH)
+                                .equals(claim.getContentPaths()))
+                        .filter(claim -> "".equals(claim.getReviewText()))
+                        .count();
+        if (matches != 1) {
+            throw new IllegalStateException(
+                    "Dedicated personal-summary claim projection failed.");
+        }
     }
 
     private void requireProjectedCanonicalApplicationClaim(
@@ -296,7 +384,9 @@ public class LlmResponseParser {
                 "ordinary claim ID namespace is incomplete");
         requireSchemaContract(
                 ORDINARY_CONTENT_PATH_PATTERN.equals(contentPathPattern)
-                        || ROLLBACK_ORDINARY_CONTENT_PATH_PATTERN.equals(
+                        || CORE_SKILL_PROJECTION_ORDINARY_CONTENT_PATH_PATTERN.equals(
+                                contentPathPattern)
+                        || DEDICATED_CANONICAL_ORDINARY_CONTENT_PATH_PATTERN.equals(
                                 contentPathPattern),
                 "ordinary content-path allowlist is incomplete");
         try {
@@ -304,7 +394,9 @@ public class LlmResponseParser {
             Pattern ordinaryPaths = Pattern.compile(contentPathPattern);
             requireSchemaContract(
                     !ordinaryClaimIds.matcher(OPENING_CLAIM_ID).find()
-                            && !ordinaryClaimIds.matcher(CLOSING_CLAIM_ID).find(),
+                            && !ordinaryClaimIds.matcher(CLOSING_CLAIM_ID).find()
+                            && !ordinaryClaimIds.matcher(
+                                    PERSONAL_SUMMARY_CLAIM_ID).find(),
                     "ordinary claim IDs do not reserve canonical IDs");
             requireSchemaContract(
                     !ordinaryPaths.matcher(OPENING_PARAGRAPH_PATH).find()
@@ -315,16 +407,108 @@ public class LlmResponseParser {
                     "Dedicated canonical application claim schema is invalid.",
                     exception);
         }
-        int expectedOrdinaryClaimLimit =
-                ORDINARY_CONTENT_PATH_PATTERN.equals(contentPathPattern)
-                        ? ACTIVE_ORDINARY_CLAIM_LIMIT
-                        : ROLLBACK_ORDINARY_CLAIM_LIMIT;
+        int expectedOrdinaryClaimLimit;
+        if (ORDINARY_CONTENT_PATH_PATTERN.equals(contentPathPattern)) {
+            expectedOrdinaryClaimLimit = ACTIVE_ORDINARY_CLAIM_LIMIT;
+        } else if (CORE_SKILL_PROJECTION_ORDINARY_CONTENT_PATH_PATTERN.equals(
+                contentPathPattern)) {
+            expectedOrdinaryClaimLimit =
+                    CORE_SKILL_PROJECTION_ORDINARY_CLAIM_LIMIT;
+        } else {
+            expectedOrdinaryClaimLimit =
+                    DEDICATED_CANONICAL_ORDINARY_CLAIM_LIMIT;
+        }
         requireSchemaContract(
                 properties.path("claims").path("maxItems").isIntegralNumber()
                         && properties.path("claims").path("maxItems").asInt()
                                 == expectedOrdinaryClaimLimit,
                 "ordinary claim bound does not reserve canonical capacity");
         return true;
+    }
+
+    private boolean usesDedicatedPersonalSummaryClaim(
+            JsonNode schema
+    ) {
+        JsonNode properties = schema.path("properties");
+        String contentPathPattern = properties.path("claims")
+                .path("items").path("properties")
+                .path("contentPaths").path("items")
+                .path("pattern").asText();
+        boolean activeContract = ORDINARY_CONTENT_PATH_PATTERN.equals(
+                contentPathPattern);
+        if (!activeContract) {
+            requireSchemaContract(
+                    !properties.has("personalSummaryClaim"),
+                    "personal-summary claim is present outside its dedicated contract");
+            return false;
+        }
+        requireSchemaContract(
+                properties.has("personalSummaryClaim"),
+                "personal-summary claim object is missing");
+        JsonNode claimSchema = properties.path("personalSummaryClaim");
+        requireExactObjectSchema(
+                claimSchema,
+                PERSONAL_SUMMARY_CLAIM_FIELDS,
+                "$.personalSummaryClaim");
+        JsonNode claimProperties = claimSchema.path("properties");
+        requireExactSingletonStringSchema(
+                claimProperties.path("claimId"),
+                PERSONAL_SUMMARY_CLAIM_ID,
+                "$.personalSummaryClaim.claimId");
+        requireSchemaContract(
+                "^CLAIM-9003$".equals(claimProperties.path("claimId")
+                        .path("pattern").asText()),
+                "claim ID pattern is not fixed at $.personalSummaryClaim.claimId");
+        requireFinalDispositionSchema(
+                claimProperties.path("disposition"),
+                "$.personalSummaryClaim.disposition");
+        requireEvidenceIdsSchema(
+                claimProperties.path("evidenceIds"),
+                "$.personalSummaryClaim.evidenceIds");
+        requireExactSingletonStringSchema(
+                claimProperties.path("contentPath"),
+                PERSONAL_SUMMARY_PATH,
+                "$.personalSummaryClaim.contentPath");
+        requireSchemaContract(
+                "^/cv/personalSummary$".equals(
+                        claimProperties.path("contentPath")
+                                .path("pattern").asText()),
+                "content-path pattern is not fixed at $.personalSummaryClaim.contentPath");
+        requireExactSingletonStringSchema(
+                claimProperties.path("reviewText"),
+                "",
+                "$.personalSummaryClaim.reviewText");
+        return true;
+    }
+
+    private void requireFinalDispositionSchema(
+            JsonNode schema,
+            String path
+    ) {
+        Set<String> values = new HashSet<>();
+        schema.path("enum").forEach(value -> values.add(value.asText()));
+        requireSchemaContract(
+                "string".equals(schema.path("type").asText())
+                        && "^(SUPPORTED|REWORDED)$".equals(
+                                schema.path("pattern").asText())
+                        && values.equals(Set.of("SUPPORTED", "REWORDED"))
+                        && schema.path("enum").size() == 2,
+                "final disposition is incomplete at " + path);
+    }
+
+    private void requireEvidenceIdsSchema(
+            JsonNode schema,
+            String path
+    ) {
+        requireSchemaContract(
+                "array".equals(schema.path("type").asText())
+                        && schema.path("minItems").asInt(-1) == 1
+                        && schema.path("maxItems").asInt(-1) == 30
+                        && "string".equals(
+                                schema.path("items").path("type").asText())
+                        && EVIDENCE_ID_PATTERN.equals(
+                                schema.path("items").path("pattern").asText()),
+                "evidence ID list is incomplete at " + path);
     }
 
     private void requireNoPartialDedicatedCanonicalApplicationContract(
@@ -344,13 +528,18 @@ public class LlmResponseParser {
                 ORDINARY_CLAIM_ID_PATTERN.equals(claimIdPattern)
                         || ORDINARY_CONTENT_PATH_PATTERN.equals(
                                 contentPathPattern)
-                        || ROLLBACK_ORDINARY_CONTENT_PATH_PATTERN.equals(
+                        || CORE_SKILL_PROJECTION_ORDINARY_CONTENT_PATH_PATTERN.equals(
                                 contentPathPattern)
+                        || DEDICATED_CANONICAL_ORDINARY_CONTENT_PATH_PATTERN.equals(
+                                contentPathPattern)
+                        || properties.has("personalSummaryClaim")
                         || (ordinaryClaims.path("maxItems").isIntegralNumber()
                                 && (ordinaryClaims.path("maxItems").asInt()
                                                 == ACTIVE_ORDINARY_CLAIM_LIMIT
                                         || ordinaryClaims.path("maxItems").asInt()
-                                                == ROLLBACK_ORDINARY_CLAIM_LIMIT));
+                                                == CORE_SKILL_PROJECTION_ORDINARY_CLAIM_LIMIT
+                                        || ordinaryClaims.path("maxItems").asInt()
+                                                == DEDICATED_CANONICAL_ORDINARY_CLAIM_LIMIT));
         requireSchemaContract(
                 !dedicatedMarker,
                 "canonical claim object is missing from a dedicated ordinary-claim contract");
@@ -449,6 +638,17 @@ public class LlmResponseParser {
     }
 
     private boolean usesDeterministicCoreSkillProjection(
+            JsonNode schema
+    ) {
+        String contentPathPattern = schema.at(
+                        "/properties/claims/items/properties/contentPaths/items/pattern")
+                .asText();
+        return ORDINARY_CONTENT_PATH_PATTERN.equals(contentPathPattern)
+                || CORE_SKILL_PROJECTION_ORDINARY_CONTENT_PATH_PATTERN.equals(
+                        contentPathPattern);
+    }
+
+    private boolean usesAdaptiveCoreSkillProjection(
             JsonNode schema
     ) {
         return ORDINARY_CONTENT_PATH_PATTERN.equals(
@@ -637,7 +837,8 @@ public class LlmResponseParser {
             GeneratedCoverLetter coverLetter,
             GenerationNotes generationNotes,
             List<GeneratedClaim> claims,
-            CanonicalApplicationClaims canonicalApplicationClaims) {
+            CanonicalApplicationClaims canonicalApplicationClaims,
+            PersonalSummaryClaim personalSummaryClaim) {
     }
 
     private record CanonicalApplicationClaims(
@@ -651,6 +852,14 @@ public class LlmResponseParser {
             String generationIntentEvidenceId,
             String jobTitleEvidenceId,
             String companyEvidenceId,
+            String contentPath,
+            String reviewText) {
+    }
+
+    private record PersonalSummaryClaim(
+            String claimId,
+            ClaimDisposition disposition,
+            List<String> evidenceIds,
             String contentPath,
             String reviewText) {
     }
