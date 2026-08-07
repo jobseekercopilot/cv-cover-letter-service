@@ -54,7 +54,7 @@ evidence. See
 ## Prompt releases
 
 Prompt bundle `cv-cover-letter-1.5.9`, output schema `3.8.0`, evaluation policy
-`1.5.7` and parser `3.5.0` render projects as projects, keep paid employment
+`1.5.7` and parser `3.5.1` render projects as projects, keep paid employment
 separate, select at most 12 exact job-relevant CV skills without a minimum or
 quota, omit unsupported empty sections, and use the correct UK generic
 greeting/sign-off pair. Claim policy `2.13.0` and post-grounding quality policy
@@ -105,7 +105,7 @@ with fixed ID `CLAIM-9003`, exact `/cv/personalSummary` path, empty review text,
 `SUPPORTED` or `REWORDED` disposition and confirmed CV-purpose claimant
 evidence. Schema `3.8.0` also removes both document-title paths and the personal
 summary from ordinary claims and permits at most 29 ordinary claims. Parser
-`3.5.0` projects all three private siblings. Claim policy `2.12.0` attaches each
+`3.5.1` projects all three private siblings. Claim policy `2.12.0` attaches each
 canonical title path to a same-purpose identity claim citing `JOB.TITLE` (or
 creates a bounded one-path identity claim), and clears a non-empty optional
 `tailoredDescription` when no accepted ordinary claim owns it. It normalises
@@ -113,7 +113,7 @@ the non-skill ledger first, caps accepted unique approved proposals at the
 smaller of 12 and the remaining 40-claim capacity, and fills in evidence order
 to `min(8, available)`. It fails safely if that minimum cannot fit.
 
-Active release `1.5.9` retains schema `3.8.0` and parser `3.5.0` but replaces
+Active release `1.5.9` retains schema `3.8.0` and parser `3.5.1` but replaces
 that versioned skill projection under claim policy `2.13.0`. Revision-bound
 profile skills are CV-only exact candidates alongside demonstrated skill facts;
 the service de-duplicates them by normalised value and prefers demonstrated

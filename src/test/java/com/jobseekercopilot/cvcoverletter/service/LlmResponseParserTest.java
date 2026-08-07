@@ -85,7 +85,7 @@ class LlmResponseParserTest {
                 .filter(claim -> List.of("/cv/personalSummary")
                         .equals(claim.getContentPaths()))
                 .count());
-        assertEquals("3.5.0", parser.parserVersion(schema));
+        assertEquals("3.5.1", parser.parserVersion(schema));
         assertEquals("2.13.0", parser.claimPolicyVersion(schema));
     }
 

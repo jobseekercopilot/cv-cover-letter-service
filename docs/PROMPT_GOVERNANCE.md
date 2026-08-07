@@ -14,7 +14,7 @@ changing the task. The release also owns exact bounded JSON Schema `3.8.0` and
 evaluation policy `1.5.7`, used at the provider boundary and by the local
 response parser and synthetic evaluation checks. The domain bundle cannot name
 a model provider or transport API; provider mechanics belong behind LLM
-Gateway. Applied parser `3.5.0`, claim policy `2.13.0` and deterministic quality
+Gateway. Applied parser `3.5.1`, claim policy `2.13.0` and deterministic quality
 policy `1.2.0` complete the active local validation route.
 
 Release `1.5.0` adds a dedicated project structure, separates employment from
@@ -80,7 +80,7 @@ Historical release `1.5.7` added a third private claim sibling. Schema `3.8.0` r
 `/cv/personalSummary` path, empty review text, a `SUPPORTED` or `REWORDED`
 disposition and confirmed CV-purpose claimant evidence. Ordinary claims may no
 longer own the personal summary or either document-title path and are capped at
-29. Parser `3.5.0` projects all three private siblings and claim policy `2.12.0`
+29. Parser `3.5.1` projects all three private siblings and claim policy `2.12.0`
 normalises the non-skill ledger before allocating skills. It attaches each
 canonical title to the same-purpose identity claim citing `JOB.TITLE`, creating
 a bounded one-path identity claim only when no compatible claim exists, and it
@@ -91,7 +91,7 @@ evidence order to `min(8, available)`. Inability to preserve that minimum fails
 closed; it does not trigger another provider call.
 
 Active release `1.5.9` retains the `3.8.0` private wire shape and parser
-`3.5.0`, while rules `1.5.9`, evaluation policy `1.5.7` and claim policy
+`3.5.1`, while rules `1.5.9`, evaluation policy `1.5.7` and claim policy
 `2.13.0` replace that versioned minimum-fill behaviour. The approved CV skill
 catalogue is the union of purpose-compatible `DEMONSTRATED_SKILL` snapshot
 facts and revision-bound profile `DECLARED_SKILL` facts. Exact normalised
@@ -184,7 +184,7 @@ bounded schema. They are compiled into closed structural schemas at runtime and
 remain subject to the response, text, array and active-content limits associated
 with applied parser metadata `3.2.0`. Parser `3.3.0` applies to the dedicated
 canonical-claim shape; parser `3.4.0` additionally requires the exact ordinary
-path pattern before enabling fixed-reservation skill projection. Parser `3.5.0`
+path pattern before enabling fixed-reservation skill projection. Parser `3.5.1`
 requires the schema `3.8.0` personal-summary sibling and active ordinary path
 pattern before enabling title attachment, optional-description clearing and
 adaptive skill projection. Each parser projects only the private siblings

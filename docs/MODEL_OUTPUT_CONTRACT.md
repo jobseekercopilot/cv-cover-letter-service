@@ -89,7 +89,7 @@ is capped at 29. The personal-summary sibling must cite confirmed CV-purpose
 claimant evidence; canonical job or request facts cannot support it alone.
 
 After the raw `3.8.0` provider envelope passes schema and active-content
-validation, parser `3.5.0` projects the three private siblings and policy
+validation, parser `3.5.1` projects the three private siblings and policy
 `2.13.0` normalises the non-skill claim ledger. It attaches `/cv/title` and
 `/coverLetter/title` deterministically to the same-purpose identity claim that
 already cites `JOB.TITLE`; if no compatible claim exists, it creates a bounded
@@ -128,6 +128,13 @@ legacy rollback bundles bounded even though their structural schemas were
 compiled from output exemplars.
 
 ## Validation and safe failure
+
+At request construction time, the service binds the exact model-facing
+approved evidence IDs into `$defs.approvedEvidenceId`. Both ordinary claims and
+the dedicated personal-summary claim reference that enum. The provider is
+therefore constrained to IDs present in the same approved-evidence catalogue
+it receives as input; parser `3.5.1` resolves and enforces the local reference
+again before claim validation.
 
 Validation runs before rendering, document storage, application creation or
 billing commit:
@@ -180,7 +187,7 @@ Successful response metadata and structured logs record the prompt release,
 template, rules and schema versions and their hashes. Request/response logs
 also record LLM contract `2.0`, the schema-applied parser version, claim policy
 version, the actual model ID and the gateway-owned deployment, admission and
-pricing-policy versions. Active release `1.5.9` records parser `3.5.0`, claim
+pricing-policy versions. Active release `1.5.9` records parser `3.5.1`, claim
 policy `2.13.0` and quality policy `1.2.0`; immediate rollback schema `3.7.0`
 records parser `3.4.0` and claim policy `2.11.0`; schema `3.6.0` records parser
 `3.3.0` and claim policy `2.10.0`; selecting release `1.5.3` retains parser

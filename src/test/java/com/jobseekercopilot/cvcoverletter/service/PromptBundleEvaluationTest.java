@@ -62,7 +62,7 @@ class PromptBundleEvaluationTest {
 
         assertEquals(policy.policyVersion(), prompt.getGenerationMetadata().evaluationPolicyVersion());
         assertEquals(
-                "fbdb86f3c730b10a9fda49aa0a67c40b1387134f75cbd416464056d50f80edda",
+                "8a4f0b90e7fbf1d26beaf59fe76ed6d7bc16b2e798e43140b6ce3296d408839b",
                 sha256(boundaryMaterial(prompt)),
                 "The golden LLM boundary changed; review the trusted instructions, untrusted envelope, "
                         + "output schema and rollback metadata together.");

@@ -100,7 +100,7 @@ response, text, array and active-content limits pinned by the selected bundle
 still apply.
 
 Active prompt release `1.5.9` pins schema `3.8.0`, evaluation policy `1.5.7`,
-parser `3.5.0`, claim policy `2.13.0` and quality policy `1.2.0`. Schema `3.8.0`
+parser `3.5.1`, claim policy `2.13.0` and quality policy `1.2.0`. Schema `3.8.0`
 isolates the two canonical application claims and required `CLAIM-9003`
 personal-summary claim, requires exact-empty private skill evidence and
 constrains ordinary claims to exact final leaves. Ordinary claims cannot claim
@@ -110,7 +110,7 @@ personal-summary sibling has a fixed path and shape but its approved opaque
 evidence IDs remain untrusted request data; free-text evidence is never placed
 in the trusted schema.
 
-Parser `3.5.0` validates the complete raw object and active content before any
+Parser `3.5.1` validates the complete raw object and active content before any
 normalisation. Claim policy `2.13.0` can then attach canonical title paths using
 server-owned `JOB.TITLE` provenance and clear only an optional non-empty
 `tailoredDescription` that no accepted claim owns. Canonical

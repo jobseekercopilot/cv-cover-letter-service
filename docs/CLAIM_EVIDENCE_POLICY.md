@@ -1,7 +1,7 @@
 # Claim evidence policy
 
 Prompt release `cv-cover-letter-1.5.9`, output schema `3.8.0`, evaluation
-policy `1.5.7`, parser `3.5.0`, claim policy `2.13.0` and deterministic quality
+policy `1.5.7`, parser `3.5.1`, claim policy `2.13.0` and deterministic quality
 policy `1.2.0`
 establish the current claim-provenance and document-quality boundary.
 
@@ -84,7 +84,7 @@ Schema `3.8.0`, shared by historical release `1.5.7` and active release
 `SUPPORTED` or `REWORDED` and its one to 30 evidence IDs must include confirmed
 CV-purpose claimant evidence supporting the complete summary. Ordinary claims
 exclude this path and `/cv/title` and `/coverLetter/title`, and are capped at
-29. Parser `3.5.0` rejects an absent or malformed sibling in the raw envelope
+29. Parser `3.5.1` rejects an absent or malformed sibling in the raw envelope
 and projects all three private siblings before persistence.
 
 Policy `2.12.0` first normalises the historical `1.5.7` non-skill ledger. It
@@ -133,17 +133,21 @@ Release `1.5.9` sends declared-skill values as dedicated service-projected
 core-skill candidates without their stable IDs. The complete internal catalogue
 retains those IDs for deterministic projection and final provenance, while the
 model-facing approved-evidence catalogue contains only IDs the model may cite.
+Those exact IDs are also bound into the strict output schema as one shared enum
+referenced by ordinary and personal-summary claim evidence arrays. Unknown or
+internal-only IDs are therefore excluded at provider generation time and remain
+fail-closed in parser and claim validation.
 
 Version routing remains schema-bound; a release is excluded when a shared
 schema cannot safely distinguish its semantics. Active release `1.5.9` uses
-schema `3.8.0`, evaluation policy `1.5.7`, parser `3.5.0`,
+schema `3.8.0`, evaluation policy `1.5.7`, parser `3.5.1`,
 claim policy `2.13.0` and quality policy `1.2.0`. Immutable immediate rollback
 `1.5.6` retains schema `3.7.0`, evaluation policy `1.5.4`, parser `3.4.0` and
 claim policy `2.11.0`. Release `1.5.7` is preserved in version-control history
 but is not packaged or included in the approved index because it shares schema
 `3.8.0` with `1.5.8` while encoding the older minimum-eight semantics;
 schema-derived policy routing cannot select it safely. Its historical metadata
-remains evaluation policy `1.5.5`, parser `3.5.0`, claim policy `2.12.0` and
+remains evaluation policy `1.5.5`, parser `3.5.1`, claim policy `2.12.0` and
 quality policy `1.1.0`. Release `1.5.5`
 retains schema `3.6.0`, parser `3.3.0` and claim policy `2.10.0`; release
 `1.5.3` retains parser `3.2.0`. Selecting a historical schema never opts it

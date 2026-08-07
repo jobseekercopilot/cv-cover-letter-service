@@ -13,6 +13,7 @@ import com.jobseekercopilot.cvcoverletter.model.CvCoverLetterPrompt;
 import com.jobseekercopilot.cvcoverletter.model.EvidenceSource;
 import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -26,7 +27,7 @@ import java.util.regex.Pattern;
 public class PromptBuilderService {
     static final int MAX_TRUSTED_INSTRUCTION_CHARACTERS = 12_000;
     static final int MAX_UNTRUSTED_INPUT_CHARACTERS = 170_000;
-    static final int MAX_OUTPUT_SCHEMA_CHARACTERS = 20_000;
+    static final int MAX_OUTPUT_SCHEMA_CHARACTERS = 64_000;
     private static final Pattern UNRESOLVED_PLACEHOLDER = Pattern.compile("\\{\\{[A-Z0-9_]+}}");
     private static final String SEPARATE_SCHEMA_MARKER =
             "[STRICT JSON SCHEMA SUPPLIED THROUGH THE OUTPUT CONTRACT]";
@@ -58,6 +59,9 @@ public class PromptBuilderService {
             ClaimEvidenceCatalog evidenceCatalog = evidenceCatalogFactory.create(
                     input,
                     includeRevisionDeclaredSkills);
+            ClaimEvidenceCatalog approvedEvidence = approvedEvidence(
+                    evidenceCatalog,
+                    bundle.metadata().rulesVersion());
 
             String trustedInstructions = template
                     .replace("{{LANGUAGE}}", llmProperties.getLanguage())
@@ -81,10 +85,11 @@ public class PromptBuilderService {
                             bundle.metadata().rulesVersion())
                             ? separatedDeclaredSkillInput(
                                     evidenceCatalog,
+                                    approvedEvidence,
                                     input.warnings())
                             : new UntrustedGenerationInput(
                                     "UNTRUSTED_DATA_ONLY",
-                                    evidenceCatalog,
+                                    approvedEvidence,
                                     input.warnings());
             String untrustedInput = toPrettyJson(untrustedPromptInput);
             JsonNode outputShape = objectMapper.readTree(outputSchemaJson);
@@ -94,6 +99,7 @@ public class PromptBuilderService {
             JsonNode outputSchema = isStrictJsonSchema(outputShape)
                     ? outputShape.deepCopy()
                     : compileStrictJsonSchema(outputShape);
+            bindApprovedEvidenceIds(outputSchema, approvedEvidence);
             requireWithinBoundary(
                     "trusted instructions",
                     trustedInstructions,
@@ -184,6 +190,7 @@ public class PromptBuilderService {
 
     private SeparatedDeclaredSkillInput separatedDeclaredSkillInput(
             ClaimEvidenceCatalog evidenceCatalog,
+            ClaimEvidenceCatalog approvedEvidence,
             List<InputWarning> inputWarnings
     ) {
         List<String> candidates = evidenceCatalog.records().stream()
@@ -192,18 +199,74 @@ public class PromptBuilderService {
                 .map(record -> record.value())
                 .distinct()
                 .toList();
-        ClaimEvidenceCatalog claimableEvidence = new ClaimEvidenceCatalog(
+        return new SeparatedDeclaredSkillInput(
+                "UNTRUSTED_DATA_ONLY",
+                approvedEvidence,
+                candidates,
+                inputWarnings);
+    }
+
+    private ClaimEvidenceCatalog approvedEvidence(
+            ClaimEvidenceCatalog evidenceCatalog,
+            String rulesVersion
+    ) {
+        if (!SEPARATED_DECLARED_SKILLS_RULES_VERSION.equals(rulesVersion)) {
+            return evidenceCatalog;
+        }
+        return new ClaimEvidenceCatalog(
                 evidenceCatalog.catalogVersion(),
                 evidenceCatalog.records().stream()
                         .filter(record -> record.source()
                                 != EvidenceSource.PROFILE_REVISION)
                         .toList(),
                 evidenceCatalog.sectionOrder());
-        return new SeparatedDeclaredSkillInput(
-                "UNTRUSTED_DATA_ONLY",
-                claimableEvidence,
-                candidates,
-                inputWarnings);
+    }
+
+    private void bindApprovedEvidenceIds(
+            JsonNode outputSchema,
+            ClaimEvidenceCatalog approvedEvidence
+    ) {
+        var evidenceIds = new LinkedHashSet<String>();
+        approvedEvidence.records().forEach(record -> evidenceIds.add(record.evidenceId()));
+        if (evidenceIds.isEmpty()) {
+            throw new InvalidGenerationInputException(
+                    "approved evidence: no claimable evidence IDs are available");
+        }
+
+        ObjectNode evidenceIdSchema = objectMapper.createObjectNode();
+        evidenceIdSchema.put("type", "string");
+        ArrayNode allowedEvidenceIds = evidenceIdSchema.putArray("enum");
+        evidenceIds.forEach(allowedEvidenceIds::add);
+
+        ObjectNode definitions = objectMapper.createObjectNode();
+        definitions.set("approvedEvidenceId", evidenceIdSchema);
+        ((ObjectNode) outputSchema).set("$defs", definitions);
+
+        ObjectNode evidenceIdReference = objectMapper.createObjectNode();
+        evidenceIdReference.put("$ref", "#/$defs/approvedEvidenceId");
+        JsonNode personalSummaryEvidenceIds = outputSchema.at(
+                "/properties/personalSummaryClaim/properties/evidenceIds");
+        if (!personalSummaryEvidenceIds.isMissingNode()) {
+            setEvidenceIdItemReference(
+                    personalSummaryEvidenceIds,
+                    evidenceIdReference);
+        }
+        setEvidenceIdItemReference(
+                outputSchema.at(
+                        "/properties/claims/items/properties/evidenceIds"),
+                evidenceIdReference);
+    }
+
+    private void setEvidenceIdItemReference(
+            JsonNode evidenceIdsSchema,
+            ObjectNode evidenceIdReference
+    ) {
+        if (!(evidenceIdsSchema instanceof ObjectNode evidenceIds)
+                || !"array".equals(evidenceIds.path("type").asText())) {
+            throw new IllegalStateException(
+                    "Selected prompt bundle evidenceIds schema is not an array.");
+        }
+        evidenceIds.set("items", evidenceIdReference.deepCopy());
     }
 
     private record UntrustedGenerationInput(
