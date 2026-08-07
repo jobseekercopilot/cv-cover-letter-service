@@ -1,7 +1,7 @@
 # Claim evidence policy
 
-Prompt release `cv-cover-letter-1.5.9`, output schema `3.8.0`, evaluation
-policy `1.5.7`, parser `3.5.2`, claim policy `2.14.0` and deterministic quality
+Prompt release `cv-cover-letter-1.5.10`, output schema `3.9.0`, evaluation
+policy `1.5.8`, parser `3.6.0`, claim policy `2.14.0` and deterministic quality
 policy `1.2.0`
 establish the current claim-provenance and document-quality boundary.
 
@@ -32,11 +32,17 @@ evidence. Immediate rollback release `1.5.6` adds the exact ordinary-path
 allowlist and fixed-budget deterministic skill projection. Historical `1.5.7`
 adds the dedicated personal-summary claim, deterministic title coverage,
 unclaimed optional-description clearing and adaptive minimum-eight skill
-budget described below. Active `1.5.9` retains that wire shape while replacing
+budget described below. Historical `1.5.9` retains that wire shape while replacing
 the versioned skill policy with job-targeted selection without a minimum or
 quota.
 Claimed unsafe prose, missing claimant evidence outside the exact exception,
 ambiguous project evidence and every other omitted narrative still reject.
+
+Active `1.5.10` makes the high-volume narrative provenance structural. Every
+project highlight, work responsibility and cover-letter body paragraph carries
+its final text, disposition and approved evidence IDs in one closed object.
+Parser `3.6.0` projects those objects into bounded exact-path claims before
+claim policy `2.14.0` performs its existing grounding and coverage checks.
 
 Release `1.5.3` makes that exception explicit at both provider boundaries.
 `/coverLetter/openingParagraph` must be exactly `Please consider my application

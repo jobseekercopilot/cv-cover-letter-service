@@ -22,6 +22,7 @@ class LlmResponseParserTest {
     private ObjectMapper objectMapper;
     private LlmResponseParser parser;
     private JsonNode schema;
+    private JsonNode inlineNarrativeSchema;
     private JsonNode coreSkillProjectionRollbackSchema;
     private JsonNode dedicatedRollbackSchema;
     private JsonNode legacySchema;
@@ -39,6 +40,14 @@ class LlmResponseParserTest {
                 throw new IllegalStateException("Active output schema fixture is missing.");
             }
             schema = objectMapper.readTree(input);
+        }
+        try (InputStream input = getClass().getResourceAsStream(
+                "/prompts/bundles/cv-cover-letter-1.5.10/output-schema.json")) {
+            if (input == null) {
+                throw new IllegalStateException(
+                        "Inline narrative output schema fixture is missing.");
+            }
+            inlineNarrativeSchema = objectMapper.readTree(input);
         }
         try (InputStream input = getClass().getResourceAsStream(
                 "/prompts/bundles/cv-cover-letter-1.5.6/output-schema.json")) {
@@ -87,6 +96,61 @@ class LlmResponseParserTest {
                 .count());
         assertEquals("3.5.2", parser.parserVersion(schema));
         assertEquals("2.14.0", parser.claimPolicyVersion(schema));
+    }
+
+    @Test
+    void projectsEveryInlineNarrativeItemIntoBoundedClaims() throws Exception {
+        JsonNode output = inlineNarrativeOutput();
+
+        GeneratedApplicationDocuments result = parser.parse(
+                objectMapper.writeValueAsString(output),
+                inlineNarrativeSchema);
+
+        assertEquals("3.6.0", parser.parserVersion(inlineNarrativeSchema));
+        assertEquals("2.14.0", parser.claimPolicyVersion(inlineNarrativeSchema));
+        assertEquals(
+                List.of("Delivered a reliable service."),
+                result.getCv().getProjects().get(0).getHighlights());
+        assertEquals(
+                List.of("Built and maintained Java services."),
+                result.getCv().getWorkHistory().get(0).getResponsibilities());
+        assertEquals(
+                List.of(
+                        "My experience is a strong match.",
+                        "I build useful services.",
+                        "The role calls for useful services."),
+                result.getCoverLetter().getBodyParagraphs());
+        List.of(
+                        "/cv/projects/0/highlights/0",
+                        "/cv/workHistory/0/responsibilities/0",
+                        "/coverLetter/bodyParagraphs/0",
+                        "/coverLetter/bodyParagraphs/1",
+                        "/coverLetter/bodyParagraphs/2")
+                .forEach(path -> assertEquals(
+                        1,
+                        result.getClaims().stream()
+                                .filter(claim -> claim.getContentPaths()
+                                        .contains(path))
+                                .count(),
+                        path));
+    }
+
+    @Test
+    void rejectsInlineNarrativeWithoutEvidenceBeforeProjection()
+            throws Exception {
+        JsonNode output = inlineNarrativeOutput();
+        ((ArrayNode) output.at(
+                "/coverLetter/bodyParagraphs/1/evidenceIds"))
+                .removeAll();
+
+        InvalidLlmResponseException error = assertThrows(
+                InvalidLlmResponseException.class,
+                () -> parser.parse(
+                        objectMapper.writeValueAsString(output),
+                        inlineNarrativeSchema));
+
+        assertTrue(error.getMessage().contains(
+                "$.coverLetter.bodyParagraphs[1].evidenceIds"));
     }
 
     @Test
@@ -690,6 +754,56 @@ class LlmResponseParserTest {
         ((ObjectNode) control.path("cv"))
                 .put("personalSummary", "unsafe\u0000control");
         assertRejectedAt(control, "$.cv.personalSummary");
+    }
+
+    private JsonNode inlineNarrativeOutput() throws Exception {
+        JsonNode output = objectMapper.readTree(
+                CvCoverLetterServiceTest.activeValidJson());
+        ArrayNode bodyParagraphs = (ArrayNode) output.at(
+                "/coverLetter/bodyParagraphs");
+        for (int index = 0; index < bodyParagraphs.size(); index++) {
+            String text = bodyParagraphs.get(index).asText();
+            ObjectNode item = objectMapper.createObjectNode();
+            item.put("text", text);
+            item.put("disposition", "REWORDED");
+            item.putArray("evidenceIds").add("PROFILE.SKILL.1");
+            bodyParagraphs.set(index, item);
+        }
+        ArrayNode claims = (ArrayNode) output.path("claims");
+        for (int index = claims.size() - 1; index >= 0; index--) {
+            String paths = claims.get(index).path("contentPaths").toString();
+            if (paths.contains("/coverLetter/bodyParagraphs/")) {
+                claims.remove(index);
+            }
+        }
+
+        ObjectNode project = ((ArrayNode) output.at("/cv/projects"))
+                .addObject();
+        project.put("title", "Reliable service");
+        project.put("role", "Developer");
+        project.put("context", "Portfolio project");
+        project.put("startDate", "2026");
+        project.put("endDate", "2026");
+        project.put("description", "Built a reliable service.");
+        ObjectNode highlight = project.putArray("highlights").addObject();
+        highlight.put("text", "Delivered a reliable service.");
+        highlight.put("disposition", "REWORDED");
+        highlight.putArray("evidenceIds").add("PROFILE.SKILL.1");
+
+        ObjectNode employment = ((ArrayNode) output.at("/cv/workHistory"))
+                .addObject();
+        employment.put("jobTitle", "Developer");
+        employment.put("employer", "Example Ltd");
+        employment.put("startDate", "2024");
+        employment.put("endDate", "2026");
+        ObjectNode responsibility = employment.putArray("responsibilities")
+                .addObject();
+        responsibility.put("text", "Built and maintained Java services.");
+        responsibility.put("disposition", "SUPPORTED");
+        responsibility.putArray("evidenceIds").add(
+                "PROFILE.EMPLOYMENT.1.RESPONSIBILITIES");
+        employment.put("tailoredDescription", "");
+        return output;
     }
 
     private InvalidLlmResponseException assertRejectedAt(JsonNode output, String path)

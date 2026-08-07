@@ -36,7 +36,7 @@ class PromptBundleEvaluationTest {
     void setUp() throws IOException {
         objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBundleProperties bundleProperties = new PromptBundleProperties();
-        bundleProperties.setSelectedReleaseId("cv-cover-letter-1.5.9");
+        bundleProperties.setSelectedReleaseId("cv-cover-letter-1.5.10");
         PromptBundleRegistry registry =
                 new PromptBundleRegistry(objectMapper, new DefaultResourceLoader(), bundleProperties);
         registry.initialize();
@@ -48,7 +48,7 @@ class PromptBundleEvaluationTest {
         normalizer = new GenerationInputNormalizer(
                 Clock.fixed(Instant.parse("2026-07-24T13:00:00Z"), ZoneOffset.UTC));
         try (InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.5.9/evaluation-policy.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.10/evaluation-policy.json")) {
             if (input == null) {
                 throw new IllegalStateException("Prompt evaluation policy fixture is missing.");
             }
@@ -62,7 +62,7 @@ class PromptBundleEvaluationTest {
 
         assertEquals(policy.policyVersion(), prompt.getGenerationMetadata().evaluationPolicyVersion());
         assertEquals(
-                "c03112475844215d993fdebe9066af6ec8c6249ebf2e50eb674cc1b79885af8a",
+                "bd203ab5d3cb573fbcca20364734b2f18a12b8f4ce9a5f5da2fc6c273799800b",
                 sha256(boundaryMaterial(prompt)),
                 "The golden LLM boundary changed; review the trusted instructions, untrusted envelope, "
                         + "output schema and rollback metadata together.");
@@ -91,17 +91,17 @@ class PromptBundleEvaluationTest {
                         "/cv/title",
                         "/cv/personalSummary",
                         "/coverLetter/title",
-                        "/coverLetter/bodyParagraphs/1",
-                        "/coverLetter/bodyParagraphs/2",
                         "/coverLetter/closingParagraph")
                 .forEach(path ->
                         assertTrue(trustedInstructions.contains(path), path));
         assertTrue(trustedInstructions.contains(
                 "Generic, professional and application prose is"));
         assertTrue(trustedInstructions.contains(
-                "ordinary claims[].contentPaths, personalSummaryClaim"));
+                "ordinary claims[].contentPaths, every inline narrative"));
         assertTrue(trustedInstructions.contains(
-                "with no missing, duplicate or wrong-purpose pointer"));
+                "Every bodyParagraphs item must be an inline narrative"));
+        assertTrue(trustedInstructions.contains(
+                "wrong-purpose pointer"));
     }
 
     @Test
@@ -249,7 +249,7 @@ class PromptBundleEvaluationTest {
         assertTrue(prompt.getUntrustedInput().contains("\"VOLUNTEERING\""));
         assertTrue(prompt.getUntrustedInput().contains("\"sectionOrder\""));
         assertTrue(prompt.getTrustedInstructions().contains(
-                "do not relabel them as"));
+                "Do not relabel non-traditional evidence as"));
         assertFalse(prompt.getUntrustedInput().contains("PROFILE.SKILL."));
     }
 

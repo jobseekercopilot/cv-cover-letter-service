@@ -38,7 +38,9 @@ public class ValidatedClaimLedgerFactory {
     }
 
     private String policyVersion(String parserVersion) {
-        if (LlmResponseParser.PARSER_VERSION.equals(parserVersion)) {
+        if (LlmResponseParser.PARSER_VERSION.equals(parserVersion)
+                || LlmResponseParser.DEDICATED_PERSONAL_SUMMARY_PARSER_VERSION
+                        .equals(parserVersion)) {
             return ClaimEvidenceValidator.POLICY_VERSION;
         }
         if (LlmResponseParser.CORE_SKILL_PROJECTION_PARSER_VERSION.equals(

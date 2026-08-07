@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.jobseekercopilot.cvcoverletter.dto.ClaimDisposition;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedApplicationDocuments;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedClaim;
@@ -16,6 +17,7 @@ import com.jobseekercopilot.cvcoverletter.model.ClaimEvidenceCatalog;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -26,7 +28,8 @@ import org.springframework.web.util.HtmlUtils;
 @Component
 public class LlmResponseParser {
 
-    static final String PARSER_VERSION = "3.5.2";
+    static final String PARSER_VERSION = "3.6.0";
+    static final String DEDICATED_PERSONAL_SUMMARY_PARSER_VERSION = "3.5.2";
     static final String CORE_SKILL_PROJECTION_PARSER_VERSION = "3.4.0";
     static final String DEDICATED_CANONICAL_PARSER_VERSION = "3.3.0";
     static final String LEGACY_PARSER_VERSION = "3.2.0";
@@ -34,6 +37,7 @@ public class LlmResponseParser {
     static final int MAX_FALLBACK_TEXT_CHARACTERS = 4_000;
     static final int MAX_FALLBACK_ARRAY_ITEMS = 40;
     private static final int ACTIVE_ORDINARY_CLAIM_LIMIT = 29;
+    private static final int INLINE_NARRATIVE_ORDINARY_CLAIM_LIMIT = 20;
     private static final int CORE_SKILL_PROJECTION_ORDINARY_CLAIM_LIMIT = 26;
     private static final int DEDICATED_CANONICAL_ORDINARY_CLAIM_LIMIT = 38;
     private static final int MAX_HTML_DECODE_PASSES = 5;
@@ -61,6 +65,12 @@ public class LlmResponseParser {
                     + "|/cv/workHistory/[0-9]+/(?:jobTitle|employer|startDate|endDate|tailoredDescription)"
                     + "|/cv/workHistory/[0-9]+/responsibilities/[0-9]+"
                     + "|/coverLetter/(?:jobTitle|companyName|bodyParagraphs/[0-9]+))$";
+    private static final String INLINE_NARRATIVE_ORDINARY_CONTENT_PATH_PATTERN =
+            "^(?:/cv/targetRole"
+                    + "|/cv/projects/[0-9]+/(?:title|role|context|startDate|endDate|description)"
+                    + "|/cv/qualifications/[0-9]+/(?:qualificationName|issuingBody|status|grade|dateAchieved|expectedCompletion)"
+                    + "|/cv/workHistory/[0-9]+/(?:jobTitle|employer|startDate|endDate|tailoredDescription)"
+                    + "|/coverLetter/(?:jobTitle|companyName))$";
     private static final String CORE_SKILL_PROJECTION_ORDINARY_CONTENT_PATH_PATTERN =
             "^(?:/cv/(?:title|targetRole|personalSummary)"
                     + "|/cv/projects/[0-9]+/(?:title|role|context|startDate|endDate|description)"
@@ -138,19 +148,29 @@ public class LlmResponseParser {
                 usesDeterministicCoreSkillProjection(schema);
         boolean usesAdaptiveCoreSkillBudget =
                 usesAdaptiveCoreSkillProjection(schema);
+        boolean usesInlineNarrativeEvidence =
+                usesInlineNarrativeEvidence(schema);
 
         try {
-            JsonNode output = objectMapper.readTree(rawResponse);
-            if (output == null) {
+            JsonNode providerOutput = objectMapper.readTree(rawResponse);
+            if (providerOutput == null) {
                 throw new InvalidLlmResponseException("LLM response was not valid JSON");
             }
-            validateSchema(output, schema, "$");
-            validatePlainText(output, "$");
+            validateSchema(providerOutput, schema, "$");
+            validatePlainText(providerOutput, "$");
+            JsonNode output = usesInlineNarrativeEvidence
+                    ? providerOutput.deepCopy()
+                    : providerOutput;
+            List<GeneratedClaim> projectedNarrativeClaims =
+                    usesInlineNarrativeEvidence
+                            ? projectInlineNarrativeEvidence(output)
+                            : List.of();
             GeneratedApplicationDocuments documents =
                     bindDocuments(
                             output,
                             usesDedicatedCanonicalClaims,
-                            usesDedicatedPersonalSummaryClaim);
+                            usesDedicatedPersonalSummaryClaim,
+                            projectedNarrativeClaims);
             if (usesDedicatedCanonicalClaims) {
                 requireProjectedCanonicalApplicationClaims(documents);
             }
@@ -167,13 +187,19 @@ public class LlmResponseParser {
                                 schema),
                         projectsCoreSkills,
                         usesAdaptiveCoreSkillBudget);
-                validateSchema(output, schema, "$");
-                validatePlainText(output, "$");
+                validateSchema(
+                        usesInlineNarrativeEvidence ? providerOutput : output,
+                        schema,
+                        "$");
+                validatePlainText(
+                        usesInlineNarrativeEvidence ? providerOutput : output,
+                        "$");
                 var normalizedClaims = documents.getClaims();
                 documents = bindDocuments(
                         output,
                         usesDedicatedCanonicalClaims,
-                        usesDedicatedPersonalSummaryClaim);
+                        usesDedicatedPersonalSummaryClaim,
+                        List.of());
                 documents.setClaims(normalizedClaims);
                 if (usesStructuredQualityPolicy(schema)) {
                     qualityValidator.validate(
@@ -197,8 +223,11 @@ public class LlmResponseParser {
         if (!usesDedicatedCanonicalClaims) {
             return LEGACY_PARSER_VERSION;
         }
-        if (usesDedicatedPersonalSummaryClaim) {
+        if (usesInlineNarrativeEvidence(schema)) {
             return PARSER_VERSION;
+        }
+        if (usesDedicatedPersonalSummaryClaim) {
+            return DEDICATED_PERSONAL_SUMMARY_PARSER_VERSION;
         }
         return usesDeterministicCoreSkillProjection(schema)
                 ? CORE_SKILL_PROJECTION_PARSER_VERSION
@@ -220,7 +249,8 @@ public class LlmResponseParser {
     private GeneratedApplicationDocuments bindDocuments(
             JsonNode output,
             boolean usesDedicatedCanonicalClaims,
-            boolean usesDedicatedPersonalSummaryClaim
+            boolean usesDedicatedPersonalSummaryClaim,
+            List<GeneratedClaim> projectedNarrativeClaims
     ) throws JsonProcessingException {
         if (!usesDedicatedCanonicalClaims) {
             return objectMapper.treeToValue(
@@ -239,6 +269,7 @@ public class LlmResponseParser {
                 providerDocuments.claims() == null
                         ? List.of()
                         : providerDocuments.claims());
+        claims.addAll(projectedNarrativeClaims);
         CanonicalApplicationClaims canonicalClaims =
                 providerDocuments.canonicalApplicationClaims();
         if (canonicalClaims != null) {
@@ -281,6 +312,157 @@ public class LlmResponseParser {
                 providerClaim.companyEvidenceId()));
         claim.setContentPaths(List.of(providerClaim.contentPath()));
         claim.setReviewText(providerClaim.reviewText());
+        return claim;
+    }
+
+    private List<GeneratedClaim> projectInlineNarrativeEvidence(
+            JsonNode output
+    ) {
+        List<NarrativeItem> cvItems = new ArrayList<>();
+        JsonNode projects = output.at("/cv/projects");
+        for (int projectIndex = 0;
+                projectIndex < projects.size();
+                projectIndex++) {
+            projectNarrativeArray(
+                    output.at("/cv/projects/" + projectIndex + "/highlights"),
+                    "/cv/projects/" + projectIndex + "/highlights",
+                    cvItems);
+        }
+        JsonNode workHistory = output.at("/cv/workHistory");
+        for (int workIndex = 0;
+                workIndex < workHistory.size();
+                workIndex++) {
+            projectNarrativeArray(
+                    output.at("/cv/workHistory/" + workIndex + "/responsibilities"),
+                    "/cv/workHistory/" + workIndex + "/responsibilities",
+                    cvItems);
+        }
+        List<NarrativeItem> coverLetterItems = new ArrayList<>();
+        projectNarrativeArray(
+                output.at("/coverLetter/bodyParagraphs"),
+                "/coverLetter/bodyParagraphs",
+                coverLetterItems);
+
+        List<GeneratedClaim> claims = new ArrayList<>();
+        int nextClaimNumber = appendNarrativeClaims(
+                claims,
+                cvItems,
+                8000);
+        appendNarrativeClaims(
+                claims,
+                coverLetterItems,
+                nextClaimNumber);
+        return List.copyOf(claims);
+    }
+
+    private void projectNarrativeArray(
+            JsonNode value,
+            String arrayPath,
+            List<NarrativeItem> projected
+    ) {
+        if (!(value instanceof ArrayNode array)) {
+            throw new IllegalStateException(
+                    "Inline narrative evidence array is missing at "
+                            + arrayPath + ".");
+        }
+        for (int index = 0; index < array.size(); index++) {
+            JsonNode item = array.get(index);
+            String itemPath = arrayPath + "/" + index;
+            String text = item.path("text").asText();
+            ClaimDisposition disposition;
+            try {
+                disposition = ClaimDisposition.valueOf(
+                        item.path("disposition").asText());
+            } catch (IllegalArgumentException exception) {
+                throw invalid(
+                        itemPath + "/disposition",
+                        "inline narrative disposition is invalid");
+            }
+            List<String> evidenceIds = new ArrayList<>();
+            item.path("evidenceIds").forEach(
+                    evidenceId -> evidenceIds.add(evidenceId.asText()));
+            LinkedHashSet<String> uniqueEvidence =
+                    new LinkedHashSet<>(evidenceIds);
+            require(
+                    !uniqueEvidence.isEmpty()
+                            && uniqueEvidence.size() == evidenceIds.size(),
+                    itemPath + "/evidenceIds",
+                    "inline narrative evidence IDs are empty or duplicated");
+            projected.add(new NarrativeItem(
+                    itemPath,
+                    disposition,
+                    List.copyOf(uniqueEvidence)));
+            array.set(index, array.textNode(text));
+        }
+    }
+
+    private int appendNarrativeClaims(
+            List<GeneratedClaim> claims,
+            List<NarrativeItem> items,
+            int nextClaimNumber
+    ) {
+        for (ClaimDisposition disposition : List.of(
+                ClaimDisposition.SUPPORTED,
+                ClaimDisposition.REWORDED)) {
+            nextClaimNumber = appendNarrativeClaims(
+                    claims,
+                    items.stream()
+                            .filter(item -> item.disposition() == disposition)
+                            .toList(),
+                    disposition,
+                    nextClaimNumber);
+        }
+        return nextClaimNumber;
+    }
+
+    private int appendNarrativeClaims(
+            List<GeneratedClaim> claims,
+            List<NarrativeItem> items,
+            ClaimDisposition disposition,
+            int nextClaimNumber
+    ) {
+        List<String> paths = new ArrayList<>();
+        LinkedHashSet<String> evidenceIds = new LinkedHashSet<>();
+        for (NarrativeItem item : items) {
+            LinkedHashSet<String> mergedEvidence =
+                    new LinkedHashSet<>(evidenceIds);
+            mergedEvidence.addAll(item.evidenceIds());
+            if (!paths.isEmpty()
+                    && (paths.size() == 30
+                            || mergedEvidence.size() > 30)) {
+                claims.add(narrativeClaim(
+                        nextClaimNumber++,
+                        disposition,
+                        paths,
+                        evidenceIds));
+                paths = new ArrayList<>();
+                evidenceIds = new LinkedHashSet<>();
+            }
+            paths.add(item.contentPath());
+            evidenceIds.addAll(item.evidenceIds());
+        }
+        if (!paths.isEmpty()) {
+            claims.add(narrativeClaim(
+                    nextClaimNumber++,
+                    disposition,
+                    paths,
+                    evidenceIds));
+        }
+        return nextClaimNumber;
+    }
+
+    private GeneratedClaim narrativeClaim(
+            int claimNumber,
+            ClaimDisposition disposition,
+            List<String> contentPaths,
+            LinkedHashSet<String> evidenceIds
+    ) {
+        GeneratedClaim claim = new GeneratedClaim();
+        claim.setClaimId("CLAIM-" + claimNumber);
+        claim.setDisposition(disposition);
+        claim.setEvidenceIds(List.copyOf(evidenceIds));
+        claim.setContentPaths(List.copyOf(contentPaths));
+        claim.setReviewText("");
         return claim;
     }
 
@@ -384,6 +566,8 @@ public class LlmResponseParser {
                 "ordinary claim ID namespace is incomplete");
         requireSchemaContract(
                 ORDINARY_CONTENT_PATH_PATTERN.equals(contentPathPattern)
+                        || INLINE_NARRATIVE_ORDINARY_CONTENT_PATH_PATTERN.equals(
+                                contentPathPattern)
                         || CORE_SKILL_PROJECTION_ORDINARY_CONTENT_PATH_PATTERN.equals(
                                 contentPathPattern)
                         || DEDICATED_CANONICAL_ORDINARY_CONTENT_PATH_PATTERN.equals(
@@ -410,6 +594,10 @@ public class LlmResponseParser {
         int expectedOrdinaryClaimLimit;
         if (ORDINARY_CONTENT_PATH_PATTERN.equals(contentPathPattern)) {
             expectedOrdinaryClaimLimit = ACTIVE_ORDINARY_CLAIM_LIMIT;
+        } else if (INLINE_NARRATIVE_ORDINARY_CONTENT_PATH_PATTERN.equals(
+                contentPathPattern)) {
+            expectedOrdinaryClaimLimit =
+                    INLINE_NARRATIVE_ORDINARY_CLAIM_LIMIT;
         } else if (CORE_SKILL_PROJECTION_ORDINARY_CONTENT_PATH_PATTERN.equals(
                 contentPathPattern)) {
             expectedOrdinaryClaimLimit =
@@ -435,7 +623,9 @@ public class LlmResponseParser {
                 .path("contentPaths").path("items")
                 .path("pattern").asText();
         boolean activeContract = ORDINARY_CONTENT_PATH_PATTERN.equals(
-                contentPathPattern);
+                contentPathPattern)
+                || INLINE_NARRATIVE_ORDINARY_CONTENT_PATH_PATTERN.equals(
+                        contentPathPattern);
         if (!activeContract) {
             requireSchemaContract(
                     !properties.has("personalSummaryClaim"),
@@ -538,6 +728,8 @@ public class LlmResponseParser {
                 ORDINARY_CLAIM_ID_PATTERN.equals(claimIdPattern)
                         || ORDINARY_CONTENT_PATH_PATTERN.equals(
                                 contentPathPattern)
+                        || INLINE_NARRATIVE_ORDINARY_CONTENT_PATH_PATTERN.equals(
+                                contentPathPattern)
                         || CORE_SKILL_PROJECTION_ORDINARY_CONTENT_PATH_PATTERN.equals(
                                 contentPathPattern)
                         || DEDICATED_CANONICAL_ORDINARY_CONTENT_PATH_PATTERN.equals(
@@ -548,6 +740,8 @@ public class LlmResponseParser {
                                                 == ACTIVE_ORDINARY_CLAIM_LIMIT
                                         || ordinaryClaims.path("maxItems").asInt()
                                                 == CORE_SKILL_PROJECTION_ORDINARY_CLAIM_LIMIT
+                                        || ordinaryClaims.path("maxItems").asInt()
+                                                == INLINE_NARRATIVE_ORDINARY_CLAIM_LIMIT
                                         || ordinaryClaims.path("maxItems").asInt()
                                                 == DEDICATED_CANONICAL_ORDINARY_CLAIM_LIMIT));
         requireSchemaContract(
@@ -654,6 +848,8 @@ public class LlmResponseParser {
                         "/properties/claims/items/properties/contentPaths/items/pattern")
                 .asText();
         return ORDINARY_CONTENT_PATH_PATTERN.equals(contentPathPattern)
+                || INLINE_NARRATIVE_ORDINARY_CONTENT_PATH_PATTERN.equals(
+                        contentPathPattern)
                 || CORE_SKILL_PROJECTION_ORDINARY_CONTENT_PATH_PATTERN.equals(
                         contentPathPattern);
     }
@@ -661,10 +857,61 @@ public class LlmResponseParser {
     private boolean usesAdaptiveCoreSkillProjection(
             JsonNode schema
     ) {
-        return ORDINARY_CONTENT_PATH_PATTERN.equals(
+        String contentPathPattern = schema.at(
+                        "/properties/claims/items/properties/contentPaths/items/pattern")
+                .asText();
+        return ORDINARY_CONTENT_PATH_PATTERN.equals(contentPathPattern)
+                || INLINE_NARRATIVE_ORDINARY_CONTENT_PATH_PATTERN.equals(
+                        contentPathPattern);
+    }
+
+    private boolean usesInlineNarrativeEvidence(JsonNode schema) {
+        String contentPathPattern = schema.at(
+                        "/properties/claims/items/properties/contentPaths/items/pattern")
+                .asText();
+        if (!INLINE_NARRATIVE_ORDINARY_CONTENT_PATH_PATTERN.equals(
+                contentPathPattern)) {
+            return false;
+        }
+        requireInlineNarrativeItemSchema(
                 schema.at(
-                                "/properties/claims/items/properties/contentPaths/items/pattern")
-                        .asText());
+                        "/properties/cv/properties/projects/items/properties/highlights/items"),
+                schema,
+                "$.cv.projects[].highlights[]");
+        requireInlineNarrativeItemSchema(
+                schema.at(
+                        "/properties/cv/properties/workHistory/items/properties/responsibilities/items"),
+                schema,
+                "$.cv.workHistory[].responsibilities[]");
+        requireInlineNarrativeItemSchema(
+                schema.at(
+                        "/properties/coverLetter/properties/bodyParagraphs/items"),
+                schema,
+                "$.coverLetter.bodyParagraphs[]");
+        return true;
+    }
+
+    private void requireInlineNarrativeItemSchema(
+            JsonNode itemSchema,
+            JsonNode rootSchema,
+            String path
+    ) {
+        requireExactObjectSchema(
+                itemSchema,
+                Set.of("text", "disposition", "evidenceIds"),
+                path);
+        JsonNode properties = itemSchema.path("properties");
+        requireSchemaContract(
+                "string".equals(properties.path("text").path("type").asText())
+                        && properties.path("text").path("pattern").isTextual(),
+                "inline narrative text is incomplete at " + path);
+        requireFinalDispositionSchema(
+                properties.path("disposition"),
+                path + ".disposition");
+        requireEvidenceIdsSchema(
+                properties.path("evidenceIds"),
+                rootSchema,
+                path + ".evidenceIds");
     }
 
     private boolean usesCanonicalApplicationBookendPolicy(
@@ -922,5 +1169,11 @@ public class LlmResponseParser {
             List<String> evidenceIds,
             String contentPath,
             String reviewText) {
+    }
+
+    private record NarrativeItem(
+            String contentPath,
+            ClaimDisposition disposition,
+            List<String> evidenceIds) {
     }
 }

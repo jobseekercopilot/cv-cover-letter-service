@@ -2,9 +2,9 @@
 
 CV and Cover Letter Service treats model output as untrusted until it passes
 the exact reviewed schema and local safe-content policy. The active prompt
-release is `cv-cover-letter-1.5.9`; it owns output schema `3.8.0` and
-evaluation policy `1.5.7` at
-`src/main/resources/prompts/bundles/cv-cover-letter-1.5.9/`. Its reviewed
+release is `cv-cover-letter-1.5.10`; it owns output schema `3.9.0` and
+evaluation policy `1.5.8` at
+`src/main/resources/prompts/bundles/cv-cover-letter-1.5.10/`. Its reviewed
 `output-schema.json` checksum is pinned in that release's immutable manifest.
 
 ## One contract at both boundaries
@@ -36,7 +36,8 @@ service's deliberately smaller subset.
 | Qualifications and work-history entries | 20 items each |
 | Responsibilities | 12 per work-history entry |
 | Generation-note lists | 20 items; 500 characters per item |
-| Active ordinary provider claims | 1–29 claims; 30 evidence IDs and final paths per claim |
+| Active ordinary provider claims | 1–20 claims; 30 evidence IDs and final paths per claim |
+| Inline narrative evidence | Required beside every project highlight, work responsibility and body paragraph |
 | Immediate `1.5.6` rollback ordinary claims | 1–26 claims; 30 evidence IDs and final paths per claim |
 | Older dedicated-sibling ordinary claims | 1–38 claims; 30 evidence IDs and final paths per claim |
 | Canonical application provider claims | Exactly two fixed sibling objects |
@@ -44,7 +45,7 @@ service's deliberately smaller subset.
 | Active projected public claim ledger | 4–40 claims |
 | Immediate rollback projected public claim ledger | 3–40 claims |
 
-The active `1.5.9` provider ledger contains only `SUPPORTED` and `REWORDED`
+The active `1.5.10` provider ledger contains only `SUPPORTED` and `REWORDED`
 final-content claims. Each ordinary claim requires at least one approved
 evidence ID and one final path, and `reviewText` is exactly empty. Unsupported
 or unconfirmed material is omitted from both the documents and claims; a neutral
@@ -54,6 +55,14 @@ four dispositions for historical compatibility. Three required private sibling
 objects carry the two canonical application claims and the personal-summary
 claim; they are projected into that unchanged public ledger DTO only after raw
 schema validation.
+
+Schema `3.9.0` additionally represents every project highlight, work
+responsibility and cover-letter body paragraph as a closed provider object with
+`text`, `disposition` and one to 30 approved `evidenceIds`. Parser `3.6.0`
+validates that raw shape, replaces each object with its text for the existing
+document DTOs, and projects bounded claims for every exact zero-based path.
+Those paths are excluded from ordinary provider claims, preventing prose and
+its provenance from being generated independently.
 
 Schema `3.5.0` fixes `/coverLetter/openingParagraph` to exactly `Please consider
 my application for this role.` and `/coverLetter/closingParagraph` to exactly

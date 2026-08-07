@@ -38,9 +38,9 @@ public class PromptBuilderService {
     private static final String SEPARATE_WARNINGS_MARKER =
             "[INPUT WARNINGS SUPPLIED THROUGH THE UNTRUSTED INPUT CHANNEL]";
     private static final Set<String> RULES_VERSIONS_WITH_CANONICAL_PROFILE_SKILLS =
-            Set.of("1.5.8", "1.5.9");
-    private static final String SEPARATED_DECLARED_SKILLS_RULES_VERSION =
-            "1.5.9";
+            Set.of("1.5.8", "1.5.9", "1.5.10");
+    private static final Set<String> SEPARATED_DECLARED_SKILLS_RULES_VERSIONS =
+            Set.of("1.5.9", "1.5.10");
 
     private final ObjectMapper objectMapper;
     private final PromptBundleRegistry promptBundleRegistry;
@@ -92,7 +92,7 @@ public class PromptBuilderService {
                         "Selected prompt bundle contains an unresolved contract placeholder.");
             }
             Object untrustedPromptInput =
-                    SEPARATED_DECLARED_SKILLS_RULES_VERSION.equals(
+                    SEPARATED_DECLARED_SKILLS_RULES_VERSIONS.contains(
                             bundle.metadata().rulesVersion())
                             ? separatedDeclaredSkillInput(
                                     evidenceCatalog,
@@ -221,7 +221,7 @@ public class PromptBuilderService {
             ClaimEvidenceCatalog evidenceCatalog,
             String rulesVersion
     ) {
-        if (!SEPARATED_DECLARED_SKILLS_RULES_VERSION.equals(rulesVersion)) {
+        if (!SEPARATED_DECLARED_SKILLS_RULES_VERSIONS.contains(rulesVersion)) {
             return evidenceCatalog;
         }
         return new ClaimEvidenceCatalog(
@@ -274,6 +274,27 @@ public class PromptBuilderService {
                 outputSchema.at(
                         "/properties/claims/items/properties/evidenceIds"),
                 evidenceIdReference);
+        setOptionalEvidenceIdItemReference(
+                outputSchema.at(
+                        "/properties/cv/properties/projects/items/properties/highlights/items/properties/evidenceIds"),
+                evidenceIdReference);
+        setOptionalEvidenceIdItemReference(
+                outputSchema.at(
+                        "/properties/cv/properties/workHistory/items/properties/responsibilities/items/properties/evidenceIds"),
+                evidenceIdReference);
+        setOptionalEvidenceIdItemReference(
+                outputSchema.at(
+                        "/properties/coverLetter/properties/bodyParagraphs/items/properties/evidenceIds"),
+                evidenceIdReference);
+    }
+
+    private void setOptionalEvidenceIdItemReference(
+            JsonNode evidenceIdsSchema,
+            ObjectNode evidenceIdReference
+    ) {
+        if (!evidenceIdsSchema.isMissingNode()) {
+            setEvidenceIdItemReference(evidenceIdsSchema, evidenceIdReference);
+        }
     }
 
     private void setEvidenceIdItemReference(
