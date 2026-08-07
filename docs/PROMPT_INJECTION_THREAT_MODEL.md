@@ -109,7 +109,7 @@ response, text, array and active-content limits pinned by the selected bundle
 still apply.
 
 Active prompt release `1.5.11` pins schema `3.10.0`, evaluation policy `1.5.8`,
-parser `3.6.0`, claim policy `2.14.0` and quality policy `1.2.0`. Schema `3.10.0`
+parser `3.6.0`, claim policy `2.14.0` and quality policy `1.3.0`. Schema `3.10.0`
 isolates the two canonical application claims and required `CLAIM-9003`
 personal-summary claim, requires exact-empty private skill evidence and
 constrains ordinary claims to exact final leaves. Ordinary claims cannot claim

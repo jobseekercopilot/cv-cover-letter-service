@@ -27,7 +27,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class GeneratedDocumentQualityValidator {
-    static final String POLICY_VERSION = "1.2.0";
+    static final String POLICY_VERSION = "1.3.0";
     private static final int MAX_SKILLS = 12;
     private static final Pattern COVER_LETTER_SKILL_LIST = Pattern.compile(
             "(?i)^\\s*(?:key skills|technical skills|skills\\s*&\\s*expertise)"
@@ -257,9 +257,9 @@ public class GeneratedDocumentQualityValidator {
                             Set.of()));
                 }
             }
-            require(!selectedPaths.isEmpty(),
-                    "$.claims",
-                    "a selected evidence entry is missing from final content");
+            if (selectedPaths.isEmpty()) {
+                continue;
+            }
             String requiredPrefix = requiredSectionPrefix(entry.getKey());
             if (requiredPrefix != null) {
                 require(selectedPaths.stream()

@@ -2,7 +2,7 @@
 
 Prompt release `cv-cover-letter-1.5.11`, output schema `3.10.0`, evaluation
 policy `1.5.8`, parser `3.6.0`, claim policy `2.14.0` and deterministic quality
-policy `1.2.0`
+policy `1.3.0`
 establish the current claim-provenance and document-quality boundary.
 
 Release `1.5.1` makes the provider perform an explicit final-pointer coverage
@@ -153,9 +153,9 @@ internal-only IDs are therefore excluded at provider generation time and remain
 fail-closed in parser and claim validation.
 
 Version routing remains schema-bound; a release is excluded when a shared
-schema cannot safely distinguish its semantics. Active release `1.5.9` uses
-schema `3.8.0`, evaluation policy `1.5.7`, parser `3.5.2`,
-claim policy `2.14.0` and quality policy `1.2.0`. Immutable immediate rollback
+schema cannot safely distinguish its semantics. Active release `1.5.11` uses
+schema `3.10.0`, evaluation policy `1.5.8`, parser `3.6.0`,
+claim policy `2.14.0` and quality policy `1.3.0`. Immutable immediate rollback
 `1.5.6` retains schema `3.7.0`, evaluation policy `1.5.4`, parser `3.4.0` and
 claim policy `2.11.0`. Release `1.5.7` is preserved in version-control history
 but is not packaged or included in the approved index because it shares schema
@@ -286,11 +286,12 @@ normalised and accepted. It:
    quota, and rejects a literal skills list in the cover letter;
 3. rejects duplicate normalised narrative and repeated substantive
    qualification phrases, including phrases embedded in longer paragraphs;
-4. requires every selected evidence entry to own at least one final path for
-   its document purpose;
-5. requires CV project, employment and education selections to appear in their
-   governed sections, and requires each project to use one selected PROJECT
-   entry;
+4. treats selected evidence as available source material rather than a
+   mandatory inclusion quota, so an unused selection does not discard an
+   otherwise valid generated pair;
+5. requires used CV project, employment and education selections to appear in
+   their governed sections, and requires each included project to use one
+   selected PROJECT entry;
 6. requires every project description and highlight to cite same-selection
    project narrative evidence.
 

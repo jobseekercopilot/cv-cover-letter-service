@@ -15,14 +15,15 @@ evaluation policy `1.5.8`, used at the provider boundary and by the local
 response parser and synthetic evaluation checks. The domain bundle cannot name
 a model provider or transport API; provider mechanics belong behind LLM
 Gateway. Applied parser `3.6.0`, claim policy `2.14.0` and deterministic quality
-policy `1.2.0` complete the active local validation route.
+policy `1.3.0` complete the active local validation route.
 
 Release `1.5.0` adds a dedicated project structure, separates employment from
 project evidence, caps and deduplicates confirmed skills, requires the correct
-generic UK sign-off, and requires every selected evidence entry to appear in
-final content for its purpose. The deterministic quality policy is enabled
-for the project-aware schema shape containing `cv.projects`; selecting an
-approved `1.5.x` rollback retains the same strict local grounding validation.
+generic UK sign-off, and instructs the provider to represent every selected
+evidence entry in final content for its purpose. The deterministic quality
+policy is enabled for the project-aware schema shape containing `cv.projects`;
+selecting an approved `1.5.x` rollback retains the same strict local grounding
+validation.
 Release `1.5.1` adds an exhaustive final-pointer checklist, dynamic-index
 instructions and a complete coverage exemplar so generic narrative is not
 silently omitted from the model-produced claim ledger. Release `1.5.2` makes
@@ -101,7 +102,7 @@ job-relevant candidates; the service discards unsupported, duplicate and
 job-advert-only proposals and does not fill a minimum or quota. Revision-declared
 facts are service-projected only into CV `coreSkills` and cannot be cited for CV
 narrative or cover-letter prose. Cover-letter skills must instead be supported
-by demonstrated career evidence, and quality policy `1.2.0` rejects a literal
+by demonstrated career evidence, and quality policy `1.3.0` rejects a literal
 skills-list heading. The legacy positional profile catalogue retains its
 historical minimum-fill compatibility behaviour.
 
