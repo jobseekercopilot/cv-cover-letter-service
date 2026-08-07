@@ -190,6 +190,13 @@ class PromptBuilderServiceTest {
         result.getOutputSchema().at("/$defs/approvedEvidenceId/enum")
                 .forEach(value -> schemaEvidenceIds.add(value.asText()));
         assertEquals(suppliedEvidenceIds, schemaEvidenceIds);
+        assertEquals(
+                "3.5.2",
+                new LlmResponseParser(
+                        objectMapper,
+                        new ClaimEvidenceValidator(),
+                        new GeneratedDocumentQualityValidator())
+                        .parserVersion(result.getOutputSchema()));
         assertTrue(result.getOutputSchema().toString().length()
                 <= PromptBuilderService.MAX_OUTPUT_SCHEMA_CHARACTERS);
         assertTrue(result.getOutputSchema().at(

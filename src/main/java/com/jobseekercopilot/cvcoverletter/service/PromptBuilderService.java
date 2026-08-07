@@ -235,6 +235,14 @@ public class PromptBuilderService {
 
         ObjectNode evidenceIdSchema = objectMapper.createObjectNode();
         evidenceIdSchema.put("type", "string");
+        String evidenceIdPattern = outputSchema.at(
+                        "/properties/claims/items/properties/evidenceIds/items/pattern")
+                .asText();
+        if (evidenceIdPattern.isBlank()) {
+            throw new IllegalStateException(
+                    "Selected prompt bundle evidenceIds item pattern is missing.");
+        }
+        evidenceIdSchema.put("pattern", evidenceIdPattern);
         ArrayNode allowedEvidenceIds = evidenceIdSchema.putArray("enum");
         evidenceIds.forEach(allowedEvidenceIds::add);
 

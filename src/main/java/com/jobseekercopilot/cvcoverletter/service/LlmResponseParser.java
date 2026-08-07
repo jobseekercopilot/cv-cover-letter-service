@@ -26,7 +26,7 @@ import org.springframework.web.util.HtmlUtils;
 @Component
 public class LlmResponseParser {
 
-    static final String PARSER_VERSION = "3.5.1";
+    static final String PARSER_VERSION = "3.5.2";
     static final String CORE_SKILL_PROJECTION_PARSER_VERSION = "3.4.0";
     static final String DEDICATED_CANONICAL_PARSER_VERSION = "3.3.0";
     static final String LEGACY_PARSER_VERSION = "3.2.0";
@@ -464,6 +464,7 @@ public class LlmResponseParser {
                 "$.personalSummaryClaim.disposition");
         requireEvidenceIdsSchema(
                 claimProperties.path("evidenceIds"),
+                schema,
                 "$.personalSummaryClaim.evidenceIds");
         requireExactSingletonStringSchema(
                 claimProperties.path("contentPath"),
@@ -498,16 +499,25 @@ public class LlmResponseParser {
 
     private void requireEvidenceIdsSchema(
             JsonNode schema,
+            JsonNode rootSchema,
             String path
     ) {
+        JsonNode itemContract = schema.path("items");
+        boolean usesReference = itemContract.path("$ref").isTextual();
+        JsonNode items = resolveLocalReference(
+                itemContract,
+                rootSchema,
+                path + ".items");
         requireSchemaContract(
                 "array".equals(schema.path("type").asText())
                         && schema.path("minItems").asInt(-1) == 1
                         && schema.path("maxItems").asInt(-1) == 30
-                        && "string".equals(
-                                schema.path("items").path("type").asText())
+                        && "string".equals(items.path("type").asText())
                         && EVIDENCE_ID_PATTERN.equals(
-                                schema.path("items").path("pattern").asText()),
+                                items.path("pattern").asText())
+                        && (!usesReference
+                                || (items.path("enum").isArray()
+                                        && !items.path("enum").isEmpty())),
                 "evidence ID list is incomplete at " + path);
     }
 
