@@ -95,33 +95,42 @@ If injection or data disclosure is suspected:
 
 Physical trusted/untrusted separation remains active when selecting an approved
 rollback bundle. Older bundles have fewer explicit safety instructions and
-their exemplar output is compiled into a closed structural schema, but local
-response, text, array and active-content limits with applied parser metadata
-`3.2.0` still apply.
+their exemplar output is compiled into a closed structural schema, but the
+response, text, array and active-content limits pinned by the selected bundle
+still apply.
 
-Active release `1.5.7` uses schema `3.8.0` to isolate its two canonical
-application claims and required `CLAIM-9003` personal-summary claim, require
-exact-empty private skill evidence and constrain ordinary claims to exact final
-leaves. Ordinary claims cannot claim document titles, the personal summary,
-canonical bookends, core skills or hidden evidence, and fabricated paths such
-as `qualificationTitle` reject. The personal-summary sibling has a fixed path
-and shape but its approved opaque evidence IDs remain untrusted request data;
-free-text evidence is never placed in the trusted schema.
+Active prompt release `1.5.8` pins schema `3.8.0`, evaluation policy `1.5.6`,
+parser `3.5.0`, claim policy `2.13.0` and quality policy `1.2.0`. Schema `3.8.0`
+isolates the two canonical application claims and required `CLAIM-9003`
+personal-summary claim, requires exact-empty private skill evidence and
+constrains ordinary claims to exact final leaves. Ordinary claims cannot claim
+document titles, the personal summary, canonical bookends, core skills or
+hidden evidence, and fabricated paths such as `qualificationTitle` reject. The
+personal-summary sibling has a fixed path and shape but its approved opaque
+evidence IDs remain untrusted request data; free-text evidence is never placed
+in the trusted schema.
 
 Parser `3.5.0` validates the complete raw object and active content before any
-normalisation. Claim policy `2.12.0` can then attach canonical title paths using
-server-owned `JOB.TITLE` provenance, clear only an optional non-empty
-`tailoredDescription` that no accepted claim owns, and project skills only from
-server-owned approved CV skill records. These deterministic operations cannot
-turn source text into trusted instructions. In particular, unsafe markup
-rejects during raw validation, while an invalid claimed description remains
-present for the ordinary claim checks; neither is sanitised by the clearing
-rule. Skill projection uses only capacity remaining after non-skill
-normalisation, preserves the required minimum of up to eight, caps at 12 and
-never retries invalid provider output.
+normalisation. Claim policy `2.13.0` can then attach canonical title paths using
+server-owned `JOB.TITLE` provenance and clear only an optional non-empty
+`tailoredDescription` that no accepted claim owns. Canonical
+`PROFILE_REVISION` `DECLARED_SKILL` records are revision-bound, CV-only
+candidates, and the service may project approved candidates only into
+`coreSkills`. They are forbidden as model-authored narrative evidence, and
+advert-only skills are rejected. The cover letter cannot contain a literal
+skill-list heading. These deterministic operations cannot turn source text
+into trusted instructions. In particular, unsafe markup rejects during raw
+validation, while an invalid claimed description remains present for the
+ordinary claim checks; neither is sanitised by the clearing rule. Skill
+projection uses only capacity remaining after non-skill normalisation, caps at
+12 and never retries invalid provider output.
 
-Immutable rollback release `1.5.6` retains schema `3.7.0`, evaluation policy
-`1.5.4`, parser `3.4.0` and claim policy `2.11.0`; release `1.5.5` retains
-schema `3.6.0`, parser `3.3.0` and claim policy `2.10.0`; release `1.5.3`
-retains parser metadata `3.2.0`. Rollback is an emergency containment action,
-not evidence that the newer evaluation policy passed.
+The immediately approved rollback is immutable release `1.5.6`, which pins
+schema `3.7.0`, evaluation policy `1.5.4`, parser `3.4.0` and claim policy
+`2.11.0`. Release `1.5.7` is preserved in version-control history but is not
+packaged or included in the approved index because schema `3.8.0` cannot
+distinguish its prior minimum-eight skill semantics from the semantics of
+`1.5.8`. Earlier historical release
+`1.5.5` retains schema `3.6.0`, parser `3.3.0` and claim policy `2.10.0`, while
+release `1.5.3` retains parser metadata `3.2.0`. Rollback is an emergency
+containment action, not evidence that the newer evaluation policy passed.

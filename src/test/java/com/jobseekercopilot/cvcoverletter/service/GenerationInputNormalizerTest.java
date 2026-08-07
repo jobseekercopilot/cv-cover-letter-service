@@ -164,12 +164,34 @@ class GenerationInputNormalizerTest {
     }
 
     @Test
-    void versionedFlowRejectsRawFactsMismatchedProfileAndWrongPurpose() {
+    void versionedFlowAcceptsRevisionBoundSkillsButRejectsLegacyRawFacts() {
+        var revisionSkills = validVersionedRequest();
+        revisionSkills.getProfile().setSkills(List.of(
+                "Java",
+                " java ",
+                " Spring "));
+        NormalizedGenerationInput normalized =
+                normalizer.normalize("owner-123", revisionSkills);
+        assertEquals(List.of("Java", "Spring"), normalized.profile().skills());
+
         var rawFacts = validVersionedRequest();
-        rawFacts.getProfile().setSkills(List.of("Browser supplied"));
+        rawFacts.getProfile().setEmploymentHistory(
+                validRequest().getProfile().getEmploymentHistory());
         assertThrows(
                 InvalidGenerationInputException.class,
                 () -> normalizer.normalize("owner-123", rawFacts));
+
+        var rawQualifications = validVersionedRequest();
+        rawQualifications.getProfile().setQualifications(
+                validRequest().getProfile().getQualifications());
+        assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize(
+                        "owner-123", rawQualifications));
+    }
+
+    @Test
+    void versionedFlowRejectsMismatchedProfileAndWrongPurpose() {
 
         var mismatchedProfile = validVersionedRequest();
         mismatchedProfile.getEvidenceSnapshots().getCv()

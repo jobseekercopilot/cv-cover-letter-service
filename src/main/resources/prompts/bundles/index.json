@@ -1,5 +1,5 @@
 {
-  "defaultReleaseId": "cv-cover-letter-1.5.7",
+  "defaultReleaseId": "cv-cover-letter-1.5.8",
   "approvedReleaseIds": [
     "cv-cover-letter-1.0.0",
     "cv-cover-letter-1.1.0",
@@ -13,6 +13,6 @@
     "cv-cover-letter-1.5.4",
     "cv-cover-letter-1.5.5",
     "cv-cover-letter-1.5.6",
-    "cv-cover-letter-1.5.7"
+    "cv-cover-letter-1.5.8"
   ]
 }

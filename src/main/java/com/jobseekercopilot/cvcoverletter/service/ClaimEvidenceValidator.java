@@ -28,13 +28,13 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.12.0";
+    static final String POLICY_VERSION = "2.13.0";
     static final String CORE_SKILL_PROJECTION_POLICY_VERSION = "2.11.0";
     static final String ROLLBACK_POLICY_VERSION = "2.10.0";
     private static final int MAX_CLAIMS = 40;
     private static final int MAX_CLAIM_REFERENCES = 30;
     private static final int MAX_REVIEW_TEXT_LENGTH = 500;
-    private static final int MIN_PROJECTED_CORE_SKILLS = 8;
+    private static final int LEGACY_MIN_PROJECTED_CORE_SKILLS = 8;
     private static final int MAX_PROJECTED_CORE_SKILLS = 12;
     private static final String GENERATION_INTENT_EVIDENCE_ID =
             "REQUEST.GENERATION_INTENT";
@@ -96,7 +96,8 @@ public class ClaimEvidenceValidator {
                 catalog,
                 enforceCanonicalApplicationBookends,
                 projectCoreSkills,
-                false);
+                false,
+                projectCoreSkills);
     }
 
     public void validate(
@@ -106,6 +107,25 @@ public class ClaimEvidenceValidator {
             boolean enforceCanonicalApplicationBookends,
             boolean projectCoreSkills,
             boolean useAdaptiveCoreSkillBudget
+    ) {
+        validate(
+                output,
+                documents,
+                catalog,
+                enforceCanonicalApplicationBookends,
+                projectCoreSkills,
+                useAdaptiveCoreSkillBudget,
+                useAdaptiveCoreSkillBudget);
+    }
+
+    public void validate(
+            JsonNode output,
+            GeneratedApplicationDocuments documents,
+            ClaimEvidenceCatalog catalog,
+            boolean enforceCanonicalApplicationBookends,
+            boolean projectCoreSkills,
+            boolean useAdaptiveCoreSkillBudget,
+            boolean useCanonicalProfileSkills
     ) {
         if (catalog == null || catalog.records() == null || catalog.records().isEmpty()) {
             throw new IllegalStateException("Approved claim evidence catalogue is missing.");
@@ -137,11 +157,18 @@ public class ClaimEvidenceValidator {
                 }
                 if (record.source()
                         == EvidenceSource.EVIDENCE_SNAPSHOT) {
-                    try {
-                        java.util.UUID.fromString(record.evidenceId());
-                    } catch (IllegalArgumentException exception) {
+                    requireStableVersionedEvidenceId(record);
+                }
+                if (record.source() == EvidenceSource.PROFILE_REVISION) {
+                    requireStableVersionedEvidenceId(record);
+                    if (record.purpose() != EvidencePurpose.CV
+                            || !"DECLARED_SKILL".equals(record.factType())
+                            || !"PROFILE_SKILLS".equals(record.category())
+                            || record.sourcePath() == null
+                            || !record.sourcePath().matches(
+                                    "/profile/skills/\\d+")) {
                         throw new IllegalStateException(
-                                "Versioned evidence catalogue contains a non-stable fact ID.");
+                                "Versioned profile-revision evidence is not a bounded declared skill.");
                     }
                 }
             }
@@ -164,7 +191,8 @@ public class ClaimEvidenceValidator {
                     catalog.records(),
                     evidenceById,
                     versionedEvidence,
-                    enforceCanonicalApplicationBookends);
+                    enforceCanonicalApplicationBookends,
+                    useCanonicalProfileSkills);
             return;
         }
         List<GeneratedClaim> submittedClaims =
@@ -177,7 +205,8 @@ public class ClaimEvidenceValidator {
             projectedCoreSkillEvidenceByPath = canonicalizeCoreSkills(
                     output,
                     catalog.records(),
-                    versionedEvidence);
+                    versionedEvidence,
+                    useCanonicalProfileSkills);
             submittedClaims = removeSubmittedCoreSkillCoverage(
                     submittedClaims);
         }
@@ -243,6 +272,17 @@ public class ClaimEvidenceValidator {
                 enforceCanonicalApplicationBookends);
     }
 
+    private void requireStableVersionedEvidenceId(
+            ApprovedEvidenceRecord record
+    ) {
+        try {
+            java.util.UUID.fromString(record.evidenceId());
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalStateException(
+                    "Versioned evidence catalogue contains a non-stable fact ID.");
+        }
+    }
+
     static String policyVersion(
             boolean projectsCoreSkills,
             boolean usesAdaptiveCoreSkillBudget
@@ -261,7 +301,8 @@ public class ClaimEvidenceValidator {
             List<ApprovedEvidenceRecord> records,
             Map<String, List<ApprovedEvidenceRecord>> evidenceById,
             boolean versionedEvidence,
-            boolean enforceCanonicalApplicationBookends
+            boolean enforceCanonicalApplicationBookends,
+            boolean useCanonicalProfileSkills
     ) {
         List<GeneratedClaim> submittedClaims =
                 normalizeCompleteOneBasedBodyParagraphPaths(
@@ -348,7 +389,8 @@ public class ClaimEvidenceValidator {
                         output,
                         records,
                         versionedEvidence,
-                        remainingClaimCapacity);
+                        remainingClaimCapacity,
+                        useCanonicalProfileSkills);
         Set<String> expectedPaths = claimBearingPaths(output);
         claims = addExactCoverageClaims(
                 output,
@@ -412,20 +454,23 @@ public class ClaimEvidenceValidator {
     private Map<String, String> canonicalizeCoreSkills(
             JsonNode output,
             List<ApprovedEvidenceRecord> records,
-            boolean versionedEvidence
+            boolean versionedEvidence,
+            boolean useCanonicalProfileSkills
     ) {
         return canonicalizeCoreSkills(
                 output,
                 records,
                 versionedEvidence,
-                MAX_PROJECTED_CORE_SKILLS);
+                MAX_PROJECTED_CORE_SKILLS,
+                useCanonicalProfileSkills);
     }
 
     private Map<String, String> canonicalizeCoreSkills(
             JsonNode output,
             List<ApprovedEvidenceRecord> records,
             boolean versionedEvidence,
-            int remainingClaimCapacity
+            int remainingClaimCapacity,
+            boolean useCanonicalProfileSkills
     ) {
         JsonNode coreSkills = output.at("/cv/coreSkills");
         if (!(coreSkills instanceof ArrayNode coreSkillArray)) {
@@ -435,24 +480,38 @@ public class ClaimEvidenceValidator {
         Map<String, ApprovedEvidenceRecord> availableByNormalisedValue =
                 new LinkedHashMap<>();
         for (ApprovedEvidenceRecord record : records) {
-            if (!approvedCoreSkill(record, versionedEvidence)) {
+            if (!approvedCoreSkill(
+                    record,
+                    versionedEvidence,
+                    useCanonicalProfileSkills)) {
                 continue;
             }
-            availableByNormalisedValue.putIfAbsent(
-                    normalise(record.value()),
-                    record);
+            String normalisedValue = normalise(record.value());
+            ApprovedEvidenceRecord existing =
+                    availableByNormalisedValue.get(normalisedValue);
+            if (existing == null
+                    || isDemonstratedSkill(record)
+                            && !isDemonstratedSkill(existing)) {
+                availableByNormalisedValue.put(
+                        normalisedValue,
+                        record);
+            }
         }
 
-        int minimum = Math.min(
-                MIN_PROJECTED_CORE_SKILLS,
-                availableByNormalisedValue.size());
         int projectionLimit = Math.min(
                 MAX_PROJECTED_CORE_SKILLS,
                 Math.max(0, remainingClaimCapacity));
+        boolean useTargetedCanonicalSkills =
+                useCanonicalProfileSkills && versionedEvidence;
+        int minimum = useTargetedCanonicalSkills
+                ? 0
+                : Math.min(
+                        LEGACY_MIN_PROJECTED_CORE_SKILLS,
+                        availableByNormalisedValue.size());
         require(
                 projectionLimit >= minimum,
                 "$.cv.coreSkills",
-                "remaining claim capacity cannot preserve the minimum approved core-skill projection");
+                "remaining claim capacity cannot preserve the legacy minimum core-skill projection");
 
         List<ApprovedEvidenceRecord> selected = new ArrayList<>();
         Set<String> selectedValues = new LinkedHashSet<>();
@@ -477,14 +536,16 @@ public class ClaimEvidenceValidator {
             selected.add(exact);
         }
 
-        for (ApprovedEvidenceRecord available :
-                availableByNormalisedValue.values()) {
-            if (selected.size() >= minimum
-                    || selected.size() >= projectionLimit) {
-                break;
-            }
-            if (selectedValues.add(normalise(available.value()))) {
-                selected.add(available);
+        if (!useTargetedCanonicalSkills) {
+            for (ApprovedEvidenceRecord available :
+                    availableByNormalisedValue.values()) {
+                if (selected.size() >= minimum
+                        || selected.size() >= projectionLimit) {
+                    break;
+                }
+                if (selectedValues.add(normalise(available.value()))) {
+                    selected.add(available);
+                }
             }
         }
 
@@ -515,19 +576,32 @@ public class ClaimEvidenceValidator {
 
     private boolean approvedCoreSkill(
             ApprovedEvidenceRecord record,
-            boolean versionedEvidence
+            boolean versionedEvidence,
+            boolean useCanonicalProfileSkills
     ) {
         if (record == null || !StringUtils.hasText(record.value())) {
             return false;
         }
         if (versionedEvidence) {
-            return record.source() == EvidenceSource.EVIDENCE_SNAPSHOT
-                    && record.purpose() == EvidencePurpose.CV
-                    && "DEMONSTRATED_SKILL".equals(record.factType());
+            return record.purpose() == EvidencePurpose.CV
+                    && (isDemonstratedSkill(record)
+                            || useCanonicalProfileSkills
+                                    && record.source()
+                                    == EvidenceSource.PROFILE_REVISION
+                                    && "DECLARED_SKILL".equals(
+                                            record.factType()));
         }
         return record.source() == EvidenceSource.PROFILE
                 && record.purpose().supports(EvidencePurpose.CV)
                 && record.evidenceId().startsWith("PROFILE.SKILL.");
+    }
+
+    private boolean isDemonstratedSkill(
+            ApprovedEvidenceRecord record
+    ) {
+        return record != null
+                && record.source() == EvidenceSource.EVIDENCE_SNAPSHOT
+                && "DEMONSTRATED_SKILL".equals(record.factType());
     }
 
     private List<GeneratedClaim> removeSubmittedCoreSkillCoverage(
@@ -595,6 +669,12 @@ public class ClaimEvidenceValidator {
                         evidenceById.containsKey(evidenceId),
                         evidencePath,
                         "evidence ID is not approved");
+                require(
+                        evidenceById.get(evidenceId).stream().noneMatch(
+                                record -> record.source()
+                                        == EvidenceSource.PROFILE_REVISION),
+                        evidencePath,
+                        "revision-declared skill evidence is service-projected only");
             }
         }
     }
@@ -2382,7 +2462,10 @@ public class ClaimEvidenceValidator {
         }
         if (path.matches("/cv/coreSkills/\\d+/name")) {
             return record -> record.evidenceId().startsWith("PROFILE.SKILL.")
-                    || factType(record, "DEMONSTRATED_SKILL");
+                    || factType(
+                            record,
+                            "DEMONSTRATED_SKILL",
+                            "DECLARED_SKILL");
         }
         if (path.matches("/cv/projects/\\d+/title")) {
             return record -> projectEvidence(record)

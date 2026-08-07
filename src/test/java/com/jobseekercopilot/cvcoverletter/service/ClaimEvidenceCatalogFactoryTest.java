@@ -51,17 +51,40 @@ class ClaimEvidenceCatalogFactoryTest {
 
     @Test
     void versionedCatalogUsesStableFactIdsAndNonTraditionalSections() {
+        var request = validVersionedRequest();
+        request.getProfile().setSkills(java.util.List.of("Java", "Spring"));
         NormalizedGenerationInput input = new GenerationInputNormalizer(
                 Clock.fixed(
                         Instant.parse("2026-07-24T13:00:00Z"),
                         ZoneOffset.UTC))
-                .normalize("owner-secret", validVersionedRequest());
+                .normalize("owner-secret", request);
 
-        ClaimEvidenceCatalog catalog =
-                new ClaimEvidenceCatalogFactory().create(input);
+        ClaimEvidenceCatalogFactory factory =
+                new ClaimEvidenceCatalogFactory();
+        ClaimEvidenceCatalog catalog = factory.create(input);
+        ClaimEvidenceCatalog repeated = factory.create(input);
 
         assertEquals("2.0", catalog.catalogVersion());
         assertFalse(catalog.toString().contains("PROFILE.SKILL."));
+        assertEquals(catalog, repeated);
+        assertEquals(2, catalog.records().stream()
+                .filter(record -> record.source()
+                        == com.jobseekercopilot.cvcoverletter.model
+                                .EvidenceSource.PROFILE_REVISION)
+                .filter(record -> "DECLARED_SKILL".equals(
+                        record.factType()))
+                .filter(record -> record.purpose()
+                        == com.jobseekercopilot.cvcoverletter.model
+                                .EvidencePurpose.CV)
+                .filter(record -> {
+                    try {
+                        java.util.UUID.fromString(record.evidenceId());
+                        return true;
+                    } catch (IllegalArgumentException exception) {
+                        return false;
+                    }
+                })
+                .count());
         assertEquals(
                 java.util.List.of("PROJECT"),
                 catalog.sectionOrder().get(

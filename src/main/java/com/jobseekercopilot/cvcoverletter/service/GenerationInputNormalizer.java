@@ -142,12 +142,11 @@ public class GenerationInputNormalizer {
             EvidenceSnapshotsInput source,
             List<InputWarning> warnings) {
         require(source, "evidenceSnapshots");
-        if (!safe(profile.getSkills()).isEmpty()
-                || !safe(profile.getQualifications()).isEmpty()
+        if (!safe(profile.getQualifications()).isEmpty()
                 || !safe(profile.getEmploymentHistory()).isEmpty()) {
             throw invalid(
                     "profile",
-                    "schema 2.0 does not accept browser-positioned claimant facts");
+                    "schema 2.0 does not accept browser-positioned qualifications or employment history");
         }
         PromptEvidenceSnapshot cv = normalizeEvidenceSnapshot(
                 require(source.getCv(), "evidenceSnapshots.cv"),

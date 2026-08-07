@@ -15,7 +15,7 @@ class PromptBundleRegistryTest {
 
     @Test
     void loadsAndVerifiesEveryPackagedApprovedBundle() {
-        PromptBundleRegistry registry = registry("cv-cover-letter-1.5.7");
+        PromptBundleRegistry registry = registry("cv-cover-letter-1.5.8");
 
         assertEquals(
                 java.util.Set.of(
@@ -31,10 +31,10 @@ class PromptBundleRegistryTest {
                         "cv-cover-letter-1.5.4",
                         "cv-cover-letter-1.5.5",
                         "cv-cover-letter-1.5.6",
-                        "cv-cover-letter-1.5.7"),
+                        "cv-cover-letter-1.5.8"),
                 registry.approvedReleaseIds());
         assertEquals("ACTIVE", registry.selected().releaseStatus());
-        assertEquals("1.5.7", registry.selected().metadata().bundleVersion());
+        assertEquals("1.5.8", registry.selected().metadata().bundleVersion());
         assertEquals("3.8.0", registry.selected().metadata().schemaVersion());
         assertEquals(64, registry.selected().metadata().evaluationPolicySha256().length());
         assertFalse(registry.selected().metadata().bundleSha256().isBlank());
@@ -42,9 +42,9 @@ class PromptBundleRegistryTest {
 
     @Test
     void comparesReviewedReleasesAndSupportsConfigurationRollback() {
-        PromptBundleRegistry active = registry("cv-cover-letter-1.5.7");
+        PromptBundleRegistry active = registry("cv-cover-letter-1.5.8");
         PromptBundleComparison comparison =
-                active.compare("cv-cover-letter-1.5.6", "cv-cover-letter-1.5.7");
+                active.compare("cv-cover-letter-1.5.6", "cv-cover-letter-1.5.8");
 
         assertFalse(comparison.templateChanged());
         assertTrue(comparison.rulesChanged());
@@ -55,6 +55,10 @@ class PromptBundleRegistryTest {
         assertEquals("ROLLBACK", rollback.selected().releaseStatus());
         assertEquals("1.5.6", rollback.selected().metadata().bundleVersion());
         assertEquals("3.7.0", rollback.selected().metadata().schemaVersion());
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> registry("cv-cover-letter-1.5.7"));
     }
 
     @Test

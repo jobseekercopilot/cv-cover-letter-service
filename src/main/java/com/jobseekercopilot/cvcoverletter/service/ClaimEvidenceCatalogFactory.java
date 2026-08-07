@@ -5,10 +5,13 @@ import com.jobseekercopilot.cvcoverletter.model.ClaimEvidenceCatalog;
 import com.jobseekercopilot.cvcoverletter.model.EvidenceSource;
 import com.jobseekercopilot.cvcoverletter.model.EvidencePurpose;
 import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -18,6 +21,13 @@ public class ClaimEvidenceCatalogFactory {
     static final String SNAPSHOT_CATALOG_VERSION = "2.0";
 
     public ClaimEvidenceCatalog create(NormalizedGenerationInput input) {
+        return create(input, true);
+    }
+
+    ClaimEvidenceCatalog create(
+            NormalizedGenerationInput input,
+            boolean includeRevisionDeclaredSkills
+    ) {
         List<ApprovedEvidenceRecord> records = new ArrayList<>();
         add(
                 records,
@@ -27,16 +37,16 @@ public class ClaimEvidenceCatalogFactory {
                 "Generate an application CV and cover letter for the supplied canonical job."
         );
 
-        for (int index = 0; index < input.profile().skills().size(); index++) {
-            add(
-                    records,
-                    "PROFILE.SKILL." + (index + 1),
-                    EvidenceSource.PROFILE,
-                    "/profile/skills/" + index,
-                    input.profile().skills().get(index)
-            );
-        }
         if (input.evidenceSnapshots() == null) {
+            for (int index = 0; index < input.profile().skills().size(); index++) {
+                add(
+                        records,
+                        "PROFILE.SKILL." + (index + 1),
+                        EvidenceSource.PROFILE,
+                        "/profile/skills/" + index,
+                        input.profile().skills().get(index)
+                );
+            }
             for (int index = 0;
                     index < input.profile().targetRoles().size();
                     index++) {
@@ -48,6 +58,8 @@ public class ClaimEvidenceCatalogFactory {
                         input.profile().targetRoles().get(index)
                 );
             }
+        } else if (includeRevisionDeclaredSkills) {
+            addRevisionDeclaredSkills(records, input);
         }
         for (int index = 0; index < input.profile().qualifications().size(); index++) {
             NormalizedGenerationInput.PromptQualification qualification =
@@ -128,6 +140,43 @@ public class ClaimEvidenceCatalogFactory {
                         : SNAPSHOT_CATALOG_VERSION,
                 List.copyOf(records),
                 Map.copyOf(sectionOrder));
+    }
+
+    private void addRevisionDeclaredSkills(
+            List<ApprovedEvidenceRecord> records,
+            NormalizedGenerationInput input
+    ) {
+        UUID profileRevisionId = input.evidenceSnapshots()
+                .cv()
+                .profileRevisionId();
+        for (int index = 0; index < input.profile().skills().size(); index++) {
+            String skill = input.profile().skills().get(index);
+            add(
+                    records,
+                    declaredSkillEvidenceId(profileRevisionId, skill),
+                    EvidenceSource.PROFILE_REVISION,
+                    "/profile/skills/" + index,
+                    skill,
+                    "DECLARED_SKILL",
+                    "PROFILE_SKILLS",
+                    EvidencePurpose.CV);
+        }
+    }
+
+    private String declaredSkillEvidenceId(
+            UUID profileRevisionId,
+            String skill
+    ) {
+        String canonicalSkill = skill.trim()
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("\\s+", " ");
+        return UUID.nameUUIDFromBytes((
+                "profile-declared-skill-v1:"
+                        + profileRevisionId
+                        + ":"
+                        + canonicalSkill)
+                .getBytes(StandardCharsets.UTF_8))
+                .toString();
     }
 
     private void addSnapshot(

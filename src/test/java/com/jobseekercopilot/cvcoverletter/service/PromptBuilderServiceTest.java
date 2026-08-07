@@ -1,6 +1,7 @@
 package com.jobseekercopilot.cvcoverletter.service;
 
 import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validRequest;
+import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validVersionedRequest;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -8,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobseekercopilot.cvcoverletter.config.LlmProperties;
 import com.jobseekercopilot.cvcoverletter.config.PromptBundleProperties;
 import com.jobseekercopilot.cvcoverletter.model.CvCoverLetterPrompt;
+import com.jobseekercopilot.cvcoverletter.model.EvidenceSource;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -17,12 +19,44 @@ import org.springframework.core.io.DefaultResourceLoader;
 class PromptBuilderServiceTest {
 
     @Test
+    void onlyTheCanonicalSkillsReleasePublishesRevisionDeclaredSkills() {
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        GenerationInputNormalizer normalizer = new GenerationInputNormalizer(
+                Clock.fixed(
+                        Instant.parse("2026-07-24T13:00:00Z"),
+                        ZoneOffset.UTC));
+        var request = validVersionedRequest();
+        request.getProfile().setSkills(java.util.List.of("Spring"));
+        var input = normalizer.normalize("owner-secret-123", request);
+
+        CvCoverLetterPrompt active = new PromptBuilderService(
+                objectMapper,
+                registry(objectMapper, "cv-cover-letter-1.5.8"),
+                new LlmProperties(),
+                new ClaimEvidenceCatalogFactory())
+                .buildPrompt(input);
+        CvCoverLetterPrompt rollback = new PromptBuilderService(
+                objectMapper,
+                registry(objectMapper, "cv-cover-letter-1.5.6"),
+                new LlmProperties(),
+                new ClaimEvidenceCatalogFactory())
+                .buildPrompt(input);
+
+        assertTrue(active.getEvidenceCatalog().records().stream()
+                .anyMatch(record -> record.source()
+                        == EvidenceSource.PROFILE_REVISION));
+        assertFalse(rollback.getEvidenceCatalog().records().stream()
+                .anyMatch(record -> record.source()
+                        == EvidenceSource.PROFILE_REVISION));
+    }
+
+    @Test
     void separatesReviewedInstructionsUntrustedEvidenceAndOutputSchema() {
         LlmProperties properties = new LlmProperties();
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBuilderService service = new PromptBuilderService(
                 objectMapper,
-                registry(objectMapper, "cv-cover-letter-1.5.7"),
+                registry(objectMapper, "cv-cover-letter-1.5.8"),
                 properties,
                 new ClaimEvidenceCatalogFactory());
         GenerationInputNormalizer normalizer = new GenerationInputNormalizer(
@@ -35,7 +69,7 @@ class PromptBuilderServiceTest {
         assertTrue(result.getTrustedInstructions().contains("UK English"));
         assertTrue(result.getTrustedInstructions().contains("Aim for 5 to 7 concise paragraphs"));
         assertTrue(result.getTrustedInstructions().contains("specific to the job"));
-        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.5.7"));
+        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.5.8"));
         assertTrue(result.getTrustedInstructions().contains(
                 "Generic, professional and application prose is"));
         assertTrue(result.getTrustedInstructions().contains(
@@ -115,12 +149,12 @@ class PromptBuilderServiceTest {
         int canonicalClaimCount = result.getOutputSchema().at(
                 "/properties/canonicalApplicationClaims/properties").size();
         int personalSummaryClaimCount = 1;
-        int guaranteedProjectedSkills = 8;
+        int reservedSkillClaimCapacity = 8;
         assertTrue(ordinaryClaimLimit == 29);
         assertTrue(ordinaryClaimLimit
                 + personalSummaryClaimCount
                 + canonicalClaimCount
-                + guaranteedProjectedSkills == 40);
+                + reservedSkillClaimCapacity == 40);
         String ordinaryPathPattern = result.getOutputSchema().at(
                 "/properties/claims/items/properties/contentPaths/items/pattern").asText();
         assertFalse("/coverLetter/openingParagraph".matches(ordinaryPathPattern));

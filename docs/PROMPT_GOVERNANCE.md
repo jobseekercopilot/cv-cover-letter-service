@@ -5,16 +5,17 @@ Each approved release under `src/main/resources/prompts/bundles` packages the
 template, generation rules, output schema and synthetic evaluation policy with
 immutable component checksums. `index.json` is the only runtime allowlist.
 
-The active `cv-cover-letter-1.5.7` release converts the normalised profile and
+The active `cv-cover-letter-1.5.8` release converts the normalised profile and
 canonical job into a stable approved-evidence catalogue and treats that
 catalogue and normalisation warnings as untrusted data. It places the safety
 rules before that evidence and forbids direct, indirect, encoded, nested,
 Unicode-obfuscated and schema-escape instructions in source content from
 changing the task. The release also owns exact bounded JSON Schema `3.8.0` and
-evaluation policy `1.5.5`, used at the provider boundary and by the local
+evaluation policy `1.5.6`, used at the provider boundary and by the local
 response parser and synthetic evaluation checks. The domain bundle cannot name
 a model provider or transport API; provider mechanics belong behind LLM
-Gateway.
+Gateway. Applied parser `3.5.0`, claim policy `2.13.0` and deterministic quality
+policy `1.2.0` complete the active local validation route.
 
 Release `1.5.0` adds a dedicated project structure, separates employment from
 project evidence, caps and deduplicates confirmed skills, requires the correct
@@ -74,7 +75,7 @@ projected skill using the selected fact ID without a second provider call. Reque
 opaque IDs and free-text evidence remain in the untrusted catalogue; the
 immutable trusted schema is not rewritten per request.
 
-Release `1.5.7` adds a third private claim sibling. Schema `3.8.0` requires
+Historical release `1.5.7` added a third private claim sibling. Schema `3.8.0` requires
 `personalSummaryClaim` with fixed ID `CLAIM-9003`, fixed
 `/cv/personalSummary` path, empty review text, a `SUPPORTED` or `REWORDED`
 disposition and confirmed CV-purpose claimant evidence. Ordinary claims may no
@@ -88,6 +89,20 @@ claim. It caps accepted unique approved skill proposals at the smaller of 12
 and the capacity remaining within the 40-claim public bound, then fills in
 evidence order to `min(8, available)`. Inability to preserve that minimum fails
 closed; it does not trigger another provider call.
+
+Active release `1.5.8` retains the `3.8.0` private wire shape and parser
+`3.5.0`, while rules `1.5.8`, evaluation policy `1.5.6` and claim policy
+`2.13.0` replace that versioned minimum-fill behaviour. The approved CV skill
+catalogue is the union of purpose-compatible `DEMONSTRATED_SKILL` snapshot
+facts and revision-bound profile `DECLARED_SKILL` facts. Exact normalised
+duplicates prefer demonstrated support. The model may select up to 12 exact,
+job-relevant candidates; the service discards unsupported, duplicate and
+job-advert-only proposals and does not fill a minimum or quota. Revision-declared
+facts are service-projected only into CV `coreSkills` and cannot be cited for CV
+narrative or cover-letter prose. Cover-letter skills must instead be supported
+by demonstrated career evidence, and quality policy `1.2.0` rejects a literal
+skills-list heading. The legacy positional profile catalogue retains its
+historical minimum-fill compatibility behaviour.
 
 Runtime assembly preserves those domains as separate LLM Gateway v2 fields:
 reviewed bundle text becomes `trustedInstructions`, normalised evidence becomes
@@ -145,11 +160,15 @@ trusted/untrusted separation remains enforced for every approved release. It
 does not reverse documents already generated or stored, so operators must use
 the recorded release and component hashes when identifying affected outputs.
 Release `cv-cover-letter-1.5.6` is the immediate approved emergency rollback
-for `1.5.7`; its immutable files must not be edited to adopt the dedicated
+for `1.5.8`; its immutable files must not be edited to adopt the dedicated
 personal-summary claim, title attachment, optional-description clearing or
 adaptive claim budget. It retains schema `3.7.0`, evaluation policy `1.5.4`,
 parser `3.4.0`, claim policy `2.11.0` and its fixed reservation for up to 12
-projected skills. Release `1.5.5` remains an approved deeper compatibility
+projected skills. Release `1.5.7` is preserved in version-control history but
+is not packaged or included in `index.json`: it shares schema `3.8.0` with the
+active release while its instructions require the previous minimum-eight
+projection, so schema-derived parser and claim-policy routing cannot safely
+distinguish it. Release `1.5.5` remains an approved deeper compatibility
 release with schema `3.6.0`, parser `3.3.0` and claim policy `2.10.0`. Release
 `1.5.3` retains the ordinary claim-array contract and parser metadata `3.2.0`.
 

@@ -1559,6 +1559,42 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
+    void rejectsALiteralSkillsListInTheCoverLetterButNotNaturalProse()
+            throws Exception {
+        ObjectNode listed = validOutput();
+        ((ArrayNode) listed.at("/coverLetter/bodyParagraphs"))
+                .set(
+                        0,
+                        objectMapper.getNodeFactory().textNode(
+                                "Technical Skills: Java"));
+
+        assertRejected(
+                listed,
+                "cover letter contains a literal skills list");
+
+        ObjectNode standaloneHeading = validOutput();
+        ((ArrayNode) standaloneHeading.at("/coverLetter/bodyParagraphs"))
+                .set(
+                        0,
+                        objectMapper.getNodeFactory().textNode("Key Skills"));
+        assertRejected(
+                standaloneHeading,
+                "cover letter contains a literal skills list");
+
+        ObjectNode dashHeading = validOutput();
+        ((ArrayNode) dashHeading.at("/coverLetter/bodyParagraphs"))
+                .set(
+                        0,
+                        objectMapper.getNodeFactory().textNode(
+                                "Skills & Expertise – Java"));
+        assertRejected(
+                dashHeading,
+                "cover letter contains a literal skills list");
+
+        parse(validOutput());
+    }
+
+    @Test
     void rejectsSelectedProjectEvidenceThatIsNotInTheProjectSection()
             throws Exception {
         useVersionedCatalog();
@@ -1581,7 +1617,7 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
-    void requiresEightUniqueSkillsWhenEightConfirmedSkillsAreAvailable()
+    void keepsOnlyTheRelevantProposedSkillsWithoutFillingAnArbitraryMinimum()
             throws Exception {
         useVersionedCatalog();
         List<ApprovedEvidenceRecord> records =
@@ -1610,9 +1646,13 @@ class ClaimEvidenceValidatorTest {
                 List.copyOf(records),
                 catalog.sectionOrder());
 
-        assertRejected(
-                versionedOutput(),
-                "does not cover the available confirmed skills");
+        GeneratedApplicationDocuments accepted = parse(versionedOutput());
+
+        assertEquals(
+                List.of("Java"),
+                accepted.getCv().getCoreSkills().stream()
+                        .map(skill -> skill.getName())
+                        .toList());
     }
 
     @Test
@@ -1681,15 +1721,7 @@ class ClaimEvidenceValidatorTest {
                 true);
 
         assertEquals(
-                List.of(
-                        "Kotlin",
-                        "Java",
-                        "TypeScript",
-                        "SQL",
-                        "Docker",
-                        "Terraform",
-                        "Angular",
-                        "Python"),
+                List.of("Kotlin", "Java"),
                 output.at("/cv/coreSkills").findValues("name").stream()
                         .map(JsonNode::asText)
                         .toList());
@@ -1711,7 +1743,7 @@ class ClaimEvidenceValidatorTest {
                 .forEach(record -> firstSkillEvidenceByValue.putIfAbsent(
                         record.value(),
                         record.evidenceId()));
-        for (int index = 0; index < 8; index++) {
+        for (int index = 0; index < 2; index++) {
             String path = "/cv/coreSkills/" + index + "/name";
             GeneratedClaim skillClaim = documents.getClaims().stream()
                     .filter(claim -> claim.getContentPaths().equals(
@@ -1734,6 +1766,179 @@ class ClaimEvidenceValidatorTest {
                 output,
                 projected,
                 catalog);
+    }
+
+    @Test
+    void versionedProjectionCombinesDeclaredAndDemonstratedSkillsWithoutJobOnlySkills()
+            throws Exception {
+        var request = validVersionedRequest();
+        request.getProfile().setSkills(List.of(
+                "Java",
+                "Spring",
+                "Unproposed profile skill"));
+        request.getJob().setDescription(
+                "The successful applicant will use Kubernetes.");
+        catalog = new ClaimEvidenceCatalogFactory().create(
+                new GenerationInputNormalizer(
+                        Clock.fixed(
+                                Instant.parse("2026-07-24T13:00:00Z"),
+                                ZoneOffset.UTC))
+                        .normalize("owner-secret", request));
+        ObjectNode output = versionedOutput();
+        ArrayNode proposed = (ArrayNode) output.at("/cv/coreSkills");
+        proposed.removeAll();
+        for (String name : List.of("Spring", "Java", "Kubernetes")) {
+            ObjectNode skill = proposed.addObject();
+            skill.put("name", name);
+            skill.put("evidence", "");
+        }
+        GeneratedApplicationDocuments documents = objectMapper.treeToValue(
+                output,
+                GeneratedApplicationDocuments.class);
+
+        new ClaimEvidenceValidator().validate(
+                output,
+                documents,
+                catalog,
+                false,
+                true);
+
+        assertEquals(
+                List.of("Spring", "Java"),
+                output.at("/cv/coreSkills").findValues("name").stream()
+                        .map(JsonNode::asText)
+                        .toList());
+        String springEvidenceId = catalog.records().stream()
+                .filter(record -> record.source()
+                        == EvidenceSource.PROFILE_REVISION)
+                .filter(record -> record.value().equals("Spring"))
+                .map(ApprovedEvidenceRecord::evidenceId)
+                .findFirst()
+                .orElseThrow();
+        assertEquals(
+                List.of(springEvidenceId),
+                documents.getClaims().stream()
+                        .filter(claim -> claim.getContentPaths().equals(
+                                List.of("/cv/coreSkills/0/name")))
+                        .findFirst()
+                        .orElseThrow()
+                        .getEvidenceIds());
+        assertEquals(
+                List.of(com.jobseekercopilot.cvcoverletter
+                        .GenerationInputFixtures.CV_SKILL_FACT_ID.toString()),
+                documents.getClaims().stream()
+                        .filter(claim -> claim.getContentPaths().equals(
+                                List.of("/cv/coreSkills/1/name")))
+                        .findFirst()
+                        .orElseThrow()
+                        .getEvidenceIds());
+    }
+
+    @Test
+    void activeParserRendersADeclaredOnlySkillWithoutAddingACoverLetterList()
+            throws Exception {
+        var request = validVersionedRequest();
+        request.getProfile().setSkills(List.of("Spring"));
+        request.getEvidenceSnapshots().getCv().getSelections().get(0)
+                .setFacts(new java.util.ArrayList<>(
+                        request.getEvidenceSnapshots().getCv()
+                                .getSelections().get(0).getFacts().stream()
+                                .filter(fact -> !"DEMONSTRATED_SKILL".equals(
+                                        fact.getFactType()))
+                                .toList()));
+        catalog = new ClaimEvidenceCatalogFactory().create(
+                new GenerationInputNormalizer(
+                        Clock.fixed(
+                                Instant.parse("2026-07-24T13:00:00Z"),
+                                ZoneOffset.UTC))
+                        .normalize("owner-secret", request));
+        useSchemaFixture("cv-cover-letter-1.5.8");
+        ObjectNode output = (ObjectNode) objectMapper.readTree(
+                CvCoverLetterServiceTest.activeValidJson());
+        ((ObjectNode) output.at("/cv"))
+                .put("personalSummary",
+                        "A developer focused on useful services.");
+        ObjectNode skill = ((ArrayNode) output.at("/cv/coreSkills"))
+                .addObject();
+        skill.put("name", "Spring");
+        skill.put("evidence", "");
+        ObjectNode project = ((ArrayNode) output.at("/cv/projects"))
+                .addObject();
+        project.put("title", "Job Seeker Copilot");
+        project.put("role", "");
+        project.put("context", "");
+        project.put("startDate", "");
+        project.put("endDate", "");
+        project.put("description", "Built useful services.");
+        project.putArray("highlights");
+        String cvTitleFact = com.jobseekercopilot.cvcoverletter
+                .GenerationInputFixtures.CV_PROJECT_TITLE_FACT_ID.toString();
+        String cvDescriptionFact = com.jobseekercopilot.cvcoverletter
+                .GenerationInputFixtures.CV_PROJECT_FACT_ID.toString();
+        String coverFact = com.jobseekercopilot.cvcoverletter
+                .GenerationInputFixtures.COVER_EXPERIENCE_FACT_ID.toString();
+        ArrayNode summaryEvidence = (ArrayNode) output.at(
+                "/personalSummaryClaim/evidenceIds");
+        summaryEvidence.removeAll();
+        summaryEvidence.add(cvDescriptionFact);
+        for (int claimIndex : List.of(3, 4)) {
+            ArrayNode evidenceIds = (ArrayNode) output.at(
+                    "/claims/" + claimIndex + "/evidenceIds");
+            evidenceIds.removeAll();
+            evidenceIds.add(coverFact);
+        }
+        ObjectNode projectClaim = ((ArrayNode) output.path("claims"))
+                .addObject();
+        projectClaim.put("claimId", "CLAIM-020");
+        projectClaim.put("disposition", "SUPPORTED");
+        projectClaim.putArray("evidenceIds")
+                .add(cvTitleFact)
+                .add(cvDescriptionFact);
+        projectClaim.putArray("contentPaths")
+                .add("/cv/projects/0/title")
+                .add("/cv/projects/0/description");
+        projectClaim.put("reviewText", "");
+
+        GeneratedApplicationDocuments accepted = parse(output);
+        String renderedCv = new CvDocumentRenderer().render(
+                accepted.getCv());
+        String renderedCoverLetter = new CoverLetterDocumentRenderer().render(
+                accepted.getCoverLetter());
+
+        assertEquals(
+                List.of("Spring"),
+                accepted.getCv().getCoreSkills().stream()
+                        .map(generatedSkill -> generatedSkill.getName())
+                        .toList());
+        assertTrue(renderedCv.contains("Technical Skills\nSpring"));
+        assertFalse(renderedCoverLetter.contains("Technical Skills"));
+        assertFalse(renderedCoverLetter.contains("Key Skills"));
+    }
+
+    @Test
+    void revisionDeclaredSkillsCannotBeCitedByModelAuthoredNarrative()
+            throws Exception {
+        var request = validVersionedRequest();
+        request.getProfile().setSkills(List.of("Spring"));
+        catalog = new ClaimEvidenceCatalogFactory().create(
+                new GenerationInputNormalizer(
+                        Clock.fixed(
+                                Instant.parse("2026-07-24T13:00:00Z"),
+                                ZoneOffset.UTC))
+                        .normalize("owner-secret", request));
+        String declaredEvidenceId = catalog.records().stream()
+                .filter(record -> record.source()
+                        == EvidenceSource.PROFILE_REVISION)
+                .map(ApprovedEvidenceRecord::evidenceId)
+                .findFirst()
+                .orElseThrow();
+        ObjectNode output = versionedOutput();
+        ((ArrayNode) output.at("/claims/6/evidenceIds"))
+                .add(declaredEvidenceId);
+
+        assertRejected(
+                output,
+                "revision-declared skill evidence is service-projected only");
     }
 
     @Test

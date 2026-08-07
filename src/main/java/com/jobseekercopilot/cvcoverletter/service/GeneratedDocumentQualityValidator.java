@@ -27,9 +27,11 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class GeneratedDocumentQualityValidator {
-    static final String POLICY_VERSION = "1.1.0";
-    private static final int MIN_TARGET_SKILLS = 8;
+    static final String POLICY_VERSION = "1.2.0";
     private static final int MAX_SKILLS = 12;
+    private static final Pattern COVER_LETTER_SKILL_LIST = Pattern.compile(
+            "(?i)^\\s*(?:key skills|technical skills|skills\\s*&\\s*expertise)"
+                    + "\\s*(?::|[-\u2013\u2014]|\\R|$)");
 
     public void validate(
             JsonNode output,
@@ -49,9 +51,10 @@ public class GeneratedDocumentQualityValidator {
                 "approved evidence catalogue is missing");
 
         validateCanonicalIdentity(output, catalog.records());
-        validateSkills(documents.getCv(), catalog);
+        validateSkills(documents.getCv());
         validateDuplicateNarrative(output, "/cv", cvNarrative(output));
         List<TextUnit> coverNarrative = coverLetterNarrative(output);
+        validateNoCoverLetterSkillList(coverNarrative);
         validateDuplicateNarrative(output, "/coverLetter", coverNarrative);
         validateQualifications(documents, catalog.records(), coverNarrative);
         validateSelectedEvidenceCoverage(documents, catalog);
@@ -90,10 +93,7 @@ public class GeneratedDocumentQualityValidator {
                 "$.coverLetter.signOff", "sign-off is not correct for the greeting");
     }
 
-    private void validateSkills(
-            GeneratedCv cv,
-            ClaimEvidenceCatalog catalog
-    ) {
+    private void validateSkills(GeneratedCv cv) {
         List<GeneratedCv.CoreSkill> skills = safe(cv.getCoreSkills());
         require(skills.size() <= MAX_SKILLS,
                 "$.cv.coreSkills", "contains more than 12 skills");
@@ -112,23 +112,16 @@ public class GeneratedDocumentQualityValidator {
                         "repeated skill evidence");
             }
         }
+    }
 
-        if (!"2.0".equals(catalog.catalogVersion())) {
-            return;
+    private void validateNoCoverLetterSkillList(
+            List<TextUnit> coverNarrative
+    ) {
+        for (TextUnit unit : coverNarrative) {
+            require(!COVER_LETTER_SKILL_LIST.matcher(unit.text()).find(),
+                    unit.path(),
+                    "cover letter contains a literal skills list");
         }
-        long availableSkills = catalog.records().stream()
-                .filter(record ->
-                        record.source() == EvidenceSource.EVIDENCE_SNAPSHOT)
-                .filter(record -> record.purpose().supports(EvidencePurpose.CV))
-                .filter(record -> "DEMONSTRATED_SKILL".equals(record.factType()))
-                .map(ApprovedEvidenceRecord::value)
-                .map(this::normalise)
-                .distinct()
-                .count();
-        int minimum = (int) Math.min(MIN_TARGET_SKILLS, availableSkills);
-        require(skills.size() >= minimum,
-                "$.cv.coreSkills",
-                "does not cover the available confirmed skills");
     }
 
     private void validateDuplicateNarrative(
