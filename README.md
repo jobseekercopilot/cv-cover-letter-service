@@ -63,14 +63,14 @@ key rotation, and incident safeguards are documented in
 
 ## Prompt releases
 
-Prompt bundle `cv-cover-letter-1.5.10`, output schema `3.9.0`, evaluation policy
+Prompt bundle `cv-cover-letter-1.5.11`, output schema `3.10.0`, evaluation policy
 `1.5.8` and parser `3.6.0` render projects as projects, keep paid employment
 separate, select at most 12 exact job-relevant CV skills without a minimum or
 quota, omit unsupported empty sections, and use the correct UK generic
 greeting/sign-off pair. Claim policy `2.14.0` and post-grounding quality policy
 `1.2.0` reject unsupported skills, literal cover-letter skill lists, repeated
 narrative, repeated qualifications, missing selected evidence and project
-fields assembled from different evidence entries. Schema `3.9.0` requires
+fields assembled from different evidence entries. Schema `3.10.0` requires
 evidence beside every project highlight, work responsibility and cover-letter
 body paragraph; parser `3.6.0` projects those items into the public ledger so
 their provenance cannot be omitted independently. Release `1.5.1` requires an explicit complete

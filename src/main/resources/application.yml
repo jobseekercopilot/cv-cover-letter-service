@@ -19,7 +19,7 @@ llm:
   max-tokens: ${LLM_MAX_TOKENS:8192}
 
 prompt:
-  selected-release-id: ${PROMPT_BUNDLE_RELEASE:cv-cover-letter-1.5.10}
+  selected-release-id: ${PROMPT_BUNDLE_RELEASE:cv-cover-letter-1.5.11}
 
 rejected-generation-quarantine:
   enabled: ${REJECTED_GENERATION_QUARANTINE_ENABLED:false}
