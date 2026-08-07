@@ -318,9 +318,13 @@ public class ClaimEvidenceValidator {
                 submittedClaims,
                 versionedEvidence);
         submittedClaims = removeSubmittedCoreSkillCoverage(submittedClaims);
-        documents.setClaims(submittedClaims);
 
         Set<String> submittedPaths = claimBearingPaths(output);
+        submittedClaims = removeUnpopulatedFinalClaimPaths(
+                submittedClaims,
+                submittedPaths,
+                claimContentTopologyPaths(output));
+        documents.setClaims(submittedClaims);
         validateSubmittedContentPaths(
                 submittedClaims,
                 submittedPaths,
@@ -763,6 +767,45 @@ public class ClaimEvidenceValidator {
                         "final claim has no populated content path");
             }
         }
+    }
+
+    private List<GeneratedClaim> removeUnpopulatedFinalClaimPaths(
+            List<GeneratedClaim> claims,
+            Set<String> submittedPaths,
+            Set<String> contentPathTopology
+    ) {
+        List<GeneratedClaim> normalized = new ArrayList<>(claims.size());
+        for (GeneratedClaim claim : claims) {
+            if (claim == null || !isFinalContent(claim.getDisposition())) {
+                normalized.add(claim);
+                continue;
+            }
+            List<String> originalPaths = safe(claim.getContentPaths());
+            if (originalPaths.isEmpty()) {
+                normalized.add(claim);
+                continue;
+            }
+            List<String> retainedPaths = originalPaths.stream()
+                    .filter(path -> path == null
+                            || !contentPathTopology.contains(path)
+                            || submittedPaths.contains(path)
+                            || submittedPaths.stream().anyMatch(populatedPath ->
+                                    populatedPath.startsWith(path + "/")))
+                    .toList();
+            if (retainedPaths.isEmpty()) {
+                continue;
+            }
+            if (retainedPaths.size() == originalPaths.size()) {
+                normalized.add(claim);
+                continue;
+            }
+            GeneratedClaim copy = copyWithClaimId(
+                    claim,
+                    claim.getClaimId());
+            copy.setContentPaths(retainedPaths);
+            normalized.add(copy);
+        }
+        return List.copyOf(normalized);
     }
 
     private List<GeneratedClaim> normalizeCompleteOneBasedBodyParagraphPaths(
