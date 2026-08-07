@@ -2540,6 +2540,31 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
+    void normalizesDuplicateOwnershipOfACompleteOneBasedHighlightLedger()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        addProjectHighlights(output, 2);
+        shiftProjectHighlightPathsOneBased(output);
+        ((ArrayNode) output.at("/claims/1/contentPaths"))
+                .add("/cv/projects/0/highlights/1");
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertEquals(
+                java.util.stream.IntStream.range(0, 2)
+                        .mapToObj(index ->
+                                "/cv/projects/0/highlights/" + index)
+                        .toList(),
+                accepted.getClaims().stream()
+                        .flatMap(claim -> claim.getContentPaths().stream())
+                        .filter(path -> path.startsWith(
+                                "/cv/projects/0/highlights/"))
+                        .sorted()
+                        .toList());
+    }
+
+    @Test
     void rejectsIncompleteOrMixedOneBasedProjectHighlightLedgers()
             throws Exception {
         useVersionedCatalog();

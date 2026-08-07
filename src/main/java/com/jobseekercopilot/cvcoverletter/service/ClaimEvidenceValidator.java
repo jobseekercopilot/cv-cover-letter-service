@@ -928,18 +928,16 @@ public class ClaimEvidenceValidator {
             return claims;
         }
 
-        Map<String, Integer> expectedOneBasedCounts =
-                new LinkedHashMap<>();
         Map<String, String> oneBasedToZeroBased =
                 new LinkedHashMap<>();
         for (int index = 0; index < values.size(); index++) {
             String oneBased = arrayPath + "/" + (index + 1);
-            expectedOneBasedCounts.put(oneBased, 1);
             oneBasedToZeroBased.put(
                     oneBased,
                     arrayPath + "/" + index);
         }
-        if (!submittedCounts.equals(expectedOneBasedCounts)) {
+        if (!submittedCounts.keySet().equals(
+                oneBasedToZeroBased.keySet())) {
             return claims;
         }
 
