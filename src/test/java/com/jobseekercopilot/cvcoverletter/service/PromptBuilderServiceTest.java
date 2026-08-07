@@ -2,6 +2,7 @@ package com.jobseekercopilot.cvcoverletter.service;
 
 import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validRequest;
 import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validVersionedRequest;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -16,7 +17,9 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.DefaultResourceLoader;
@@ -96,6 +99,8 @@ class PromptBuilderServiceTest {
                 .findFirst()
                 .orElseThrow();
         assertFalse(active.getUntrustedInput().contains(declaredEvidenceId));
+        assertFalse(active.getOutputSchema().at("/$defs/approvedEvidenceId/enum")
+                .toString().contains("\"" + declaredEvidenceId + "\""));
         assertFalse(active.getUntrustedInput().contains("PROFILE_REVISION"));
         assertTrue(active.getUntrustedInput().contains(
                 "serviceProjectedCoreSkillCandidates"));
@@ -108,7 +113,7 @@ class PromptBuilderServiceTest {
     }
 
     @Test
-    void separatesReviewedInstructionsUntrustedEvidenceAndOutputSchema() {
+    void separatesReviewedInstructionsUntrustedEvidenceAndOutputSchema() throws Exception {
         LlmProperties properties = new LlmProperties();
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBuilderService service = new PromptBuilderService(
@@ -166,9 +171,27 @@ class PromptBuilderServiceTest {
                 .equals("[\"SUPPORTED\",\"REWORDED\"]"));
         assertTrue(result.getOutputSchema().at(
                 "/properties/claims/items/properties/evidenceIds/minItems").asInt() == 1);
-        assertFalse(result.getOutputSchema().at(
-                "/properties/claims/items/properties/evidenceIds/items")
-                .has("enum"));
+        assertEquals(
+                "#/$defs/approvedEvidenceId",
+                result.getOutputSchema().at(
+                        "/properties/claims/items/properties/evidenceIds/items/$ref")
+                        .asText());
+        assertEquals(
+                "#/$defs/approvedEvidenceId",
+                result.getOutputSchema().at(
+                        "/properties/personalSummaryClaim/properties/evidenceIds/items/$ref")
+                        .asText());
+        Set<String> suppliedEvidenceIds = new LinkedHashSet<>();
+        objectMapper.readTree(result.getUntrustedInput())
+                .at("/approvedEvidence/records")
+                .forEach(record -> suppliedEvidenceIds.add(
+                        record.path("evidenceId").asText()));
+        Set<String> schemaEvidenceIds = new LinkedHashSet<>();
+        result.getOutputSchema().at("/$defs/approvedEvidenceId/enum")
+                .forEach(value -> schemaEvidenceIds.add(value.asText()));
+        assertEquals(suppliedEvidenceIds, schemaEvidenceIds);
+        assertTrue(result.getOutputSchema().toString().length()
+                <= PromptBuilderService.MAX_OUTPUT_SCHEMA_CHARACTERS);
         assertTrue(result.getOutputSchema().at(
                 "/properties/claims/items/properties/contentPaths/minItems").asInt() == 1);
         assertTrue(result.getOutputSchema().at(
@@ -227,7 +250,7 @@ class PromptBuilderServiceTest {
                 .matches(ordinaryPathPattern));
         assertFalse(result.getOutputSchema().toString().contains("CONFIRMATION_REQUIRED"));
         assertFalse(result.getOutputSchema().toString().contains("REJECTED"));
-        assertFalse(result.getOutputSchema().toString().contains("PROFILE.SKILL.1"));
+        assertTrue(result.getOutputSchema().toString().contains("PROFILE.SKILL.1"));
         assertFalse(result.getOutputSchema().toString().contains("Build useful and reliable services."));
         assertTrue(result.getGenerationMetadata().schemaVersion().equals("3.8.0"));
         assertTrue(result.getEvidenceCatalog().records().stream()

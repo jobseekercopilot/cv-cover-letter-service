@@ -125,7 +125,7 @@ class CvCoverLetterServiceTest {
         assertEquals(10, actual.claimLedger().claims().size());
         assertEquals(64, actual.claimLedger().ledgerSha256().length());
         assertEquals("2.13.0", actual.claimLedger().policyVersion());
-        assertEquals("3.5.0", actual.claimLedger().parserVersion());
+        assertEquals("3.5.1", actual.claimLedger().parserVersion());
         verify(llmGatewayApi).generateV2(any());
         verifyNoInteractions(
                 paymentBillingClient,
@@ -360,7 +360,7 @@ class CvCoverLetterServiceTest {
         org.junit.jupiter.api.Assertions.assertTrue(
                 output.getAll().contains("schemaVersion=3.8.0"));
         org.junit.jupiter.api.Assertions.assertTrue(
-                output.getAll().contains("parserVersion=3.5.0"));
+                output.getAll().contains("parserVersion=3.5.1"));
         assertFalse(output.getAll().contains("input-secret-sentinel"));
         assertFalse(output.getAll().contains("response-secret-sentinel"));
     }

@@ -25,7 +25,7 @@ class ValidatedClaimLedgerFactoryTest {
         assertEquals(first.ledgerId(), replay.ledgerId());
         assertEquals(first.ledgerSha256(), replay.ledgerSha256());
         assertEquals("2.13.0", first.policyVersion());
-        assertEquals("3.5.0", first.parserVersion());
+        assertEquals("3.5.1", first.parserVersion());
         assertEquals(64, first.ledgerSha256().length());
     }
 
@@ -37,7 +37,7 @@ class ValidatedClaimLedgerFactoryTest {
         var active = factory.create(
                 operationId,
                 List.of(claim("Focused review")),
-                "3.5.0");
+                "3.5.1");
         var projectionRollback = factory.create(
                 operationId,
                 List.of(claim("Focused review")),

@@ -26,7 +26,7 @@ import org.springframework.web.util.HtmlUtils;
 @Component
 public class LlmResponseParser {
 
-    static final String PARSER_VERSION = "3.5.0";
+    static final String PARSER_VERSION = "3.5.1";
     static final String CORE_SKILL_PROJECTION_PARSER_VERSION = "3.4.0";
     static final String DEDICATED_CANONICAL_PARSER_VERSION = "3.3.0";
     static final String LEGACY_PARSER_VERSION = "3.2.0";
@@ -682,21 +682,58 @@ public class LlmResponseParser {
     }
 
     private void validateSchema(JsonNode value, JsonNode schema, String path) {
-        String type = schema.path("type").asText();
+        validateSchema(value, schema, schema, path);
+    }
+
+    private void validateSchema(
+            JsonNode value,
+            JsonNode schema,
+            JsonNode rootSchema,
+            String path
+    ) {
+        JsonNode resolvedSchema = resolveLocalReference(schema, rootSchema, path);
+        String type = resolvedSchema.path("type").asText();
         switch (type) {
-            case "object" -> validateObject(value, schema, path);
-            case "array" -> validateArray(value, schema, path);
-            case "string" -> validateString(value, schema, path);
+            case "object" -> validateObject(value, resolvedSchema, rootSchema, path);
+            case "array" -> validateArray(value, resolvedSchema, rootSchema, path);
+            case "string" -> validateString(value, resolvedSchema, path);
             case "boolean" -> require(value.isBoolean(), path, "expected boolean");
             case "integer" -> require(value.isIntegralNumber(), path, "expected integer");
             case "number" -> require(value.isNumber(), path, "expected number");
             default -> throw new IllegalStateException(
                     "Generation output schema contains unsupported type at " + path);
         }
-        validateEnum(value, schema, path);
+        validateEnum(value, resolvedSchema, path);
     }
 
-    private void validateObject(JsonNode value, JsonNode schema, String path) {
+    private JsonNode resolveLocalReference(
+            JsonNode schema,
+            JsonNode rootSchema,
+            String path
+    ) {
+        JsonNode reference = schema.path("$ref");
+        if (!reference.isTextual()) {
+            return schema;
+        }
+        String pointer = reference.asText();
+        if (!pointer.startsWith("#/")) {
+            throw new IllegalStateException(
+                    "Generation output schema contains a non-local reference at " + path);
+        }
+        JsonNode resolved = rootSchema.at(pointer.substring(1));
+        if (resolved.isMissingNode() || !resolved.isObject()) {
+            throw new IllegalStateException(
+                    "Generation output schema contains an unresolved reference at " + path);
+        }
+        return resolved;
+    }
+
+    private void validateObject(
+            JsonNode value,
+            JsonNode schema,
+            JsonNode rootSchema,
+            String path
+    ) {
         require(value.isObject(), path, "expected object");
         JsonNode properties = schema.path("properties");
         if (!properties.isObject()) {
@@ -729,12 +766,21 @@ public class LlmResponseParser {
         while (fields.hasNext()) {
             String field = fields.next();
             if (value.has(field)) {
-                validateSchema(value.get(field), properties.get(field), child(path, field));
+                validateSchema(
+                        value.get(field),
+                        properties.get(field),
+                        rootSchema,
+                        child(path, field));
             }
         }
     }
 
-    private void validateArray(JsonNode value, JsonNode schema, String path) {
+    private void validateArray(
+            JsonNode value,
+            JsonNode schema,
+            JsonNode rootSchema,
+            String path
+    ) {
         require(value.isArray(), path, "expected array");
         int minimum = schema.path("minItems").asInt(0);
         int maximum = schema.path("maxItems").asInt(Integer.MAX_VALUE);
@@ -746,7 +792,11 @@ public class LlmResponseParser {
                     "Generation output schema array items are invalid at " + path);
         }
         for (int index = 0; index < value.size(); index++) {
-            validateSchema(value.get(index), itemSchema, path + "[" + index + "]");
+            validateSchema(
+                    value.get(index),
+                    itemSchema,
+                    rootSchema,
+                    path + "[" + index + "]");
         }
     }
 
