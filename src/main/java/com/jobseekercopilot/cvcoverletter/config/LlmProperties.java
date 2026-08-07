@@ -11,5 +11,5 @@ public class LlmProperties {
     private String taskType = "CV_COVER_LETTER_GENERATION";
     private String language = "UK English";
     private Double temperature = 0.0;
-    private Integer maxTokens = 4096;
+    private Integer maxTokens = 8192;
 }

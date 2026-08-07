@@ -58,8 +58,8 @@ verify_source \
 verify_source \
     llm-gateway \
     jobseekercopilot/llm-gateway \
-    2234f6db4f7975497092f4c757ffa7758771fe94 \
-    cc24f08a1c3d0644137de28dca4445492000197f992c6f2865ffaf5dee5023bb
+    d41de4d219f065dcf78c96d11b2e8236f310ba59 \
+    418d15c0ed1be362f0500464b8099e51158e4eba00bef6346f163816b330154b
 verify_source \
     payment-service \
     jobseekercopilot/payment-service \
@@ -88,7 +88,7 @@ jq -e '
     (.components.schemas.GenerationOutputContract.properties.format.enum
         | index("JSON_SCHEMA") != null) and
     (.components.schemas.GenerationOutputContract.properties | has("jsonSchema")) and
-    (.components.schemas.GenerationLimits.properties.maxOutputTokens.maximum == 4096) and
+    (.components.schemas.GenerationLimits.properties.maxOutputTokens.maximum == 8192) and
     (.components.schemas.GenerationLimits.properties.temperature.maximum == 1) and
     (.components.schemas.GenerationResponse.properties
         | has("output") and has("finishReason") and has("usage") and
