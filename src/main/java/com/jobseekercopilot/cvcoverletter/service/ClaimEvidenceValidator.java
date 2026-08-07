@@ -200,6 +200,10 @@ public class ClaimEvidenceValidator {
                         output,
                         documents.getClaims(),
                         versionedEvidence);
+        submittedClaims = normalizeCompleteOneBasedProjectHighlightPaths(
+                output,
+                submittedClaims,
+                versionedEvidence);
         Map<String, String> projectedCoreSkillEvidenceByPath = Map.of();
         if (projectCoreSkills) {
             projectedCoreSkillEvidenceByPath = canonicalizeCoreSkills(
@@ -309,6 +313,10 @@ public class ClaimEvidenceValidator {
                         output,
                         documents.getClaims(),
                         versionedEvidence);
+        submittedClaims = normalizeCompleteOneBasedProjectHighlightPaths(
+                output,
+                submittedClaims,
+                versionedEvidence);
         submittedClaims = removeSubmittedCoreSkillCoverage(submittedClaims);
         documents.setClaims(submittedClaims);
 
@@ -858,6 +866,100 @@ public class ClaimEvidenceValidator {
                     copyWithClaimId(
                             claim,
                             claim.getClaimId());
+            copy.setContentPaths(List.copyOf(shiftedPaths));
+            normalized.add(copy);
+        }
+        return List.copyOf(normalized);
+    }
+
+    private List<GeneratedClaim> normalizeCompleteOneBasedProjectHighlightPaths(
+            JsonNode output,
+            List<GeneratedClaim> claims,
+            boolean versionedEvidence
+    ) {
+        if (!versionedEvidence) {
+            return claims;
+        }
+        List<GeneratedClaim> normalized = claims;
+        JsonNode projects = output.at("/cv/projects");
+        for (int index = 0; index < projects.size(); index++) {
+            normalized = normalizeCompleteOneBasedTextArrayPaths(
+                    output,
+                    normalized,
+                    "/cv/projects/" + index + "/highlights");
+        }
+        return normalized;
+    }
+
+    private List<GeneratedClaim> normalizeCompleteOneBasedTextArrayPaths(
+            JsonNode output,
+            List<GeneratedClaim> claims,
+            String arrayPath
+    ) {
+        JsonNode values = output.at(arrayPath);
+        if (!values.isArray() || values.isEmpty()) {
+            return claims;
+        }
+
+        Map<String, Integer> submittedCounts = new LinkedHashMap<>();
+        boolean allPointersAreFinal = true;
+        for (GeneratedClaim claim : claims) {
+            if (claim == null) {
+                continue;
+            }
+            for (String contentPath : safe(claim.getContentPaths())) {
+                if (contentPath == null
+                        || !contentPath.startsWith(arrayPath + "/")) {
+                    continue;
+                }
+                submittedCounts.merge(contentPath, 1, Integer::sum);
+                allPointersAreFinal = allPointersAreFinal
+                        && isFinalContent(claim.getDisposition());
+            }
+        }
+        if (!allPointersAreFinal) {
+            return claims;
+        }
+
+        Map<String, Integer> expectedOneBasedCounts =
+                new LinkedHashMap<>();
+        Map<String, String> oneBasedToZeroBased =
+                new LinkedHashMap<>();
+        for (int index = 0; index < values.size(); index++) {
+            String oneBased = arrayPath + "/" + (index + 1);
+            expectedOneBasedCounts.put(oneBased, 1);
+            oneBasedToZeroBased.put(
+                    oneBased,
+                    arrayPath + "/" + index);
+        }
+        if (!submittedCounts.equals(expectedOneBasedCounts)) {
+            return claims;
+        }
+
+        List<GeneratedClaim> normalized =
+                new ArrayList<>(claims.size());
+        for (GeneratedClaim claim : claims) {
+            if (claim == null || !isFinalContent(claim.getDisposition())) {
+                normalized.add(claim);
+                continue;
+            }
+            List<String> contentPaths = safe(claim.getContentPaths());
+            List<String> shiftedPaths =
+                    new ArrayList<>(contentPaths.size());
+            boolean shifted = false;
+            for (String contentPath : contentPaths) {
+                String shiftedPath = oneBasedToZeroBased.get(contentPath);
+                shiftedPaths.add(
+                        shiftedPath == null ? contentPath : shiftedPath);
+                shifted = shifted || shiftedPath != null;
+            }
+            if (!shifted) {
+                normalized.add(claim);
+                continue;
+            }
+            GeneratedClaim copy = copyWithClaimId(
+                    claim,
+                    claim.getClaimId());
             copy.setContentPaths(List.copyOf(shiftedPaths));
             normalized.add(copy);
         }
