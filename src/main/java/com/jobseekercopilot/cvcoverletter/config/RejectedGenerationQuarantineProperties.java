@@ -18,4 +18,5 @@ public class RejectedGenerationQuarantineProperties {
     private int maxArtifactBytes = 262_144;
     private int maxArtifacts = 1_000;
     private int maxReplayEvents = 100;
+    private boolean allowOperationBoundContextDrift;
 }

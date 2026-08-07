@@ -1,6 +1,7 @@
 package com.jobseekercopilot.cvcoverletter.quarantine;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -40,11 +41,12 @@ class RejectedGenerationQuarantineServiceTest {
     private GenerationRequest request;
     private GenerationResponse response;
     private PromptGenerationMetadata metadata;
+    private RejectedGenerationQuarantineProperties properties;
 
     @BeforeEach
     void setUp() {
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
-        RejectedGenerationQuarantineProperties properties =
+        properties =
                 new RejectedGenerationQuarantineProperties();
         properties.setEnabled(true);
         properties.setStorageDirectory(temporaryDirectory.toString());
@@ -67,7 +69,8 @@ class RejectedGenerationQuarantineServiceTest {
         service = new RejectedGenerationQuarantineService(
                 repository,
                 objectMapper,
-                clock);
+                clock,
+                properties);
         metadata = new PromptGenerationMetadata(
                 "cv-cover-letter-1.5.9",
                 "cv-cover-letter",
@@ -159,6 +162,49 @@ class RejectedGenerationQuarantineServiceTest {
                         artifact,
                         changed,
                         metadata));
+    }
+
+    @Test
+    void operationBoundRecoveryMayTolerateOnlyDerivedRequestDrift() {
+        UUID operationId = UUID.randomUUID();
+        RejectedGenerationArtifact artifact = service.capture(context(
+                operationId,
+                new InvalidLlmResponseException("unsafe")));
+        GenerationRequest changed = new GenerationRequest()
+                .contractVersion(GenerationRequest.ContractVersionEnum._2_0)
+                .task("DIFFERENT")
+                .trustedInstructions("trusted")
+                .untrustedInput("evidence-secret-sentinel")
+                .output(request.getOutput())
+                .limits(request.getLimits());
+        properties.setAllowOperationBoundContextDrift(true);
+
+        assertDoesNotThrow(() -> service.requireMatchingReplayContext(
+                artifact,
+                changed,
+                metadata));
+
+        PromptGenerationMetadata changedMetadata =
+                new PromptGenerationMetadata(
+                        metadata.releaseId(),
+                        metadata.bundleId(),
+                        metadata.bundleVersion(),
+                        "f".repeat(64),
+                        metadata.templateVersion(),
+                        metadata.templateSha256(),
+                        metadata.rulesVersion(),
+                        metadata.rulesSha256(),
+                        metadata.schemaId(),
+                        metadata.schemaVersion(),
+                        metadata.schemaSha256(),
+                        metadata.evaluationPolicyVersion(),
+                        metadata.evaluationPolicySha256());
+        assertThrows(
+                RejectedGenerationReplayConflictException.class,
+                () -> service.requireMatchingReplayContext(
+                        artifact,
+                        changed,
+                        changedMetadata));
     }
 
     @Test
