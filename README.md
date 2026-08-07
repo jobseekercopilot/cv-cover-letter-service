@@ -27,7 +27,7 @@ are recorded in [`api/client-release.json`](api/client-release.json). Generated
 client source and packages are disposable build output and are never committed.
 See [`api/README.md`](api/README.md) for the release and compatibility policy.
 
-Contract `3.4.0` accepts schema `2.0` immutable evidence snapshots for the
+Contract `4.0.0` accepts schema `2.0` immutable evidence snapshots for the
 durable Gateway flow. CV and cover-letter snapshots are validated independently
 against the exact profile revision, preserve claimant-selected entry and section
 order, and expose only stable confirmed fact IDs to generation. The claim

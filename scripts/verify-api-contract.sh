@@ -40,7 +40,7 @@ jq -e '
         "ValidatedClaimLedger"
     ] as $closed |
     (.openapi | type == "string" and startswith("3.")) and
-    (.info.version == "3.4.0") and
+    (.info.version == "4.0.0") and
     (.paths["/api/v1/cv-cover-letter/drafts/estimate"].post.operationId
         == "estimateDraft") and
     (.paths["/api/v1/cv-cover-letter/drafts"].post.operationId
