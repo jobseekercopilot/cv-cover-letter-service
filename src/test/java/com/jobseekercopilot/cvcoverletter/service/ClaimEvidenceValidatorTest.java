@@ -1398,6 +1398,46 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
+    void reservesExactAtomicEvidenceWhenSubmittedReferencesFillTheLimit()
+            throws Exception {
+        ObjectNode output = validOutput();
+        ((ObjectNode) output.path("coverLetter"))
+                .put("jobTitle", "Senior Architect");
+        List<ApprovedEvidenceRecord> records =
+                new java.util.ArrayList<>(catalog.records());
+        ArrayNode submittedEvidence =
+                (ArrayNode) output.at("/claims/3/evidenceIds");
+        submittedEvidence.removeAll();
+        for (int index = 0; index < 30; index++) {
+            String evidenceId = "JOB.SUPPLEMENTAL." + index;
+            records.add(new ApprovedEvidenceRecord(
+                    evidenceId,
+                    EvidenceSource.JOB,
+                    "/job/description",
+                    "Supplemental job context " + index,
+                    "DESCRIPTION",
+                    "JOB",
+                    EvidencePurpose.COVER_LETTER));
+            submittedEvidence.add(evidenceId);
+        }
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                List.copyOf(records),
+                catalog.sectionOrder());
+
+        GeneratedApplicationDocuments corrected = parse(output);
+
+        GeneratedClaim jobTitleClaim = corrected.getClaims().stream()
+                .filter(claim -> claim.getContentPaths()
+                        .contains("/coverLetter/jobTitle"))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("Java Developer", corrected.getCoverLetter().getJobTitle());
+        assertEquals(30, jobTitleClaim.getEvidenceIds().size());
+        assertEquals("JOB.TITLE", jobTitleClaim.getEvidenceIds().get(0));
+    }
+
+    @Test
     void clearsOptionalAtomicContentWhenNoApprovedFactExists()
             throws Exception {
         ObjectNode output = validOutput();

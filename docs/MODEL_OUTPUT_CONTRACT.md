@@ -99,15 +99,17 @@ claimant evidence; canonical job or request facts cannot support it alone.
 
 After the raw `3.8.0` provider envelope passes schema and active-content
 validation, parser `3.5.2` projects the three private siblings and policy
-`2.14.0` normalises the non-skill claim ledger. It attaches `/cv/title` and
+`2.15.0` normalises the non-skill claim ledger. It attaches `/cv/title` and
 `/coverLetter/title` deterministically to the same-purpose identity claim that
 already cites `JOB.TITLE`; if no compatible claim exists, it creates a bounded
 one-path identity claim. A non-empty optional work-history
 `tailoredDescription` is retained only when an accepted ordinary claim owns its
 path; otherwise the service clears it before final exact-coverage validation.
-When normalisation merges approved evidence references, it preserves provider
-references first and appends supplemental references only up to the schema's
-30-reference limit. It does not truncate an already-invalid provider array.
+When normalisation merges approved evidence references, it reserves exact
+approved facts required by atomic final paths first, then preserves provider
+references in order and appends optional supplemental references up to the
+schema's 30-reference limit. It does not truncate an already-invalid provider
+array.
 
 The service then rebuilds `cv.coreSkills` from approved purpose-compatible
 skill facts. For versioned input, candidates are CV `EVIDENCE_SNAPSHOT`
@@ -200,7 +202,7 @@ template, rules and schema versions and their hashes. Request/response logs
 also record LLM contract `2.0`, the schema-applied parser version, claim policy
 version, the actual model ID and the gateway-owned deployment, admission and
 pricing-policy versions. Active release `1.5.11` records parser `3.6.0`, claim
-policy `2.14.0` and quality policy `1.4.0`; immediate rollback schema `3.7.0`
+policy `2.15.0` and quality policy `1.4.0`; immediate rollback schema `3.7.0`
 records parser `3.4.0` and claim policy `2.11.0`; schema `3.6.0` records parser
 `3.3.0` and claim policy `2.10.0`; selecting release `1.5.3` retains parser
 `3.2.0`. The consumer accepts gateway audit fields only from the mandatory

@@ -14,7 +14,7 @@ changing the task. The release also owns exact bounded JSON Schema `3.10.0` and
 evaluation policy `1.5.8`, used at the provider boundary and by the local
 response parser and synthetic evaluation checks. The domain bundle cannot name
 a model provider or transport API; provider mechanics belong behind LLM
-Gateway. Applied parser `3.6.0`, claim policy `2.14.0` and deterministic quality
+Gateway. Applied parser `3.6.0`, claim policy `2.15.0` and deterministic quality
 policy `1.4.0` complete the active local validation route.
 
 Release `1.5.0` adds a dedicated project structure, separates employment from
@@ -93,7 +93,7 @@ closed; it does not trigger another provider call.
 
 Historical release `1.5.9` retains the `3.8.0` private wire shape and parser
 `3.5.2`, while rules `1.5.9`, evaluation policy `1.5.7` and claim policy
-`2.14.0` replace that versioned minimum-fill behaviour and bound deterministic
+`2.15.0` replace that versioned minimum-fill behaviour and bound deterministic
 evidence enrichment to the per-claim schema maximum. The approved CV skill
 catalogue is the union of purpose-compatible `DEMONSTRATED_SKILL` snapshot
 facts and revision-bound profile `DECLARED_SKILL` facts. Exact normalised

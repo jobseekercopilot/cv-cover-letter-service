@@ -67,7 +67,7 @@ Prompt bundle `cv-cover-letter-1.5.11`, output schema `3.10.0`, evaluation polic
 `1.5.8` and parser `3.6.0` render projects as projects, keep paid employment
 separate, select at most 12 exact job-relevant CV skills without a minimum or
 quota, omit unsupported empty sections, and use the correct UK generic
-greeting/sign-off pair. Claim policy `2.14.0` and post-grounding quality policy
+greeting/sign-off pair. Claim policy `2.15.0` and post-grounding quality policy
 `1.4.0` reject unsupported skills, literal cover-letter skill lists, repeated
 narrative, repeated qualifications, misplaced selected evidence and project
 fields assembled from different evidence entries. Schema `3.10.0` requires
@@ -87,6 +87,11 @@ cite compatible approved evidence, and used structured evidence must still
 appear in its governed section. A project must still cite exactly one PROJECT
 selection, but harmless supplemental citations from other evidence categories
 do not cause that otherwise grounded project to be discarded.
+
+Claim policy `2.15.0` reserves exact canonical evidence for atomic paths before
+optional provider references, so a full claim ledger cannot crowd out
+`JOB.TITLE`, `JOB.COMPANY` or another exact fact required after deterministic
+normalisation.
 
 Release `1.5.3` fixes the application opening to exactly `Please consider my
 application for this role.` and the closing to exactly `Thank you for
@@ -135,7 +140,7 @@ smaller of 12 and the remaining 40-claim capacity, and fills in evidence order
 to `min(8, available)`. It fails safely if that minimum cannot fit.
 
 Historical release `1.5.9` retains schema `3.8.0` and parser `3.5.2` but replaces
-that versioned skill projection under claim policy `2.14.0`. Revision-bound
+that versioned skill projection under claim policy `2.15.0`. Revision-bound
 profile skills are CV-only exact candidates alongside demonstrated skill facts;
 the service de-duplicates them by normalised value and prefers demonstrated
 support. It keeps only exact model-selected candidates relevant to the job,
