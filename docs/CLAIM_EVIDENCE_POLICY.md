@@ -181,8 +181,10 @@ topology, evidence-purpose, content-alignment and exact-once checks still run.
 The same exact-sequence repair is applied independently to each populated
 versioned nested text array at `/cv/projects/{i}/highlights` and
 `/cv/workHistory/{i}/responsibilities`; the parent object index is never
-shifted. The repair never shifts legacy evidence, another array, a partial,
-duplicate, mixed, leading-zero, malformed or review-only sequence, or a
+shifted. Duplicate ownership of a complete one-based sequence is shifted and
+then handled by the ordinary exact-once duplicate-coverage normalizer. The
+repair never shifts legacy evidence, another array, a partial, mixed,
+leading-zero, malformed or review-only sequence, or a
 container mixed with leaf paths. Malformed and out-of-range paths reject at
 topology validation; otherwise structurally valid unchanged paths continue
 through the ordinary evidence, canonicalisation and exact-coverage policy. A
