@@ -24,7 +24,7 @@ class ValidatedClaimLedgerFactoryTest {
 
         assertEquals(first.ledgerId(), replay.ledgerId());
         assertEquals(first.ledgerSha256(), replay.ledgerSha256());
-        assertEquals("2.14.0", first.policyVersion());
+        assertEquals("2.15.0", first.policyVersion());
         assertEquals("3.6.0", first.parserVersion());
         assertEquals(64, first.ledgerSha256().length());
     }
@@ -47,7 +47,7 @@ class ValidatedClaimLedgerFactoryTest {
                 List.of(claim("Focused review")),
                 "3.2.0");
 
-        assertEquals("2.14.0", active.policyVersion());
+        assertEquals("2.15.0", active.policyVersion());
         assertEquals("2.11.0", projectionRollback.policyVersion());
         assertEquals("3.2.0", rollback.parserVersion());
         assertEquals("2.10.0", rollback.policyVersion());

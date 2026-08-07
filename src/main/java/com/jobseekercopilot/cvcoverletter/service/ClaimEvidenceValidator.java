@@ -28,7 +28,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.14.0";
+    static final String POLICY_VERSION = "2.15.0";
     static final String CORE_SKILL_PROJECTION_POLICY_VERSION = "2.11.0";
     static final String ROLLBACK_POLICY_VERSION = "2.10.0";
     private static final int MAX_CLAIMS = 40;
@@ -1902,6 +1902,8 @@ public class ClaimEvidenceValidator {
             EvidencePurpose purpose = documentPurpose(
                     claim.getContentPaths(),
                     "$.claims");
+            LinkedHashSet<String> requiredAtomicEvidenceIds =
+                    new LinkedHashSet<>();
             LinkedHashSet<String> supplementalEvidenceIds =
                     new LinkedHashSet<>();
             for (String contentPath : claim.getContentPaths()) {
@@ -1948,7 +1950,10 @@ public class ClaimEvidenceValidator {
                             .anyMatch(record -> supportsAnySpecificTerm(
                                     value.textValue(),
                                     record.value()));
-                    if (exactApprovedFact || exactApprovedNarrative) {
+                    if (exactApprovedFact) {
+                        requiredAtomicEvidenceIds.add(evidenceId);
+                    }
+                    if (exactApprovedNarrative) {
                         supplementalEvidenceIds.add(evidenceId);
                     }
                     if (exactSupportedTerm) {
@@ -1959,8 +1964,14 @@ public class ClaimEvidenceValidator {
             GeneratedClaim copy = copyWithClaimId(
                     claim,
                     claim.getClaimId());
+            List<String> prioritizedEvidenceIds =
+                    requiredAtomicEvidenceIds.isEmpty()
+                            ? safe(claim.getEvidenceIds())
+                            : mergeBoundedEvidenceReferences(
+                                    List.copyOf(requiredAtomicEvidenceIds),
+                                    safe(claim.getEvidenceIds()));
             copy.setEvidenceIds(mergeBoundedEvidenceReferences(
-                    safe(claim.getEvidenceIds()),
+                    prioritizedEvidenceIds,
                     supplementalEvidenceIds));
             normalized.add(copy);
         }
