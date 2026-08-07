@@ -2,7 +2,7 @@
   "releaseId": "cv-cover-letter-1.5.9",
   "bundleId": "cv-cover-letter",
   "bundleVersion": "1.5.9",
-  "releaseStatus": "ACTIVE",
+  "releaseStatus": "ROLLBACK",
   "templateVersion": "1.2.0",
   "rulesVersion": "1.5.9",
   "schemaId": "cv-cover-letter-output",

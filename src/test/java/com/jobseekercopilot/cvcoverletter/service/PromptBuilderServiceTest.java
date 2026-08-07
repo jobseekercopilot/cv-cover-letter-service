@@ -31,7 +31,7 @@ class PromptBuilderServiceTest {
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBuilderService service = new PromptBuilderService(
                 objectMapper,
-                registry(objectMapper, "cv-cover-letter-1.5.9"),
+                registry(objectMapper, "cv-cover-letter-1.5.10"),
                 new LlmProperties(),
                 new ClaimEvidenceCatalogFactory());
         var input = new GenerationInputNormalizer(
@@ -75,7 +75,7 @@ class PromptBuilderServiceTest {
 
         CvCoverLetterPrompt prompt = new PromptBuilderService(
                 objectMapper,
-                registry(objectMapper, "cv-cover-letter-1.5.9"),
+                registry(objectMapper, "cv-cover-letter-1.5.10"),
                 new LlmProperties(),
                 new ClaimEvidenceCatalogFactory())
                 .buildPrompt(new GenerationInputNormalizer(
@@ -102,7 +102,7 @@ class PromptBuilderServiceTest {
 
         CvCoverLetterPrompt active = new PromptBuilderService(
                 objectMapper,
-                registry(objectMapper, "cv-cover-letter-1.5.9"),
+                registry(objectMapper, "cv-cover-letter-1.5.10"),
                 new LlmProperties(),
                 new ClaimEvidenceCatalogFactory())
                 .buildPrompt(input);
@@ -142,7 +142,7 @@ class PromptBuilderServiceTest {
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBuilderService service = new PromptBuilderService(
                 objectMapper,
-                registry(objectMapper, "cv-cover-letter-1.5.9"),
+                registry(objectMapper, "cv-cover-letter-1.5.10"),
                 properties,
                 new ClaimEvidenceCatalogFactory());
         GenerationInputNormalizer normalizer = new GenerationInputNormalizer(
@@ -155,13 +155,13 @@ class PromptBuilderServiceTest {
         assertTrue(result.getTrustedInstructions().contains("UK English"));
         assertTrue(result.getTrustedInstructions().contains("Aim for 5 to 7 concise paragraphs"));
         assertTrue(result.getTrustedInstructions().contains("specific to the job"));
-        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.5.9"));
+        assertTrue(result.getTrustedInstructions().contains("bundle=cv-cover-letter@1.5.10"));
         assertTrue(result.getTrustedInstructions().contains(
                 "Generic, professional and application prose is"));
         assertTrue(result.getTrustedInstructions().contains(
-                "/coverLetter/bodyParagraphs/{i}"));
+                "cover-letter body paragraphs use"));
         assertTrue(result.getTrustedInstructions().contains(
-                "ordinary claims[].contentPaths, personalSummaryClaim"));
+                "ordinary claims[].contentPaths, every inline narrative"));
         assertTrue(result.getTrustedInstructions().contains(
                 "The claims ledger is final-content provenance only."));
         assertTrue(result.getTrustedInstructions().contains(
@@ -205,6 +205,15 @@ class PromptBuilderServiceTest {
                 result.getOutputSchema().at(
                         "/properties/personalSummaryClaim/properties/evidenceIds/items/$ref")
                         .asText());
+        for (String inlineEvidencePath : List.of(
+                "/properties/cv/properties/projects/items/properties/highlights/items/properties/evidenceIds/items/$ref",
+                "/properties/cv/properties/workHistory/items/properties/responsibilities/items/properties/evidenceIds/items/$ref",
+                "/properties/coverLetter/properties/bodyParagraphs/items/properties/evidenceIds/items/$ref")) {
+            assertEquals(
+                    "#/$defs/approvedEvidenceId",
+                    result.getOutputSchema().at(inlineEvidencePath).asText(),
+                    inlineEvidencePath);
+        }
         Set<String> suppliedEvidenceIds = new LinkedHashSet<>();
         objectMapper.readTree(result.getUntrustedInput())
                 .at("/approvedEvidence/records")
@@ -215,7 +224,7 @@ class PromptBuilderServiceTest {
                 .forEach(value -> schemaEvidenceIds.add(value.asText()));
         assertEquals(suppliedEvidenceIds, schemaEvidenceIds);
         assertEquals(
-                "3.5.2",
+                "3.6.0",
                 new LlmResponseParser(
                         objectMapper,
                         new ClaimEvidenceValidator(),
@@ -261,11 +270,13 @@ class PromptBuilderServiceTest {
                 "/properties/canonicalApplicationClaims/properties").size();
         int personalSummaryClaimCount = 1;
         int reservedSkillClaimCapacity = 8;
-        assertTrue(ordinaryClaimLimit == 29);
+        int reservedInlineNarrativeCapacity = 9;
+        assertTrue(ordinaryClaimLimit == 20);
         assertTrue(ordinaryClaimLimit
                 + personalSummaryClaimCount
                 + canonicalClaimCount
-                + reservedSkillClaimCapacity == 40);
+                + reservedSkillClaimCapacity
+                + reservedInlineNarrativeCapacity == 40);
         String ordinaryPathPattern = result.getOutputSchema().at(
                 "/properties/claims/items/properties/contentPaths/items/pattern").asText();
         assertFalse("/coverLetter/openingParagraph".matches(ordinaryPathPattern));
@@ -275,6 +286,11 @@ class PromptBuilderServiceTest {
         assertFalse("/coverLetter/title".matches(ordinaryPathPattern));
         assertFalse("/cv/coreSkills/0/name".matches(ordinaryPathPattern));
         assertFalse("/cv/coreSkills/0/evidence".matches(ordinaryPathPattern));
+        assertFalse("/cv/projects/0/highlights/0".matches(ordinaryPathPattern));
+        assertFalse("/cv/workHistory/0/responsibilities/0"
+                .matches(ordinaryPathPattern));
+        assertFalse("/coverLetter/bodyParagraphs/0"
+                .matches(ordinaryPathPattern));
         assertFalse("/cv/qualifications/0/qualificationTitle"
                 .matches(ordinaryPathPattern));
         assertTrue("/cv/qualifications/0/qualificationName"
@@ -283,7 +299,7 @@ class PromptBuilderServiceTest {
         assertFalse(result.getOutputSchema().toString().contains("REJECTED"));
         assertTrue(result.getOutputSchema().toString().contains("PROFILE.SKILL.1"));
         assertFalse(result.getOutputSchema().toString().contains("Build useful and reliable services."));
-        assertTrue(result.getGenerationMetadata().schemaVersion().equals("3.8.0"));
+        assertTrue(result.getGenerationMetadata().schemaVersion().equals("3.9.0"));
         assertTrue(result.getEvidenceCatalog().records().stream()
                 .anyMatch(record -> record.evidenceId().equals("JOB.TITLE")));
         assertFalse(result.getTrustedInstructions().contains("Build useful and reliable services."));

@@ -5,16 +5,16 @@ Each approved release under `src/main/resources/prompts/bundles` packages the
 template, generation rules, output schema and synthetic evaluation policy with
 immutable component checksums. `index.json` is the only runtime allowlist.
 
-The active `cv-cover-letter-1.5.9` release converts the normalised profile and
+The active `cv-cover-letter-1.5.10` release converts the normalised profile and
 canonical job into a stable approved-evidence catalogue and treats that
 catalogue and normalisation warnings as untrusted data. It places the safety
 rules before that evidence and forbids direct, indirect, encoded, nested,
 Unicode-obfuscated and schema-escape instructions in source content from
-changing the task. The release also owns exact bounded JSON Schema `3.8.0` and
-evaluation policy `1.5.7`, used at the provider boundary and by the local
+changing the task. The release also owns exact bounded JSON Schema `3.9.0` and
+evaluation policy `1.5.8`, used at the provider boundary and by the local
 response parser and synthetic evaluation checks. The domain bundle cannot name
 a model provider or transport API; provider mechanics belong behind LLM
-Gateway. Applied parser `3.5.2`, claim policy `2.14.0` and deterministic quality
+Gateway. Applied parser `3.6.0`, claim policy `2.14.0` and deterministic quality
 policy `1.2.0` complete the active local validation route.
 
 Release `1.5.0` adds a dedicated project structure, separates employment from
@@ -90,7 +90,7 @@ and the capacity remaining within the 40-claim public bound, then fills in
 evidence order to `min(8, available)`. Inability to preserve that minimum fails
 closed; it does not trigger another provider call.
 
-Active release `1.5.9` retains the `3.8.0` private wire shape and parser
+Historical release `1.5.9` retains the `3.8.0` private wire shape and parser
 `3.5.2`, while rules `1.5.9`, evaluation policy `1.5.7` and claim policy
 `2.14.0` replace that versioned minimum-fill behaviour and bound deterministic
 evidence enrichment to the per-claim schema maximum. The approved CV skill
@@ -111,6 +111,13 @@ catalogue but exposes only their exact values to the model through
 from the model-facing catalogue, so a declared core-skill proposal cannot
 accidentally cite its service-only ID in narrative provenance. Snapshot evidence
 IDs remain available for ordinary claim citations.
+
+Active release `1.5.10` adds schema `3.9.0` and parser `3.6.0`. Project
+highlights, work responsibilities and cover-letter body paragraphs are closed
+objects containing text, disposition and approved evidence IDs. The parser
+projects them into the unchanged public document and ledger shapes, while the
+ordinary provider ledger excludes their paths. This makes the evidence
+relationship structural without adding a second provider call.
 
 Runtime assembly preserves those domains as separate LLM Gateway v2 fields:
 reviewed bundle text becomes `trustedInstructions`, normalised evidence becomes
