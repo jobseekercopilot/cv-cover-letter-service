@@ -7,10 +7,14 @@ import com.jobseekercopilot.cvcoverletter.dto.DraftGenerationResponse;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateRequest;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateCvCoverLetterResponse;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedApplicationDocuments;
+import com.jobseekercopilot.cvcoverletter.dto.RejectedGenerationReplayResponse;
 import com.jobseekercopilot.cvcoverletter.exception.DownstreamServiceException;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidLlmResponseException;
 import com.jobseekercopilot.cvcoverletter.model.CvCoverLetterPrompt;
 import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput;
+import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationCaptureContext;
+import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationDiagnostic;
+import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationQuarantineService;
 import com.jobseekercopilot.generated.applicationtrackerservice.api.ApplicationRecordsApi;
 import com.jobseekercopilot.generated.applicationtrackerservice.model.ApplicationRecordResponse;
 import com.jobseekercopilot.generated.applicationtrackerservice.model.CreateApplicationRequest;
@@ -53,6 +57,7 @@ public class CvCoverLetterService {
     private final ValidatedClaimLedgerFactory claimLedgerFactory;
     private final GeneratedDocumentsApi documentStoreApi;
     private final ApplicationRecordsApi applicationTrackerApi;
+    private final RejectedGenerationQuarantineService quarantineService;
 
     public DraftGenerationEstimateResponse estimateDraft(
             String ownerId, GenerateRequest request) {
@@ -89,50 +94,43 @@ public class CvCoverLetterService {
                     "LLM gateway returned no response");
         }
 
-        DraftContent draft = materializeDraft(prepared, llmResponse);
-        GenerationUsage usage = llmResponse.getUsage();
-        GenerationAudit audit = llmResponse.getAudit();
+        DraftGenerationResponse response;
+        try {
+            DraftContent draft = materializeDraft(prepared, llmResponse);
+            response = draftResponse(operationId, prepared, llmResponse, draft);
+        } catch (InvalidLlmResponseException rejection) {
+            captureRejectedResponse(
+                    ownerId,
+                    operationId,
+                    prepared,
+                    llmResponse,
+                    rejection);
+            throw rejection;
+        }
         log.info(
                 "Bounded draft generation completed operationId={} jobId={} durationMs={}",
                 operationId,
                 prepared.jobId(),
                 (System.nanoTime() - startedAt) / 1_000_000);
-        return new DraftGenerationResponse(
-                operationId,
-                draft.documents().getCv().getTitle(),
-                draft.documents().getCoverLetter().getTitle(),
-                draft.cvContent(),
-                draft.coverLetterContent(),
-                draft.documents().getGenerationNotes(),
-                prepared.prompt().getGenerationMetadata(),
-                prepared.input().inputSchemaVersion(),
-                prepared.input().warnings(),
-                claimLedgerFactory.create(
-                        operationId,
-                        draft.documents().getClaims(),
-                        prepared.claimPolicyVersion(),
-                        prepared.parserVersion()),
-                new DraftGenerationResponse.DraftGenerationUsage(
-                        usage == null ? null : usage.getInputTokens(),
-                        usage == null ? null : usage.getOutputTokens(),
-                        usage == null ? null : usage.getTotalTokens()),
-                new DraftGenerationResponse.DraftGenerationAudit(
-                        audit.getModelId(),
-                        audit.getModelDeploymentVersion(),
-                        audit.getAdmissionPolicyVersion(),
-                        audit.getPricingVersion(),
-                        audit.getEstimatedInputTokensAtAdmission(),
-                        audit.getEstimatedCostMicroUsd(),
-                        audit.getCurrency()));
+        return response;
     }
 
     private PreparedGeneration prepareGeneration(
             String ownerId, GenerateRequest request) {
+        return prepareGeneration(ownerId, request, null);
+    }
+
+    private PreparedGeneration prepareGeneration(
+            String ownerId,
+            GenerateRequest request,
+            String approvedReleaseId) {
         NormalizedGenerationInput input =
                 inputNormalizer.normalize(ownerId, request);
         String jobId = input.jobProvenance().getResourceId();
         long startedAt = System.nanoTime();
-        CvCoverLetterPrompt prompt = promptBuilderService.buildPrompt(input);
+        CvCoverLetterPrompt prompt = approvedReleaseId == null
+                ? promptBuilderService.buildPrompt(input)
+                : promptBuilderService.buildPrompt(input, approvedReleaseId);
         String parserVersion = responseParser.parserVersion(
                 prompt.getOutputSchema());
         String claimPolicyVersion = responseParser.claimPolicyVersion(
@@ -167,6 +165,129 @@ public class CvCoverLetterService {
                 jobId,
                 claimPolicyVersion,
                 parserVersion);
+    }
+
+    public RejectedGenerationReplayResponse replayRejectedDraft(
+            String ownerId,
+            UUID operationId,
+            GenerateRequest request) {
+        var loaded = quarantineService.load(ownerId, operationId);
+        PreparedGeneration prepared = prepareGeneration(
+                ownerId,
+                request,
+                loaded.artifact().promptReleaseId());
+        quarantineService.requireMatchingReplayContext(
+                loaded.artifact(),
+                prepared.llmRequest(),
+                prepared.prompt().getGenerationMetadata());
+        try {
+            DraftContent draft = materializeDraft(prepared, loaded.response());
+            var replayEvent = quarantineService.recordReplay(
+                    ownerId,
+                    operationId,
+                    "ACCEPTED",
+                    prepared.prompt().getGenerationMetadata(),
+                    prepared.parserVersion(),
+                    prepared.claimPolicyVersion(),
+                    null);
+            return new RejectedGenerationReplayResponse(
+                    operationId,
+                    replayEvent.recordedAt(),
+                    "ACCEPTED",
+                    0,
+                    prepared.parserVersion(),
+                    prepared.claimPolicyVersion(),
+                    null,
+                    draftResponse(
+                            operationId,
+                            prepared,
+                            loaded.response(),
+                            draft));
+        } catch (InvalidLlmResponseException rejection) {
+            RejectedGenerationDiagnostic diagnostic =
+                    quarantineService.diagnostic(rejection);
+            var replayEvent = quarantineService.recordReplay(
+                    ownerId,
+                    operationId,
+                    "REJECTED",
+                    prepared.prompt().getGenerationMetadata(),
+                    prepared.parserVersion(),
+                    prepared.claimPolicyVersion(),
+                    diagnostic);
+            return new RejectedGenerationReplayResponse(
+                    operationId,
+                    replayEvent.recordedAt(),
+                    "REJECTED",
+                    0,
+                    prepared.parserVersion(),
+                    prepared.claimPolicyVersion(),
+                    diagnostic,
+                    null);
+        }
+    }
+
+    private void captureRejectedResponse(
+            String ownerId,
+            UUID operationId,
+            PreparedGeneration prepared,
+            GenerationResponse llmResponse,
+            InvalidLlmResponseException rejection) {
+        if (!quarantineService.isEnabled()) {
+            return;
+        }
+        try {
+            quarantineService.capture(new RejectedGenerationCaptureContext(
+                    operationId,
+                    ownerId,
+                    prepared.prompt().getGenerationMetadata(),
+                    prepared.parserVersion(),
+                    prepared.claimPolicyVersion(),
+                    prepared.llmRequest(),
+                    llmResponse,
+                    rejection));
+        } catch (RuntimeException captureFailure) {
+            rejection.addSuppressed(captureFailure);
+            log.error(
+                    "Rejected generation response quarantine failed operationId={} failureType={}",
+                    operationId,
+                    captureFailure.getClass().getSimpleName());
+        }
+    }
+
+    private DraftGenerationResponse draftResponse(
+            UUID operationId,
+            PreparedGeneration prepared,
+            GenerationResponse llmResponse,
+            DraftContent draft) {
+        GenerationUsage usage = llmResponse.getUsage();
+        GenerationAudit audit = llmResponse.getAudit();
+        return new DraftGenerationResponse(
+                operationId,
+                draft.documents().getCv().getTitle(),
+                draft.documents().getCoverLetter().getTitle(),
+                draft.cvContent(),
+                draft.coverLetterContent(),
+                draft.documents().getGenerationNotes(),
+                prepared.prompt().getGenerationMetadata(),
+                prepared.input().inputSchemaVersion(),
+                prepared.input().warnings(),
+                claimLedgerFactory.create(
+                        operationId,
+                        draft.documents().getClaims(),
+                        prepared.claimPolicyVersion(),
+                        prepared.parserVersion()),
+                new DraftGenerationResponse.DraftGenerationUsage(
+                        usage == null ? null : usage.getInputTokens(),
+                        usage == null ? null : usage.getOutputTokens(),
+                        usage == null ? null : usage.getTotalTokens()),
+                new DraftGenerationResponse.DraftGenerationAudit(
+                        audit.getModelId(),
+                        audit.getModelDeploymentVersion(),
+                        audit.getAdmissionPolicyVersion(),
+                        audit.getPricingVersion(),
+                        audit.getEstimatedInputTokensAtAdmission(),
+                        audit.getEstimatedCostMicroUsd(),
+                        audit.getCurrency()));
     }
 
     private GenerationResponse invokeModel(

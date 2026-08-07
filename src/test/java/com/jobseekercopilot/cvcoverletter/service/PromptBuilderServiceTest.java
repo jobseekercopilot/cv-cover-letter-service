@@ -27,6 +27,30 @@ import org.springframework.core.io.DefaultResourceLoader;
 class PromptBuilderServiceTest {
 
     @Test
+    void replayCanRebuildAnApprovedHistoricalPromptReleaseExplicitly() {
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        PromptBuilderService service = new PromptBuilderService(
+                objectMapper,
+                registry(objectMapper, "cv-cover-letter-1.5.9"),
+                new LlmProperties(),
+                new ClaimEvidenceCatalogFactory());
+        var input = new GenerationInputNormalizer(
+                Clock.fixed(
+                        Instant.parse("2026-07-24T13:00:00Z"),
+                        ZoneOffset.UTC))
+                .normalize("owner-secret-123", validRequest());
+
+        CvCoverLetterPrompt prompt = service.buildPrompt(
+                input,
+                "cv-cover-letter-1.5.6");
+
+        assertEquals(
+                "cv-cover-letter-1.5.6",
+                prompt.getGenerationMetadata().releaseId());
+        assertEquals("3.7.0", prompt.getGenerationMetadata().schemaVersion());
+    }
+
+    @Test
     void acceptsNinetyEightFactsAtExpandedUntrustedBoundary() {
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         var request = validVersionedRequest();

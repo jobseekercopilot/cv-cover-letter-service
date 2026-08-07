@@ -24,6 +24,7 @@ cover it before release.
 | Model output | Untrusted until validated | LLM Gateway strict JSON Schema plus exact local schema and active-content checks |
 | Contact identity | Sensitive, render-only | Removed before model input and added only by local renderers |
 | Provider transport and credentials | Outside this service | LLM Gateway adapter boundary |
+| Rejected typed model response | Sensitive and untrusted | AES-256-GCM quarantine, owner/operator authorization, bounded retention and deterministic replay only |
 
 The service calls LLM Gateway `POST /api/v2/generations`. Reviewed instructions
 are sent as `trustedInstructions`; the JSON evidence envelope is sent as
@@ -73,6 +74,14 @@ and downstream record identifiers. They must not contain:
 Tests use unique input and output sentinels to prove that a successful
 generation does not place either payload in captured logs. The prompt value
 object also excludes all three payload fields from its generated `toString`.
+
+When quarantine is enabled, rejected typed output is the only payload retained.
+It is encrypted at rest with authenticated operation-bound associated data.
+The source prompt, selected evidence envelope, strict schema body, contact
+details, credentials, and provider error bodies are not copied into the
+artifact. Filenames contain only the non-PII durable operation UUID. Access is
+owner-bound through a dedicated operator credential; no enumeration endpoint
+exists. Replays are hash-chained, bounded, and never invoke the provider.
 
 ## Evaluation and incident procedure
 

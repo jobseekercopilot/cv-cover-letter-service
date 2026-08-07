@@ -48,8 +48,19 @@ public class PromptBuilderService {
     private final ClaimEvidenceCatalogFactory evidenceCatalogFactory;
 
     public CvCoverLetterPrompt buildPrompt(NormalizedGenerationInput input) {
+        return buildPrompt(input, promptBundleRegistry.selected());
+    }
+
+    public CvCoverLetterPrompt buildPrompt(
+            NormalizedGenerationInput input,
+            String approvedReleaseId) {
+        return buildPrompt(input, promptBundleRegistry.get(approvedReleaseId));
+    }
+
+    private CvCoverLetterPrompt buildPrompt(
+            NormalizedGenerationInput input,
+            PromptBundle bundle) {
         try {
-            PromptBundle bundle = promptBundleRegistry.selected();
             String template = bundle.template();
             String rules = bundle.rules();
             String outputSchemaJson = bundle.outputSchemaJson();

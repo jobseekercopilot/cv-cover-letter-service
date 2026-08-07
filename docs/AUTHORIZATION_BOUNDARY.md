@@ -29,6 +29,22 @@ Use a separate secret for this boundary; do not reuse credentials for other
 services. Inject it at runtime, keep it out of images and source control, and
 rotate the Gateway and this service together.
 
+## Rejected-generation operator identity
+
+The hidden path
+`/internal/v1/cv-cover-letter/rejected-generations/{operationId}` is not part
+of the Gateway client contract. When quarantine is enabled, it requires exactly
+one dedicated `X-Operator-Token` and exactly one `X-Document-Owner`. The token
+must contain at least 32 UTF-8 bytes and must differ from the Gateway token.
+Missing or invalid operator credentials return `401`; missing or duplicate
+owner context returns `400`. A wrong owner and an unknown, expired, or deleted
+operation return the same `404` response, and no list endpoint exists.
+
+When quarantine is disabled, the entire hidden path returns `404` before
+credential evaluation. The operator token is supplied only through
+`REJECTED_GENERATION_OPERATOR_TOKEN`; it is never accepted in a request body,
+logged, exposed by OpenAPI, or reused for ordinary generation.
+
 ## Outbound identities
 
 The service uses three further runtime credentials:
