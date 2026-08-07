@@ -68,17 +68,31 @@ jobs:
           -Dmaven.repo.local=${{ runner.temp }}/producer-m2
           -f api/client/pom.xml clean verify
       - name: Reject an existing immutable coordinate
-        env:
-          PACKAGE_URL: >-
-            https://maven.pkg.github.com/jobseekercopilot/cv-cover-letter-service/com/jobseekercopilot/clients/cv-cover-letter-service-client/3.1.0-rev.f2c5916fa0da/cv-cover-letter-service-client-3.1.0-rev.f2c5916fa0da.pom
         run: |
+          package_url="$(
+            python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          package = json.loads(
+              Path("api/client-release.json").read_text(encoding="utf-8")
+          )["javaPackage"]
+          group_path = package["groupId"].replace(".", "/")
+          artifact = package["artifactId"]
+          version = package["version"]
+          print(
+              f'{package["registry"].rstrip("/")}/{group_path}/'
+              f'{artifact}/{version}/{artifact}-{version}.pom'
+          )
+          PY
+          )"
           response_file="${{ runner.temp }}/package-response"
           status="$(
             curl --silent --show-error \
               --output "$response_file" \
               --write-out '%{http_code}' \
               --user "${GITHUB_ACTOR}:${GITHUB_TOKEN}" \
-              "$PACKAGE_URL"
+              "$package_url"
           )"
           case "$status" in
             404) echo "Immutable coordinate is available" ;;
