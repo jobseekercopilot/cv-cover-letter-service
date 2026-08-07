@@ -43,7 +43,7 @@ class ClaimEvidenceValidatorAdaptiveTest {
                 validator,
                 new GeneratedDocumentQualityValidator());
         try (InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.5.7/output-schema.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.8/output-schema.json")) {
             if (input == null) {
                 throw new IllegalStateException(
                         "Active adaptive schema fixture is missing.");
@@ -208,28 +208,30 @@ class ClaimEvidenceValidatorAdaptiveTest {
     }
 
     @Test
-    void failsClosedWhenEightAvailableSkillsCannotFitAfterTitleFallbacks()
+    void rollbackPolicyPreservesEightSkillsAtTheClaimBoundary()
             throws Exception {
         CapacityFixture fixture = capacityFixture();
+        ArrayNode proposed = (ArrayNode) fixture.output()
+                .at("/cv/coreSkills");
+        proposed.removeAll();
+        ObjectNode java = proposed.addObject();
+        java.put("name", "Java");
+        java.put("evidence", "");
         GeneratedApplicationDocuments documents = parseWithoutValidation(
                 fixture.output());
-        addProjectPathsOwnedByFormerIdentityClaims(
+
+        validator.validate(
                 fixture.output(),
-                documents);
-        ClaimEvidenceCatalog catalog = withProjectEvidence(fixture.catalog());
+                documents,
+                fixture.catalog(),
+                true,
+                true,
+                true,
+                false);
 
-        InvalidLlmResponseException error = assertThrows(
-                InvalidLlmResponseException.class,
-                () -> validator.validate(
-                        fixture.output(),
-                        documents,
-                        catalog,
-                        true,
-                        true,
-                        true));
-
-        assertTrue(error.getMessage().contains(
-                "remaining claim capacity cannot preserve the minimum"));
+        assertEquals(8, projectedSkillClaims(documents).size());
+        assertEquals(8, fixture.output().at("/cv/coreSkills").size());
+        assertEquals(40, documents.getClaims().size());
     }
 
     @Test

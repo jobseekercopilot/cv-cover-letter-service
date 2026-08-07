@@ -1,7 +1,8 @@
 # Claim evidence policy
 
-Prompt release `cv-cover-letter-1.5.7`, output schema `3.8.0`, evaluation
-policy `1.5.5`, claim policy `2.12.0` and deterministic quality policy `1.1.0`
+Prompt release `cv-cover-letter-1.5.8`, output schema `3.8.0`, evaluation
+policy `1.5.6`, parser `3.5.0`, claim policy `2.13.0` and deterministic quality
+policy `1.2.0`
 establish the current claim-provenance and document-quality boundary.
 
 Release `1.5.1` makes the provider perform an explicit final-pointer coverage
@@ -28,9 +29,12 @@ confirmed claimant evidence follows the ordinary evidence rules. The
 historical `1.5.3` contract requires the isolated canonical claims described
 below; release `1.5.5` retains their structural isolation and exact-empty skill
 evidence. Immediate rollback release `1.5.6` adds the exact ordinary-path
-allowlist and fixed-budget deterministic skill projection. Active `1.5.7` adds
-the dedicated personal-summary claim, deterministic title coverage, unclaimed
-optional-description clearing and adaptive skill budget described below.
+allowlist and fixed-budget deterministic skill projection. Historical `1.5.7`
+adds the dedicated personal-summary claim, deterministic title coverage,
+unclaimed optional-description clearing and adaptive minimum-eight skill
+budget described below. Active `1.5.8` retains that wire shape while replacing
+the versioned skill policy with job-targeted selection without a minimum or
+quota.
 Claimed unsafe prose, missing claimant evidence outside the exact exception,
 ambiguous project evidence and every other omitted narrative still reject.
 
@@ -73,7 +77,8 @@ containers, all core-skill paths and hidden evidence. Its ordinary array is
 capped at 26, reserving two public entries for canonical claims and up to 12
 for projected skill provenance within the unchanged 40-claim public bound.
 
-Active schema `3.8.0` requires a third private sibling,
+Schema `3.8.0`, shared by historical release `1.5.7` and active release
+`1.5.8`, requires a third private sibling,
 `personalSummaryClaim`. It fixes `claimId` to `CLAIM-9003`, `contentPath` to
 `/cv/personalSummary` and `reviewText` to empty; its disposition is
 `SUPPORTED` or `REWORDED` and its one to 30 evidence IDs must include confirmed
@@ -82,8 +87,9 @@ exclude this path and `/cv/title` and `/coverLetter/title`, and are capped at
 29. Parser `3.5.0` rejects an absent or malformed sibling in the raw envelope
 and projects all three private siblings before persistence.
 
-Policy `2.12.0` first normalises the active non-skill ledger. It attaches each
-canonical title path to a same-purpose identity claim that cites `JOB.TITLE`;
+Policy `2.12.0` first normalises the historical `1.5.7` non-skill ledger. It
+attaches each canonical title path to a same-purpose identity claim that cites
+`JOB.TITLE`;
 when no compatible claim exists, it creates a bounded server-owned one-path
 identity claim. It retains a non-empty optional work-history
 `tailoredDescription` only when an accepted ordinary claim owns the exact path
@@ -91,7 +97,7 @@ and otherwise clears it before final exact-coverage validation. Claimed
 descriptions receive the normal evidence and content checks and are never
 silently cleared as a substitute for validation.
 
-The policy then replaces `cv.coreSkills` with a deterministic projection. It
+That policy then replaces `cv.coreSkills` with a deterministic projection. It
 preserves unique, exact model-selected approved skills, discards unsupported
 and duplicate proposals, fills in catalogue order to `min(8, available)`, and
 forces every `evidence` field to empty. It calculates capacity after non-skill
@@ -106,16 +112,40 @@ projected skill using the exact selected fact ID in projected order. The
 provider is called once; projection is not a retry or a weakening of schema,
 evidence, topology or exact-once validation.
 
-Version routing is schema-bound. Active release `1.5.7` uses schema `3.8.0`,
-evaluation policy `1.5.5`, parser `3.5.0` and claim policy `2.12.0`. Immutable
-immediate rollback `1.5.6` retains schema `3.7.0`, evaluation policy `1.5.4`,
-parser `3.4.0` and claim policy `2.11.0`. Release `1.5.5` retains schema
-`3.6.0`, parser `3.3.0` and claim policy `2.10.0`; release `1.5.3` retains
-parser `3.2.0`. Selecting a historical schema never opts it into active
-normalisation behaviour.
+Active policy `2.13.0` retains the `3.8.0` non-skill normalisation and rebuilds
+`cv.coreSkills` from exact, approved, CV-only candidates. For versioned input,
+the candidate set is the union of CV-purpose `EVIDENCE_SNAPSHOT`
+`DEMONSTRATED_SKILL` records representing demonstrated career wins and the
+exact values of revision-bound `PROFILE_REVISION` `DECLARED_SKILL` records. It
+preserves unique exact job-targeted model selections, discards unsupported,
+duplicate and job-advert-only proposals, prefers demonstrated support for a
+normalised duplicate, and caps the result at the smaller of 12 and the
+remaining capacity within the 40-claim public limit.
+It fills no minimum or quota. Every accepted skill is service-projected with
+empty hidden evidence and one exact skill-path claim using the selected fact
+ID. A `PROFILE_REVISION` `DECLARED_SKILL` ID is valid only for this CV skill
+projection: it cannot support model-authored CV narrative or cover-letter
+prose. Demonstrated career evidence may support naturally woven cover-letter
+skill references. Legacy positional profile input retains its historical
+minimum-fill compatibility behaviour.
 
-Policy `2.12.0` retains the `2.11.0` project-claim isolation after evidence
-enrichment. The project paths retain snapshot facts only from their unique,
+Version routing remains schema-bound; a release is excluded when a shared
+schema cannot safely distinguish its semantics. Active release `1.5.8` uses
+schema `3.8.0`, evaluation policy `1.5.6`, parser `3.5.0`,
+claim policy `2.13.0` and quality policy `1.2.0`. Immutable immediate rollback
+`1.5.6` retains schema `3.7.0`, evaluation policy `1.5.4`, parser `3.4.0` and
+claim policy `2.11.0`. Release `1.5.7` is preserved in version-control history
+but is not packaged or included in the approved index because it shares schema
+`3.8.0` with `1.5.8` while encoding the older minimum-eight semantics;
+schema-derived policy routing cannot select it safely. Its historical metadata
+remains evaluation policy `1.5.5`, parser `3.5.0`, claim policy `2.12.0` and
+quality policy `1.1.0`. Release `1.5.5`
+retains schema `3.6.0`, parser `3.3.0` and claim policy `2.10.0`; release
+`1.5.3` retains parser `3.2.0`. Selecting a historical schema never opts it
+into active normalisation behaviour.
+
+Policy `2.13.0` retains the `2.12.0` and `2.11.0` project-claim isolation after
+evidence enrichment. The project paths retain snapshot facts only from their unique,
 exact-title-anchored PROJECT selection; paths outside that project are split
 into separate claims. This prevents a qualification or another project
 selection from lending facts to the rendered project. Unknown evidence IDs
@@ -130,9 +160,9 @@ evidence IDs are validated as approved and unique before empty pointers can
 be removed. Exact-once coverage of all populated final content remains
 mandatory after canonicalisation.
 
-Policy `2.12.0` also retains policy `2.11.0`'s narrowly bounded `2.10.0` repair
-for one structural provider error for versioned evidence: when every submitted
-final cover-letter body
+Policy `2.13.0` also retains policy `2.12.0` and `2.11.0`'s narrowly bounded
+`2.10.0` repair for one structural provider error for versioned evidence: when
+every submitted final cover-letter body
 pointer, as an exact multiset, is the complete canonical one-based sequence
 `/coverLetter/bodyParagraphs/1` through the actual paragraph count, each
 pointer is shifted to its corresponding zero-based JSON Pointer. The pointer
@@ -169,7 +199,7 @@ The published and local claim-ledger contract retains four dispositions:
 - `CONFIRMATION_REQUIRED`: useful candidate material that requires user review;
 - `REJECTED`: unsupported material excluded from the documents.
 
-The active `1.5.7` provider schema emits only supported and reworded ordinary
+The active `1.5.8` provider schema emits only supported and reworded ordinary
 entries, the required supported-or-reworded personal-summary sibling and the
 two structurally fixed supported canonical application siblings. Ordinary
 claims require approved evidence IDs and one or more exact JSON Pointer paths
@@ -205,8 +235,9 @@ external write, `ClaimEvidenceValidator`:
 8. attaches canonical document-title paths only to same-purpose `JOB.TITLE`
    identity evidence and clears only an optional `tailoredDescription` that no
    accepted ordinary claim owns;
-9. allocates active skill claims only after non-skill normalisation, within the
-   40-claim limit and without dropping below `min(8, available)`;
+9. allocates active skill claims only after non-skill normalisation, selects at
+   most 12 exact job-targeted candidates within the 40-claim limit, prefers
+   demonstrated evidence for duplicates and applies no minimum or quota;
 10. revalidates the complete schema and plain-text policy after every trusted
    canonicalisation.
 
@@ -223,8 +254,8 @@ For the project-aware `3.2.0` through `3.8.0` schemas,
 normalised and accepted. It:
 
 1. requires canonical job titles, company, generic greeting and UK sign-off;
-2. limits skills to 12, rejects normalised duplicates and requires up to 8
-   confirmed demonstrated skills when that many are selected;
+2. limits skills to 12, rejects normalised duplicates, applies no minimum or
+   quota, and rejects a literal skills list in the cover letter;
 3. rejects duplicate normalised narrative and repeated substantive
    qualification phrases, including phrases embedded in longer paragraphs;
 4. requires every selected evidence entry to own at least one final path for

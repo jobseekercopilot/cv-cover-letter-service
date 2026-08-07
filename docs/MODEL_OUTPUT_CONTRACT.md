@@ -2,9 +2,9 @@
 
 CV and Cover Letter Service treats model output as untrusted until it passes
 the exact reviewed schema and local safe-content policy. The active prompt
-release is `cv-cover-letter-1.5.7`; it owns output schema `3.8.0` and
-evaluation policy `1.5.5` at
-`src/main/resources/prompts/bundles/cv-cover-letter-1.5.7/`. Its reviewed
+release is `cv-cover-letter-1.5.8`; it owns output schema `3.8.0` and
+evaluation policy `1.5.6` at
+`src/main/resources/prompts/bundles/cv-cover-letter-1.5.8/`. Its reviewed
 `output-schema.json` checksum is pinned in that release's immutable manifest.
 
 ## One contract at both boundaries
@@ -31,7 +31,7 @@ service's deliberately smaller subset.
 | Role, job, company, qualification and employer names | 80–160 characters by field |
 | CV summaries and tailored descriptions | 2,000 characters |
 | Cover-letter body | 3–5 body paragraphs; 3,000 characters per paragraph |
-| Skills | 0–12 items; quality policy requires up to 8 confirmed skills when available; private `evidence` is exactly empty |
+| Skills | 0–12 exact job-relevant items; no active minimum or quota; private `evidence` is exactly empty |
 | Projects | 10 entries; 8 highlights per project |
 | Qualifications and work-history entries | 20 items each |
 | Responsibilities | 12 per work-history entry |
@@ -44,7 +44,7 @@ service's deliberately smaller subset.
 | Active projected public claim ledger | 4–40 claims |
 | Immediate rollback projected public claim ledger | 3–40 claims |
 
-The active `1.5.7` provider ledger contains only `SUPPORTED` and `REWORDED`
+The active `1.5.8` provider ledger contains only `SUPPORTED` and `REWORDED`
 final-content claims. Each ordinary claim requires at least one approved
 evidence ID and one final path, and `reviewText` is exactly empty. Unsupported
 or unconfirmed material is omitted from both the documents and claims; a neutral
@@ -90,7 +90,7 @@ claimant evidence; canonical job or request facts cannot support it alone.
 
 After the raw `3.8.0` provider envelope passes schema and active-content
 validation, parser `3.5.0` projects the three private siblings and policy
-`2.12.0` normalises the non-skill claim ledger. It attaches `/cv/title` and
+`2.13.0` normalises the non-skill claim ledger. It attaches `/cv/title` and
 `/coverLetter/title` deterministically to the same-purpose identity claim that
 already cites `JOB.TITLE`; if no compatible claim exists, it creates a bounded
 one-path identity claim. A non-empty optional work-history
@@ -98,19 +98,28 @@ one-path identity claim. A non-empty optional work-history
 path; otherwise the service clears it before final exact-coverage validation.
 
 The service then rebuilds `cv.coreSkills` from approved purpose-compatible
-skill facts. It preserves unique exact approved model selections, discards
-unsupported and duplicate values, and fills in evidence order to
-`min(8, available)`. After counting the normalised non-skill claims, it caps
-accepted proposals at the smaller of 12 and the remaining 40-claim capacity,
-and fails safely if the required minimum cannot fit. Every projected skill has empty
-hidden evidence and one exact server-owned claim using the selected fact ID.
-Versioned input admits only CV `EVIDENCE_SNAPSHOT` `DEMONSTRATED_SKILL` records;
-legacy input admits only `PROFILE.SKILL` records. This is one local validation
-pass, not a provider retry.
+skill facts. For versioned input, candidates are CV `EVIDENCE_SNAPSHOT`
+`DEMONSTRATED_SKILL` records and revision-bound `PROFILE_REVISION`
+`DECLARED_SKILL` records. It preserves only unique exact approved model
+selections, discards unsupported, duplicate and job-advert-only values, prefers
+demonstrated support for a normalised duplicate, and caps the result at the
+smaller of 12 and the remaining 40-claim capacity. It does not fill a minimum
+or arbitrary quota. Every projected skill has empty hidden evidence and one
+exact server-owned claim using the selected fact ID. A revision-declared skill
+is valid only for CV `coreSkills`; it cannot support CV narrative or
+cover-letter prose. Demonstrated career evidence may support naturally woven
+cover-letter skill references, but quality policy `1.2.0` rejects a literal
+skills list. Legacy input continues to use `PROFILE.SKILL` records and retains
+its historical minimum-fill behaviour. This is one local validation pass, not
+a provider retry.
 
 Immutable release `1.5.6` is the immediate rollback and retains schema `3.7.0`,
 evaluation policy `1.5.4`, parser `3.4.0`, fixed skill reservation and claim
-policy `2.11.0`. Release `1.5.5` remains an approved deeper compatibility
+policy `2.11.0`. Release `1.5.7` is preserved in version-control history but is
+not packaged or included in the approved index because it shares schema `3.8.0`
+but encodes the previous minimum-eight semantics, which schema-derived runtime
+routing cannot distinguish safely.
+Release `1.5.5` remains an approved deeper compatibility
 release with schema `3.6.0`, parser `3.3.0` and claim policy `2.10.0`.
 
 The local parser also caps every text node at 4,000 characters and every array
@@ -149,9 +158,9 @@ billing commit:
    evidence;
 9. for active schema `3.8.0`, require the dedicated claimant-evidenced personal
    summary, clear only an unclaimed optional `tailoredDescription`, attach the
-   two canonical title paths deterministically and allocate the
-   `min(8, available)`–12 skill projection from the capacity remaining after
-   non-skill normalisation.
+   two canonical title paths deterministically, project at most 12 exact
+   selected versioned skills without filling a minimum, and reject literal
+   cover-letter skill lists.
 
 The renderer then omits empty sections, presents project-only CVs as Technical
 Profile, Projects, Technical Skills and Education and Qualifications, and adds
@@ -171,15 +180,15 @@ Successful response metadata and structured logs record the prompt release,
 template, rules and schema versions and their hashes. Request/response logs
 also record LLM contract `2.0`, the schema-applied parser version, claim policy
 version, the actual model ID and the gateway-owned deployment, admission and
-pricing-policy versions. Active schema `3.8.0` records parser `3.5.0` and claim
-policy `2.12.0`; immediate rollback schema `3.7.0` records parser `3.4.0` and
-claim policy `2.11.0`; schema `3.6.0` records parser `3.3.0` and claim policy
-`2.10.0`; selecting release `1.5.3` retains parser `3.2.0`. The consumer
-accepts gateway audit fields only from the mandatory audit block in the
-reviewed gateway contract pinned at `c0a2eb1`; missing or malformed audit
-evidence fails before document storage, application creation or billing
-commit. The exact model ID is also written to the existing Payment commit
-record.
+pricing-policy versions. Active release `1.5.8` records parser `3.5.0`, claim
+policy `2.13.0` and quality policy `1.2.0`; immediate rollback schema `3.7.0`
+records parser `3.4.0` and claim policy `2.11.0`; schema `3.6.0` records parser
+`3.3.0` and claim policy `2.10.0`; selecting release `1.5.3` retains parser
+`3.2.0`. The consumer accepts gateway audit fields only from the mandatory
+audit block in the reviewed gateway contract pinned at `c0a2eb1`; missing or
+malformed audit evidence fails before document storage, application creation
+or billing commit. The exact model ID is also written to the existing Payment
+commit record.
 
 Durable attachment of the complete claim and generation provenance to an
 immutable stored document remains dependent on DOC-06 and is outside

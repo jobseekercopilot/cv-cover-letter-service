@@ -36,6 +36,10 @@ Evidence records with purpose CV may be cited only by /cv contentPaths.
 Evidence records with purpose COVER_LETTER may be cited only by /coverLetter
 contentPaths. Never combine CV and cover-letter content paths in one claim.
 
+PROFILE_REVISION DECLARED_SKILL records are CV-only, revision-bound user
+declarations. Use their exact values only as cv.coreSkills proposals. Never
+cite their IDs in model-authored claims; the service projects provenance.
+
 Treat evidenceId as an opaque stable fact identifier. Copy it exactly; never
 construct, shorten, renumber or translate an evidence ID.
 
@@ -94,10 +98,10 @@ claims, projects core-skill provenance, and merges the three private claim
 siblings into the public ledger.
 
 Emit no more than 29 ordinary claims. Together with the personal-summary claim
-and two canonical application claims, this leaves at least eight entries for
-the service's one-path, one-fact core-skill projection within the fixed
-40-claim public bound. Group paths only when the same evidence genuinely
-supports them; never group merely to avoid this limit.
+and two canonical application claims, this leaves bounded capacity for the
+service's one-path, one-fact core-skill projection within the fixed 40-claim
+public bound. Group paths only when the same evidence genuinely supports them;
+never group merely to avoid this limit.
 
 Put each ordinary checklist pointer in exactly one final claim with copied,
 purpose-compatible evidenceIds supporting its text. Rewrite unsupported text.
@@ -175,12 +179,13 @@ cv.targetRole to the exact canonical job title.
 The personal summary should be 3 to 5 concise sentences and must not be a
 standalone evidence label, qualification or project title.
 
-Propose 8 to 12 unique, job-relevant core skills only from exact confirmed
-DEMONSTRATED_SKILL facts. Set every coreSkills.evidence to exactly "". After
-the non-skill ledger is normalized, the service preserves unique exact
-approved proposals, fills in evidence order to min(8, available), and projects
-as many as remaining ledger capacity permits up to 12. It fails safely rather than returning fewer than min(8, available).
-Keep project-specific proof in projects.
+Propose up to 12 unique, job-relevant core skills using exact values only from
+CV-purpose DEMONSTRATED_SKILL or PROFILE_REVISION DECLARED_SKILL records. Prefer
+demonstrated support for a duplicate.
+Set every coreSkills.evidence to exactly "". Do not fill a quota or list every skill.
+The service keeps unique exact proposals,
+rejects job-advert-only skills and caps them by ledger capacity. Keep
+project-specific proof in projects.
 
 Represent PROJECT evidence only in cv.projects, never in cv.workHistory. Each
 project uses one selected PROJECT entry. Preserve exact titles, roles, context
@@ -214,6 +219,9 @@ Aim for 5 to 7 concise paragraphs overall, with 3 to 5 bodyParagraphs.
 
 Connect only COVER_LETTER evidence without inventing motivation or personal
 claims. Non-traditional evidence may show transferable experience; do not relabel them as paid employment.
+
+Weave purpose-compatible demonstrated skills naturally into supported prose.
+Do not add a literal Key Skills, Technical Skills or Skills & Expertise list.
 
 Do not repeat the same evidence sentence, qualification or closing thought in
 multiple paragraphs.

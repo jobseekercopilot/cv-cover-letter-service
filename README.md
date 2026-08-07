@@ -53,13 +53,14 @@ evidence. See
 
 ## Prompt releases
 
-Prompt bundle `cv-cover-letter-1.5.7`, output schema `3.8.0` and evaluation
-policy `1.5.5` render projects as projects, keep paid employment separate, cap
-the CV at 8–12 unique confirmed skills where available, omit unsupported empty
-sections, and use the correct UK generic greeting/sign-off pair. A
-post-grounding quality policy rejects repeated narrative, repeated
-qualifications, missing selected evidence and project fields assembled from
-different evidence entries. Release `1.5.1` requires an explicit complete
+Prompt bundle `cv-cover-letter-1.5.8`, output schema `3.8.0`, evaluation policy
+`1.5.6` and parser `3.5.0` render projects as projects, keep paid employment
+separate, select at most 12 exact job-relevant CV skills without a minimum or
+quota, omit unsupported empty sections, and use the correct UK generic
+greeting/sign-off pair. Claim policy `2.13.0` and post-grounding quality policy
+`1.2.0` reject unsupported skills, literal cover-letter skill lists, repeated
+narrative, repeated qualifications, missing selected evidence and project
+fields assembled from different evidence entries. Release `1.5.1` requires an explicit complete
 claim-path audit for every non-empty final field, including generic narrative
 and dynamic array indexes. Release `1.5.2` narrows the provider output ledger
 to complete `SUPPORTED` and `REWORDED` final-content claims; unsupported or
@@ -99,7 +100,7 @@ catalogues use only CV `EVIDENCE_SNAPSHOT` `DEMONSTRATED_SKILL` facts; legacy
 catalogues use `PROFILE.SKILL` facts. Claim policy `2.11.0` applies only to
 that fixed-reservation projection contract.
 
-Active release `1.5.7` adds the required private `personalSummaryClaim` sibling
+Historical release `1.5.7` added the required private `personalSummaryClaim` sibling
 with fixed ID `CLAIM-9003`, exact `/cv/personalSummary` path, empty review text,
 `SUPPORTED` or `REWORDED` disposition and confirmed CV-purpose claimant
 evidence. Schema `3.8.0` also removes both document-title paths and the personal
@@ -111,9 +112,26 @@ creates a bounded one-path identity claim), and clears a non-empty optional
 the non-skill ledger first, caps accepted unique approved proposals at the
 smaller of 12 and the remaining 40-claim capacity, and fills in evidence order
 to `min(8, available)`. It fails safely if that minimum cannot fit.
+
+Active release `1.5.8` retains schema `3.8.0` and parser `3.5.0` but replaces
+that versioned skill projection under claim policy `2.13.0`. Revision-bound
+profile skills are CV-only exact candidates alongside demonstrated skill facts;
+the service de-duplicates them by normalised value and prefers demonstrated
+support. It keeps only exact model-selected candidates relevant to the job,
+caps them at 12 and does not fill a minimum or arbitrary quota. A declared-only
+profile skill may appear only in CV `coreSkills`; it cannot ground CV narrative
+or cover-letter prose. Cover letters may weave skills supported by demonstrated
+career evidence into prose, but quality policy `1.2.0` rejects a literal skills
+list. Schema `2.0` continues to reject browser-positioned profile employment and
+qualification records.
+
 Immutable release `1.5.6` is the immediate emergency rollback and retains
 schema `3.7.0`, evaluation policy `1.5.4`, parser `3.4.0` and claim policy
-`2.11.0`; release `1.5.5` remains an approved deeper compatibility release at
+`2.11.0`. Release `1.5.7` is preserved in version-control history but is not
+packaged or included in the approved index: it shares schema `3.8.0` with
+`1.5.8` but encodes the previous minimum-eight semantics and cannot be safely
+distinguished by schema-derived runtime policy.
+Release `1.5.5` remains an approved deeper compatibility release at
 schema `3.6.0`, parser `3.3.0` and claim policy `2.10.0`.
 
 Prompt template, rules, output schema and evaluation-policy versions are

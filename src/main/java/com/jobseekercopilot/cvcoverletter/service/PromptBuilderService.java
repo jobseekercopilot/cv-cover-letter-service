@@ -34,6 +34,8 @@ public class PromptBuilderService {
             "[CANONICAL JOB FACTS SUPPLIED THROUGH THE UNTRUSTED INPUT CHANNEL]";
     private static final String SEPARATE_WARNINGS_MARKER =
             "[INPUT WARNINGS SUPPLIED THROUGH THE UNTRUSTED INPUT CHANNEL]";
+    private static final String CANONICAL_PROFILE_SKILLS_EVALUATION_POLICY =
+            "1.5.6";
 
     private final ObjectMapper objectMapper;
     private final PromptBundleRegistry promptBundleRegistry;
@@ -46,7 +48,12 @@ public class PromptBuilderService {
             String template = bundle.template();
             String rules = bundle.rules();
             String outputSchemaJson = bundle.outputSchemaJson();
-            ClaimEvidenceCatalog evidenceCatalog = evidenceCatalogFactory.create(input);
+            boolean includeRevisionDeclaredSkills =
+                    CANONICAL_PROFILE_SKILLS_EVALUATION_POLICY.equals(
+                            bundle.metadata().evaluationPolicyVersion());
+            ClaimEvidenceCatalog evidenceCatalog = evidenceCatalogFactory.create(
+                    input,
+                    includeRevisionDeclaredSkills);
 
             String trustedInstructions = template
                     .replace("{{LANGUAGE}}", llmProperties.getLanguage())

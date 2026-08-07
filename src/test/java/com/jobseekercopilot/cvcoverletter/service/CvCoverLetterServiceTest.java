@@ -124,7 +124,7 @@ class CvCoverLetterServiceTest {
         assertEquals("1.0", actual.inputSchemaVersion());
         assertEquals(10, actual.claimLedger().claims().size());
         assertEquals(64, actual.claimLedger().ledgerSha256().length());
-        assertEquals("2.12.0", actual.claimLedger().policyVersion());
+        assertEquals("2.13.0", actual.claimLedger().policyVersion());
         assertEquals("3.5.0", actual.claimLedger().parserVersion());
         verify(llmGatewayApi).generateV2(any());
         verifyNoInteractions(
@@ -321,8 +321,8 @@ class CvCoverLetterServiceTest {
         assertEquals("Java Developer CV", actual.getCvTitle());
         assertEquals("Java Developer CV", actual.getCvContent().lines().findFirst().orElseThrow());
         assertEquals("1.0", actual.getInputSchemaVersion());
-        assertEquals("cv-cover-letter-1.5.7", actual.getGenerationMetadata().releaseId());
-        assertEquals("1.5.7", actual.getGenerationMetadata().rulesVersion());
+        assertEquals("cv-cover-letter-1.5.8", actual.getGenerationMetadata().releaseId());
+        assertEquals("1.5.8", actual.getGenerationMetadata().rulesVersion());
         assertEquals("3.8.0", actual.getGenerationMetadata().schemaVersion());
         assertEquals(normalizedInput.warnings(), actual.getInputWarnings());
         org.junit.jupiter.api.Assertions.assertTrue(
@@ -352,11 +352,11 @@ class CvCoverLetterServiceTest {
         org.junit.jupiter.api.Assertions.assertTrue(
                 output.getAll().contains("pricingVersion=openai-standard-2026-07-25"));
         org.junit.jupiter.api.Assertions.assertTrue(
-                output.getAll().contains("promptRelease=cv-cover-letter-1.5.7"));
+                output.getAll().contains("promptRelease=cv-cover-letter-1.5.8"));
         org.junit.jupiter.api.Assertions.assertTrue(
                 output.getAll().contains("templateVersion=1.2.0"));
         org.junit.jupiter.api.Assertions.assertTrue(
-                output.getAll().contains("rulesVersion=1.5.7"));
+                output.getAll().contains("rulesVersion=1.5.8"));
         org.junit.jupiter.api.Assertions.assertTrue(
                 output.getAll().contains("schemaVersion=3.8.0"));
         org.junit.jupiter.api.Assertions.assertTrue(
@@ -593,18 +593,18 @@ class CvCoverLetterServiceTest {
 
     private PromptGenerationMetadata promptMetadata() {
         return new PromptGenerationMetadata(
-                "cv-cover-letter-1.5.7",
+                "cv-cover-letter-1.5.8",
                 "cv-cover-letter",
-                "1.5.7",
+                "1.5.8",
                 "a".repeat(64),
                 "1.2.0",
                 "b".repeat(64),
-                "1.5.7",
+                "1.5.8",
                 "c".repeat(64),
                 "cv-cover-letter-output",
                 "3.8.0",
                 "d".repeat(64),
-                "1.5.5",
+                "1.5.6",
                 "e".repeat(64)
         );
     }
@@ -745,7 +745,7 @@ class CvCoverLetterServiceTest {
 
     private com.fasterxml.jackson.databind.JsonNode activeOutputSchema() throws Exception {
         try (java.io.InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.5.7/output-schema.json")) {
+                "/prompts/bundles/cv-cover-letter-1.5.8/output-schema.json")) {
             if (input == null) {
                 throw new IllegalStateException("Active output schema fixture is missing.");
             }
