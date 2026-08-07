@@ -178,12 +178,15 @@ pointer is shifted to its corresponding zero-based JSON Pointer. The pointer
 shift itself leaves claim ownership, disposition and submitted evidence IDs
 unchanged; ordinary deterministic evidence enrichment and the complete
 topology, evidence-purpose, content-alignment and exact-once checks still run.
-The repair never shifts legacy evidence, another array, a partial, duplicate,
-mixed, leading-zero, malformed or review-only sequence, or a container mixed
-with leaf paths. Malformed and out-of-range paths reject at topology
-validation; otherwise structurally valid unchanged paths continue through the
-ordinary evidence, canonicalisation and exact-coverage policy. A valid
-zero-based ledger and the existing container-only compatibility form are
+The same exact-sequence repair is applied independently to each populated
+versioned nested text array at `/cv/projects/{i}/highlights` and
+`/cv/workHistory/{i}/responsibilities`; the parent object index is never
+shifted. The repair never shifts legacy evidence, another array, a partial,
+duplicate, mixed, leading-zero, malformed or review-only sequence, or a
+container mixed with leaf paths. Malformed and out-of-range paths reject at
+topology validation; otherwise structurally valid unchanged paths continue
+through the ordinary evidence, canonicalisation and exact-coverage policy. A
+valid zero-based ledger and the existing container-only compatibility form are
 unchanged.
 
 ## Approved evidence

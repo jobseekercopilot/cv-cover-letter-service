@@ -2569,6 +2569,58 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
+    void normalizesACompleteVersionedOneBasedWorkResponsibilityLedger()
+            throws Exception {
+        ObjectNode output = validOutput();
+        addVersionedWorkHistoryWithResponsibilities(output, 2);
+        shiftWorkResponsibilityPathsOneBased(output);
+
+        List<GeneratedClaim> accepted = normalizeOneBasedNestedTextArrays(
+                output);
+
+        assertEquals(
+                List.of(
+                        "/cv/workHistory/0/responsibilities/0",
+                        "/cv/workHistory/0/responsibilities/1"),
+                accepted.stream()
+                        .flatMap(claim -> claim.getContentPaths().stream())
+                        .filter(path -> path.startsWith(
+                                "/cv/workHistory/0/responsibilities/"))
+                        .sorted()
+                        .toList());
+    }
+
+    @Test
+    void rejectsIncompleteOrMixedOneBasedWorkResponsibilityLedgers()
+            throws Exception {
+        ObjectNode incomplete = validOutput();
+        addVersionedWorkHistoryWithResponsibilities(incomplete, 2);
+        shiftWorkResponsibilityPathsOneBased(incomplete);
+        removeContentPath(
+                incomplete,
+                10,
+                "/cv/workHistory/0/responsibilities/1");
+        assertEquals(
+                List.of("/cv/workHistory/0/responsibilities/2"),
+                responsibilityPaths(normalizeOneBasedNestedTextArrays(
+                        incomplete)));
+
+        ObjectNode mixed = validOutput();
+        addVersionedWorkHistoryWithResponsibilities(mixed, 2);
+        shiftWorkResponsibilityPathsOneBased(mixed);
+        replaceContentPath(
+                mixed,
+                10,
+                "/cv/workHistory/0/responsibilities/1",
+                "/cv/workHistory/0/responsibilities/0");
+        assertEquals(
+                List.of(
+                        "/cv/workHistory/0/responsibilities/0",
+                        "/cv/workHistory/0/responsibilities/2"),
+                responsibilityPaths(normalizeOneBasedNestedTextArrays(mixed)));
+    }
+
+    @Test
     void rejectsSkillListsAboveTheGovernedQualityLimit()
             throws Exception {
         ObjectNode output = validOutput();
@@ -2799,6 +2851,28 @@ class ClaimEvidenceValidatorTest {
                 catalog);
     }
 
+    private List<GeneratedClaim> normalizeOneBasedNestedTextArrays(
+            ObjectNode output
+    ) throws Exception {
+        GeneratedApplicationDocuments documents = objectMapper.treeToValue(
+                output,
+                GeneratedApplicationDocuments.class);
+        return new ClaimEvidenceValidator()
+                .normalizeCompleteOneBasedNestedTextArrayPaths(
+                        output,
+                        documents.getClaims(),
+                        true);
+    }
+
+    private List<String> responsibilityPaths(List<GeneratedClaim> claims) {
+        return claims.stream()
+                .flatMap(claim -> claim.getContentPaths().stream())
+                .filter(path -> path.startsWith(
+                        "/cv/workHistory/0/responsibilities/"))
+                .sorted()
+                .toList();
+    }
+
     private void useVersionedCatalog() {
         catalog = new ClaimEvidenceCatalogFactory().create(
                 new GenerationInputNormalizer(
@@ -3023,6 +3097,65 @@ class ClaimEvidenceValidatorTest {
                             index,
                             objectMapper.getNodeFactory()
                                     .textNode(shifted));
+                }
+            }
+        }
+    }
+
+    private void addVersionedWorkHistoryWithResponsibilities(
+            ObjectNode output,
+            int responsibilityCount
+    ) {
+        ObjectNode history = objectMapper.createObjectNode();
+        history.put("jobTitle", "Software Engineer");
+        history.put("employer", "Example Ltd");
+        history.put("startDate", "2022-03");
+        history.put("endDate", "");
+        ArrayNode responsibilities = history.putArray("responsibilities");
+        history.put("tailoredDescription", "");
+        ((ArrayNode) output.at("/cv/workHistory")).add(history);
+
+        ObjectNode claim = objectMapper.createObjectNode();
+        claim.put("claimId", "CLAIM-011");
+        claim.put("disposition", "SUPPORTED");
+        claim.putArray("evidenceIds");
+        claim.putArray("contentPaths")
+                .add("/cv/workHistory/0/jobTitle")
+                .add("/cv/workHistory/0/employer")
+                .add("/cv/workHistory/0/startDate");
+        claim.put("reviewText", "");
+        ((ArrayNode) output.path("claims")).add(claim);
+
+        for (int index = 0; index < responsibilityCount; index++) {
+            String value = index == 0
+                    ? "Built useful Java services."
+                    : "Maintained reliable Java services.";
+            responsibilities.add(value);
+            claim.withArray("contentPaths").add(
+                    "/cv/workHistory/0/responsibilities/" + index);
+        }
+    }
+
+    private void shiftWorkResponsibilityPathsOneBased(
+            ObjectNode output
+    ) {
+        int responsibilityCount =
+                output.at("/cv/workHistory/0/responsibilities").size();
+        java.util.Map<String, String> shifts =
+                new java.util.LinkedHashMap<>();
+        for (int index = 0; index < responsibilityCount; index++) {
+            shifts.put(
+                    "/cv/workHistory/0/responsibilities/" + index,
+                    "/cv/workHistory/0/responsibilities/" + (index + 1));
+        }
+        for (JsonNode claim : output.path("claims")) {
+            ArrayNode contentPaths = (ArrayNode) claim.path("contentPaths");
+            for (int index = 0; index < contentPaths.size(); index++) {
+                String shifted = shifts.get(contentPaths.get(index).asText());
+                if (shifted != null) {
+                    contentPaths.set(
+                            index,
+                            objectMapper.getNodeFactory().textNode(shifted));
                 }
             }
         }

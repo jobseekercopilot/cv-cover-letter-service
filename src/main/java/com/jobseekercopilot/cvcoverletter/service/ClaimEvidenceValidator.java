@@ -200,7 +200,7 @@ public class ClaimEvidenceValidator {
                         output,
                         documents.getClaims(),
                         versionedEvidence);
-        submittedClaims = normalizeCompleteOneBasedProjectHighlightPaths(
+        submittedClaims = normalizeCompleteOneBasedNestedTextArrayPaths(
                 output,
                 submittedClaims,
                 versionedEvidence);
@@ -313,7 +313,7 @@ public class ClaimEvidenceValidator {
                         output,
                         documents.getClaims(),
                         versionedEvidence);
-        submittedClaims = normalizeCompleteOneBasedProjectHighlightPaths(
+        submittedClaims = normalizeCompleteOneBasedNestedTextArrayPaths(
                 output,
                 submittedClaims,
                 versionedEvidence);
@@ -872,7 +872,7 @@ public class ClaimEvidenceValidator {
         return List.copyOf(normalized);
     }
 
-    private List<GeneratedClaim> normalizeCompleteOneBasedProjectHighlightPaths(
+    List<GeneratedClaim> normalizeCompleteOneBasedNestedTextArrayPaths(
             JsonNode output,
             List<GeneratedClaim> claims,
             boolean versionedEvidence
@@ -887,6 +887,13 @@ public class ClaimEvidenceValidator {
                     output,
                     normalized,
                     "/cv/projects/" + index + "/highlights");
+        }
+        JsonNode workHistory = output.at("/cv/workHistory");
+        for (int index = 0; index < workHistory.size(); index++) {
+            normalized = normalizeCompleteOneBasedTextArrayPaths(
+                    output,
+                    normalized,
+                    "/cv/workHistory/" + index + "/responsibilities");
         }
         return normalized;
     }
