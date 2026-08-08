@@ -29,7 +29,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.20.0";
+    static final String POLICY_VERSION = "2.21.0";
     static final String CORE_SKILL_PROJECTION_POLICY_VERSION = "2.11.0";
     static final String ROLLBACK_POLICY_VERSION = "2.10.0";
     private static final int MAX_CLAIMS = 200;
@@ -59,6 +59,12 @@ public class ClaimEvidenceValidator {
                     + "|docker|kubernetes|terraform|react|angular|python|java|spring)\\b");
     private static final Pattern MOTIVATIONAL_TONE = Pattern.compile(
             "(?i)\\b(?:passionate|enthusiastic|excited|motivated|keen)\\b");
+    private static final Pattern CANDIDATE_FACTUAL_PROSE = Pattern.compile(
+            "(?i)\\b(?:my\\s+(?:experience|background|skills|expertise|qualifications?"
+                    + "|track record)|i\\s+(?:have|hold|possess|bring|offer|worked|built"
+                    + "|developed|implemented|delivered|created|designed|managed|led"
+                    + "|achieved|supported|served|used|speciali[sz]e|am\\s+(?!(?:passionate"
+                    + "|enthusiastic|excited|motivated|keen)\\b)))");
     private static final Pattern PROJECT_CONTENT_PATH =
             Pattern.compile("^/cv/projects/(\\d+)/.+$");
 
@@ -1849,6 +1855,18 @@ public class ClaimEvidenceValidator {
             if (projectedCoreSkillEvidenceId != null) {
                 matchingEvidenceIds = List.of(
                         projectedCoreSkillEvidenceId);
+            } else if (contentPath.equals("/coverLetter/companyName")) {
+                matchingEvidenceIds = evidenceById.entrySet().stream()
+                        .filter(entry -> entry.getValue().stream()
+                                .anyMatch(record -> record.purpose()
+                                        .supports(purpose)))
+                        .filter(entry -> canonicalCompanyEvidenceMatches(
+                                value.asText(),
+                                entry.getValue()))
+                        .map(Map.Entry::getKey)
+                        .sorted()
+                        .limit(1)
+                        .toList();
             } else if (versionedEvidence
                     && isCanonicalApplicationBookend(
                             output,
@@ -2806,16 +2824,22 @@ public class ClaimEvidenceValidator {
                                 record -> candidateEvidence(
                                         record.source())),
                         claimPath + ".evidenceIds",
-                        "candidate claim has no approved profile evidence");
+                        "candidate claim has no approved profile evidence at "
+                                + contentPath);
             }
             if (versionedEvidence
                     && requiresConfirmedCandidateEvidence(contentPath)
+                    && !isNonFactualMotivationalCoverLetterProse(
+                            contentPath,
+                            content,
+                            evidence)
                     && !canonicalApplicationBookend) {
                 require(evidence.stream().anyMatch(
                                 record -> candidateEvidence(
                                         record.source())),
                         claimPath + ".evidenceIds",
-                        "candidate claim has no confirmed claimant evidence");
+                        "candidate claim has no confirmed claimant evidence at "
+                                + contentPath);
             }
         }
 
@@ -3052,6 +3076,25 @@ public class ClaimEvidenceValidator {
                 && !path.equals("/coverLetter/title")
                 && !path.equals("/coverLetter/jobTitle")
                 && !path.equals("/coverLetter/companyName");
+    }
+
+    private boolean isNonFactualMotivationalCoverLetterProse(
+            String contentPath,
+            String content,
+            List<ApprovedEvidenceRecord> evidence
+    ) {
+        if (!contentPath.matches("^/coverLetter/bodyParagraphs/\\d+$")
+                || !MOTIVATIONAL_TONE.matcher(content).find()
+                || NUMERIC_CLAIM.matcher(content).find()
+                || SENSITIVE_CLAIM.matcher(content).find()
+                || CANDIDATE_FACTUAL_PROSE.matcher(content).find()) {
+            return false;
+        }
+        return evidence.stream().anyMatch(
+                        record -> record.source() == EvidenceSource.JOB)
+                && evidence.stream().allMatch(
+                        record -> record.source() == EvidenceSource.JOB
+                                || record.source() == EvidenceSource.REQUEST);
     }
 
     private boolean factType(

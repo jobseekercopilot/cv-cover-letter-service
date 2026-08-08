@@ -1670,6 +1670,51 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
+    void acceptsOnlyNonFactualMotivationalCoverProseFromJobEvidence()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        String motivation = "I am keen to contribute to your fast-growing "
+                + "company by building customer-facing products and collaborating "
+                + "with cross-functional teams. I am motivated to support your "
+                + "mission through data and technology.";
+        ((ArrayNode) output.at("/coverLetter/bodyParagraphs"))
+                .set(0, objectMapper.getNodeFactory().textNode(motivation));
+        ObjectNode narrativeClaim = (ObjectNode) output.at("/claims/6");
+        narrativeClaim.withArray("evidenceIds")
+                .removeAll()
+                .add("JOB.DESCRIPTION");
+        narrativeClaim.withArray("contentPaths")
+                .removeAll()
+                .add("/coverLetter/bodyParagraphs/0");
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertEquals(
+                motivation,
+                accepted.getCoverLetter().getBodyParagraphs().get(0));
+
+        for (String candidateFact : List.of(
+                "I am keen and I bring a reliable approach.",
+                "I am keen to use Java in this role.")) {
+            ObjectNode unsupported = versionedOutput();
+            ((ArrayNode) unsupported.at("/coverLetter/bodyParagraphs"))
+                    .set(0, objectMapper.getNodeFactory().textNode(candidateFact));
+            ObjectNode unsupportedClaim =
+                    (ObjectNode) unsupported.at("/claims/6");
+            unsupportedClaim.withArray("evidenceIds")
+                    .removeAll()
+                    .add("JOB.DESCRIPTION");
+            unsupportedClaim.withArray("contentPaths")
+                    .removeAll()
+                    .add("/coverLetter/bodyParagraphs/0");
+            assertRejected(
+                    unsupported,
+                    "candidate claim has no confirmed claimant evidence");
+        }
+    }
+
+    @Test
     void rejectsRepeatedSkillEvidenceAndNormalisedCoverParagraphs()
             throws Exception {
         ObjectNode repeatedSkills = validOutput();
@@ -2315,6 +2360,43 @@ class ClaimEvidenceValidatorTest {
         assertTrue(rendered.contains("Dear Molly Bird,"));
         assertTrue(rendered.endsWith("Yours sincerely,"));
         assertFalse(rendered.contains("at Harnham"));
+    }
+
+    @Test
+    void restoresCanonicalUnnamedRecruiterClientCoverage()
+            throws Exception {
+        var request = validVersionedRequest();
+        request.getJob().setCompany("Harnham");
+        request.getJob().setAdvertiserName("Harnham");
+        request.getJob().setAdvertiserType(AdvertiserType.RECRUITER);
+        request.getJob().setHiringOrganisationName(null);
+        catalog = new ClaimEvidenceCatalogFactory().create(
+                new GenerationInputNormalizer(
+                        Clock.fixed(
+                                Instant.parse("2026-07-24T13:00:00Z"),
+                                ZoneOffset.UTC))
+                        .normalize("owner-secret", request));
+        ObjectNode output = versionedOutput();
+        ((ObjectNode) output.at("/coverLetter"))
+                .put("companyName", "the client organisation");
+        ArrayNode claims = (ArrayNode) output.at("/claims");
+        for (int index = claims.size() - 1; index >= 0; index--) {
+            if (claims.get(index).at("/contentPaths/0").asText()
+                    .equals("/coverLetter/companyName")) {
+                claims.remove(index);
+            }
+        }
+
+        GeneratedApplicationDocuments accepted = parse(output);
+        GeneratedClaim companyClaim = accepted.getClaims().stream()
+                .filter(claim -> claim.getContentPaths().contains(
+                        "/coverLetter/companyName"))
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals(
+                List.of("JOB.ADVERTISER_TYPE"),
+                companyClaim.getEvidenceIds());
     }
 
     @Test

@@ -1,7 +1,7 @@
 # Claim evidence policy
 
 Prompt release `cv-cover-letter-1.6.0`, output schema `4.0.0`, evaluation
-policy `1.6.0`, parser `3.6.2`, claim policy `2.20.0` and deterministic quality
+policy `1.6.0`, parser `3.6.2`, claim policy `2.21.0` and deterministic quality
 policy `1.5.0`
 establish the current claim-provenance and document-quality boundary.
 
@@ -42,11 +42,19 @@ Active `1.6.0` retains structural high-volume narrative provenance. Every
 project highlight, work responsibility and cover-letter body paragraph carries
 its final text, disposition and approved evidence IDs in one closed object.
 Parser `3.6.2` projects each object into a separate bounded exact-path claim.
-Claim policy `2.20.0` deterministically inserts the minimum purpose-compatible
+Claim policy `2.21.0` deterministically inserts the minimum purpose-compatible
 approved evidence needed for a missing numeric or specific term ahead of
 optional submitted references. This prevents another paragraph's references
 or a full submitted list from crowding out required evidence while retaining
-the ordinary grounding and coverage checks.
+the ordinary grounding and coverage checks. It also recognises cover-letter
+body prose grounded only in job context as non-factual motivation when it uses
+the approved motivational terms, contains no numeric or sensitive term, and
+makes no candidate experience, skill, qualification or achievement assertion.
+The same wording remains invalid in CV content, and adding a candidate fact
+restores the normal confirmed-evidence requirement. When a recruiter has not
+named its client, canonical `the client organisation` prose is deterministically
+covered by the approved `JOB.ADVERTISER_TYPE=RECRUITER` fact rather than being
+left for the provider to invent or cite.
 
 Release `1.5.3` makes that exception explicit at both provider boundaries.
 `/coverLetter/openingParagraph` must be exactly `Please consider my application
@@ -159,7 +167,7 @@ fail-closed in parser and claim validation.
 Version routing remains schema-bound; a release is excluded when a shared
 schema cannot safely distinguish its semantics. Active release `1.6.0` uses
 schema `4.0.0`, evaluation policy `1.6.0`, parser `3.6.2`,
-claim policy `2.20.0` and quality policy `1.5.0`. Immutable immediate rollback
+claim policy `2.21.0` and quality policy `1.5.0`. Immutable immediate rollback
 `1.5.6` retains schema `3.7.0`, evaluation policy `1.5.4`, parser `3.4.0` and
 claim policy `2.11.0`. Release `1.5.7` is preserved in version-control history
 but is not packaged or included in the approved index because it shares schema
