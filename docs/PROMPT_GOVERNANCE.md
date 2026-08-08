@@ -14,7 +14,7 @@ changing the task. The release also owns exact bounded JSON Schema `3.10.0` and
 evaluation policy `1.5.8`, used at the provider boundary and by the local
 response parser and synthetic evaluation checks. The domain bundle cannot name
 a model provider or transport API; provider mechanics belong behind LLM
-Gateway. Applied parser `3.6.0`, claim policy `2.15.0` and deterministic quality
+Gateway. Applied parser `3.6.1`, claim policy `2.15.0` and deterministic quality
 policy `1.5.0` complete the active local validation route.
 
 Release `1.5.0` adds a dedicated project structure, separates employment from
@@ -113,7 +113,7 @@ from the model-facing catalogue, so a declared core-skill proposal cannot
 accidentally cite its service-only ID in narrative provenance. Snapshot evidence
 IDs remain available for ordinary claim citations.
 
-Active release `1.5.11` adds schema `3.10.0` and parser `3.6.0`. Project
+Active release `1.5.11` adds schema `3.10.0` and parser `3.6.1`. Project
 highlights, work responsibilities and cover-letter body paragraphs are closed
 objects containing text, disposition and approved evidence IDs. The parser
 projects them into the unchanged public document and ledger shapes, while the

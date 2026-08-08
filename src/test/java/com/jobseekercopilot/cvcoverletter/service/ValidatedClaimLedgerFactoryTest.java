@@ -25,7 +25,7 @@ class ValidatedClaimLedgerFactoryTest {
         assertEquals(first.ledgerId(), replay.ledgerId());
         assertEquals(first.ledgerSha256(), replay.ledgerSha256());
         assertEquals("2.19.0", first.policyVersion());
-        assertEquals("3.6.0", first.parserVersion());
+        assertEquals("3.6.1", first.parserVersion());
         assertEquals(64, first.ledgerSha256().length());
     }
 

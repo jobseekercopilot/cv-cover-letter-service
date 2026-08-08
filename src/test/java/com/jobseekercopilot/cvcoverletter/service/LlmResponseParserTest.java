@@ -110,7 +110,9 @@ class LlmResponseParserTest {
     @Test
     void acceptsReviewedDetailedClaimCapacityFromSelectedBundle() {
         assertEquals(120, detailedSchema.at("/properties/claims/maxItems").asInt());
-        assertEquals("3.6.0", parser.parserVersion(detailedSchema));
+        assertTrue(LlmResponseParser.MAX_FALLBACK_ARRAY_ITEMS
+                >= detailedSchema.at("/properties/claims/maxItems").asInt() * 2);
+        assertEquals("3.6.1", parser.parserVersion(detailedSchema));
         assertEquals("2.19.0", parser.claimPolicyVersion(detailedSchema));
     }
 
@@ -132,7 +134,7 @@ class LlmResponseParserTest {
                 objectMapper.writeValueAsString(output),
                 inlineNarrativeSchema);
 
-        assertEquals("3.6.0", parser.parserVersion(inlineNarrativeSchema));
+        assertEquals("3.6.1", parser.parserVersion(inlineNarrativeSchema));
         assertEquals("2.19.0", parser.claimPolicyVersion(inlineNarrativeSchema));
         assertEquals(
                 List.of("Delivered a reliable service."),

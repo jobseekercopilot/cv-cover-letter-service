@@ -64,7 +64,7 @@ key rotation, and incident safeguards are documented in
 ## Prompt releases
 
 Prompt bundle `cv-cover-letter-1.5.11`, output schema `3.10.0`, evaluation policy
-`1.5.8` and parser `3.6.0` render projects as projects, keep paid employment
+`1.5.8` and parser `3.6.1` render projects as projects, keep paid employment
 separate, select at most 12 exact job-relevant CV skills without a minimum or
 quota, omit unsupported empty sections, and use the correct UK generic
 greeting/sign-off pair. Claim policy `2.15.0` and post-grounding quality policy
@@ -72,7 +72,7 @@ greeting/sign-off pair. Claim policy `2.15.0` and post-grounding quality policy
 narrative, duplicate CV qualification records, misplaced selected evidence and
 project fields assembled from different evidence entries. Schema `3.10.0` requires
 evidence beside every project highlight, work responsibility and cover-letter
-body paragraph; parser `3.6.0` projects those items into the public ledger so
+body paragraph; parser `3.6.1` projects those items into the public ledger so
 their provenance cannot be omitted independently. Release `1.5.1` requires an explicit complete
 claim-path audit for every non-empty final field, including generic narrative
 and dynamic array indexes. Release `1.5.2` narrows the provider output ledger
