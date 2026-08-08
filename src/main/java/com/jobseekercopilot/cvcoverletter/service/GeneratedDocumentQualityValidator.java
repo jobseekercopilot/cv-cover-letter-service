@@ -66,7 +66,20 @@ public class GeneratedDocumentQualityValidator {
             List<ApprovedEvidenceRecord> records
     ) {
         String jobTitle = evidenceValue(records, "JOB.TITLE");
-        String companyName = evidenceValue(records, "JOB.COMPANY");
+        String hiringOrganisation = evidenceValue(
+                records,
+                "JOB.HIRING_ORGANISATION");
+        String advertiserType = evidenceValue(
+                records,
+                "JOB.ADVERTISER_TYPE");
+        String companyName = StringUtils.hasText(hiringOrganisation)
+                ? hiringOrganisation
+                : "RECRUITER".equals(advertiserType)
+                        ? "the client organisation"
+                        : evidenceValue(records, "JOB.COMPANY");
+        String applicationContact = evidenceValue(
+                records,
+                "JOB.APPLICATION_CONTACT");
         require(StringUtils.hasText(jobTitle), "$.coverLetter.jobTitle",
                 "canonical job title evidence is missing");
         require(StringUtils.hasText(companyName), "$.coverLetter.companyName",
@@ -85,11 +98,15 @@ public class GeneratedDocumentQualityValidator {
                 "$.coverLetter.companyName", "company name is not canonical");
         require(equalText(
                         output.at("/coverLetter/greeting").asText(),
-                        "Dear Hiring Manager"),
+                        StringUtils.hasText(applicationContact)
+                                ? "Dear " + applicationContact
+                                : "Dear Hiring Manager"),
                 "$.coverLetter.greeting", "greeting is not canonical");
         require(equalText(
                         output.at("/coverLetter/signOff").asText(),
-                        "Yours faithfully"),
+                        StringUtils.hasText(applicationContact)
+                                ? "Yours sincerely"
+                                : "Yours faithfully"),
                 "$.coverLetter.signOff", "sign-off is not correct for the greeting");
     }
 

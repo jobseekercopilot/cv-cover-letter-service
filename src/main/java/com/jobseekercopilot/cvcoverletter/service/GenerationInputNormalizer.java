@@ -1,5 +1,6 @@
 package com.jobseekercopilot.cvcoverletter.service;
 
+import com.jobseekercopilot.cvcoverletter.dto.AdvertiserType;
 import com.jobseekercopilot.cvcoverletter.dto.ContactDetails;
 import com.jobseekercopilot.cvcoverletter.dto.ContactInputSnapshot;
 import com.jobseekercopilot.cvcoverletter.dto.EmploymentInput;
@@ -12,6 +13,7 @@ import com.jobseekercopilot.cvcoverletter.dto.GenerateRequest;
 import com.jobseekercopilot.cvcoverletter.dto.InputSourceOwner;
 import com.jobseekercopilot.cvcoverletter.dto.InputWarning;
 import com.jobseekercopilot.cvcoverletter.dto.JobInputSnapshot;
+import com.jobseekercopilot.cvcoverletter.dto.JobDescriptionCompleteness;
 import com.jobseekercopilot.cvcoverletter.dto.ProfileInputSnapshot;
 import com.jobseekercopilot.cvcoverletter.dto.QualificationInput;
 import com.jobseekercopilot.cvcoverletter.dto.QualificationStatus;
@@ -377,11 +379,46 @@ public class GenerationInputNormalizer {
     private PromptJob normalizeJob(JobInputSnapshot job, List<InputWarning> warnings) {
         String title = normalizeText(job.getTitle(), "job.title", warnings, true);
         String company = normalizeText(job.getCompany(), "job.company", warnings, true);
+        String advertiserName = normalizeText(
+                job.getAdvertiserName(),
+                "job.advertiserName",
+                warnings,
+                false);
+        AdvertiserType advertiserType = job.getAdvertiserType() == null
+                ? AdvertiserType.UNKNOWN
+                : job.getAdvertiserType();
+        String hiringOrganisationName = normalizeText(
+                job.getHiringOrganisationName(),
+                "job.hiringOrganisationName",
+                warnings,
+                false);
+        String applicationContactName = normalizeText(
+                job.getApplicationContactName(),
+                "job.applicationContactName",
+                warnings,
+                false);
         String location = normalizeText(job.getLocation(), "job.location", warnings, false);
         String employmentType =
                 normalizeText(job.getEmploymentType(), "job.employmentType", warnings, false);
         String description =
                 normalizeText(job.getDescription(), "job.description", warnings, true);
+        JobDescriptionCompleteness completeness =
+                job.getDescriptionCompleteness();
+        if (completeness == null) {
+            if (looksLikeDescriptionPreview(description)) {
+                throw invalid(
+                        "job.description",
+                        "must contain a full or explicitly user-confirmed advert");
+            }
+            completeness = JobDescriptionCompleteness.FULL;
+        }
+        if (completeness != JobDescriptionCompleteness.FULL
+                && completeness
+                        != JobDescriptionCompleteness.USER_CONFIRMED) {
+            throw invalid(
+                    "job.description",
+                    "must contain a full or explicitly user-confirmed advert");
+        }
         if (job.getPostedDate() != null && job.getPostedDate().isAfter(LocalDate.now(clock))) {
             warnings.add(warning(
                     "JOB_POSTED_DATE_IN_FUTURE",
@@ -391,10 +428,23 @@ public class GenerationInputNormalizer {
         return new PromptJob(
                 title,
                 company,
+                advertiserName,
+                advertiserType,
+                hiringOrganisationName,
+                applicationContactName,
                 location,
                 employmentType,
                 job.getPostedDate(),
-                description);
+                description,
+                completeness.name());
+    }
+
+    private boolean looksLikeDescriptionPreview(String description) {
+        String normalized = description.trim();
+        return normalized.length() < 600
+                || normalized.endsWith("...")
+                || normalized.endsWith("…")
+                || normalized.matches("(?is).*\\bTHE\\s+(?:ROL|ROLE)\\s*$");
     }
 
     private List<PromptQualification> normalizeQualifications(

@@ -1,5 +1,6 @@
 package com.jobseekercopilot.cvcoverletter;
 
+import com.jobseekercopilot.cvcoverletter.dto.AdvertiserType;
 import com.jobseekercopilot.cvcoverletter.dto.ContactInputSnapshot;
 import com.jobseekercopilot.cvcoverletter.dto.EmploymentInput;
 import com.jobseekercopilot.cvcoverletter.dto.EvidenceCategory;
@@ -11,6 +12,7 @@ import com.jobseekercopilot.cvcoverletter.dto.EvidenceSnapshotsInput;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateRequest;
 import com.jobseekercopilot.cvcoverletter.dto.InputSourceOwner;
 import com.jobseekercopilot.cvcoverletter.dto.JobInputSnapshot;
+import com.jobseekercopilot.cvcoverletter.dto.JobDescriptionCompleteness;
 import com.jobseekercopilot.cvcoverletter.dto.ProfileInputSnapshot;
 import com.jobseekercopilot.cvcoverletter.dto.QualificationInput;
 import com.jobseekercopilot.cvcoverletter.dto.QualificationStatus;
@@ -118,10 +120,15 @@ public final class GenerationInputFixtures {
                 provenance(InputSourceOwner.JOB_SERVICE, "job-456", "job-v12"),
                 "Java Developer",
                 "Example Ltd",
+                "Example Ltd",
+                AdvertiserType.EMPLOYER,
+                null,
+                null,
                 "Manchester",
                 "Permanent",
                 LocalDate.parse("2026-07-20"),
-                "Build useful and reliable services.");
+                "Build useful and reliable services.",
+                JobDescriptionCompleteness.USER_CONFIRMED);
     }
 
     public static SnapshotProvenance provenance(

@@ -1,0 +1,15 @@
+{
+  "releaseId": "cv-cover-letter-1.6.0",
+  "bundleId": "cv-cover-letter",
+  "bundleVersion": "1.6.0",
+  "releaseStatus": "ACTIVE",
+  "templateVersion": "1.2.0",
+  "rulesVersion": "1.6.0",
+  "schemaId": "cv-cover-letter-output",
+  "schemaVersion": "4.0.0",
+  "evaluationPolicyVersion": "1.6.0",
+  "evaluationPolicySha256": "136ba8c09abae4aec10fc9f0f8501115ac0fe061dc0a10d6246ba7dd2764b782",
+  "templateSha256": "cdf8420a35288e09d6f0bba78a7254525c3767bdf9f9473c6f6dc82902985791",
+  "rulesSha256": "a27dccbd36b0f3a285f135e8096ea985c60d4566b1da0d2ae2a71fbbefb549c7",
+  "schemaSha256": "1ead79b798a874663d82df0e2542097f70230e0bea7fefe5a4199da9d9134ea5"
+}

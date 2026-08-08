@@ -23,9 +23,9 @@ class DocumentRendererTest {
                     "targetRole": "Developer",
                     "personalSummary": "A capable developer.",
                     "coreSkills": [{"name":"Java","evidence":"Built services"}],
-                    "projects": [{"title":"Job Seeker Copilot","role":"Developer","context":"","startDate":"","endDate":"","description":"Built a useful service.","highlights":["Added safe generation"]}],
+                    "projects": [{"title":"Job Seeker Copilot","role":"Developer","context":"","startDate":"2026-05-01","endDate":"Present","description":"Built a useful service.","highlights":["Added safe generation"]}],
                     "qualifications": [{"qualificationName":"BSc Computing","issuingBody":"Example University","status":"Completed","grade":"First","dateAchieved":"2024","expectedCompletion":""}],
-                    "workHistory": [{"jobTitle":"Engineer","employer":"Acme","startDate":"2022","endDate":"Present","responsibilities":["Built APIs"],"tailoredDescription":"Relevant delivery."}]
+                    "workHistory": [{"jobTitle":"Engineer","employer":"Acme","startDate":"2022-03","endDate":"Present","responsibilities":["Built APIs"],"tailoredDescription":"Relevant delivery."}]
                   },
                   "coverLetter": {
                     "title": "Developer Cover Letter",
@@ -53,10 +53,10 @@ class DocumentRendererTest {
         assertTrue(result.contains("Alex Candidate\nalex@example.com\nLondon, SW1A 1AA"));
         assertTrue(result.contains("Professional Profile\nA capable developer."));
         assertTrue(result.contains(
-                "Projects\nJob Seeker Copilot - Developer\nBuilt a useful service."));
+                "Selected Projects\nJob Seeker Copilot - Developer\nMay 2026 – Present\nBuilt a useful service."));
         assertTrue(result.contains("Technical Skills\nJava"));
         assertFalse(result.contains("Java: Built services"));
-        assertTrue(result.contains("Employment History\nEngineer - Acme"));
+        assertTrue(result.contains("Professional Experience\nEngineer - Acme\nMarch 2022 – Present"));
         assertTrue(result.contains(
                 "Education and Qualifications\n- BSc Computing"));
     }
@@ -72,7 +72,7 @@ class DocumentRendererTest {
         assertTrue(result.contains("Dear Hiring Manager,"));
         assertTrue(result.contains("I am applying for the role."));
         assertTrue(result.contains("My experience is a strong match."));
-        assertTrue(result.endsWith("Yours faithfully,\nAlex Candidate"));
+        assertTrue(result.endsWith("Yours sincerely,\nAlex Candidate"));
     }
 
     @Test
@@ -82,14 +82,14 @@ class DocumentRendererTest {
         String result = new CvDocumentRenderer().render(documents.getCv());
 
         int profile = result.indexOf("Technical Profile");
-        int projects = result.indexOf("Projects");
         int skills = result.indexOf("Technical Skills");
+        int projects = result.indexOf("Selected Projects");
         int education = result.indexOf("Education and Qualifications");
         assertTrue(profile >= 0);
-        assertTrue(profile < projects);
-        assertTrue(projects < skills);
+        assertTrue(profile < skills);
+        assertTrue(skills < projects);
         assertTrue(skills < education);
-        assertFalse(result.contains("Employment History"));
+        assertFalse(result.contains("Professional Experience"));
     }
 
     @Test
@@ -103,7 +103,7 @@ class DocumentRendererTest {
 
         assertFalse(result.contains("Technical Skills"));
         assertFalse(result.contains("Projects"));
-        assertFalse(result.contains("Employment History"));
+        assertFalse(result.contains("Professional Experience"));
         assertFalse(result.contains("Education and Qualifications"));
     }
 }

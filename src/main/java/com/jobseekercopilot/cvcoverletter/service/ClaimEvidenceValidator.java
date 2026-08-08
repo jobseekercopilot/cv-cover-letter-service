@@ -1251,7 +1251,10 @@ public class ClaimEvidenceValidator {
             Map<String, List<ApprovedEvidenceRecord>> evidenceById
     ) {
         String jobTitle = exactEvidenceValue(evidenceById, "JOB.TITLE");
-        String companyName = exactEvidenceValue(evidenceById, "JOB.COMPANY");
+        String companyName = canonicalHiringOrganisation(evidenceById);
+        String applicationContact = exactEvidenceValue(
+                evidenceById,
+                "JOB.APPLICATION_CONTACT");
         if (StringUtils.hasText(jobTitle)) {
             replaceText(output, "/cv/title", jobTitle + " CV");
             replaceText(output, "/cv/targetRole", jobTitle);
@@ -1261,8 +1264,35 @@ public class ClaimEvidenceValidator {
         if (StringUtils.hasText(companyName)) {
             replaceText(output, "/coverLetter/companyName", companyName);
         }
-        replaceText(output, "/coverLetter/greeting", "Dear Hiring Manager");
-        replaceText(output, "/coverLetter/signOff", "Yours faithfully");
+        boolean namedContact = StringUtils.hasText(applicationContact);
+        replaceText(
+                output,
+                "/coverLetter/greeting",
+                namedContact
+                        ? "Dear " + applicationContact
+                        : "Dear Hiring Manager");
+        replaceText(
+                output,
+                "/coverLetter/signOff",
+                namedContact ? "Yours sincerely" : "Yours faithfully");
+    }
+
+    private String canonicalHiringOrganisation(
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById
+    ) {
+        String hiringOrganisation = exactEvidenceValue(
+                evidenceById,
+                "JOB.HIRING_ORGANISATION");
+        if (StringUtils.hasText(hiringOrganisation)) {
+            return hiringOrganisation;
+        }
+        String advertiserType = exactEvidenceValue(
+                evidenceById,
+                "JOB.ADVERTISER_TYPE");
+        if ("RECRUITER".equals(advertiserType)) {
+            return "the client organisation";
+        }
+        return exactEvidenceValue(evidenceById, "JOB.COMPANY");
     }
 
     private List<GeneratedClaim> ensureCanonicalTitleCoverage(
@@ -2656,7 +2686,11 @@ public class ClaimEvidenceValidator {
                         content,
                         evidence);
         Predicate<ApprovedEvidenceRecord> atomicEvidence = atomicEvidenceFor(contentPath);
-        if (atomicEvidence != null) {
+        if (contentPath.equals("/coverLetter/companyName")) {
+            require(canonicalCompanyEvidenceMatches(content, evidence),
+                    claimPath + ".evidenceIds",
+                    "company name is not supported by canonical employer or recruiter evidence");
+        } else if (atomicEvidence != null) {
             require(evidence.stream()
                             .filter(atomicEvidence)
                             .anyMatch(record -> equalText(content, record.value())),
@@ -2712,6 +2746,31 @@ public class ClaimEvidenceValidator {
                     "motivational claim is absent from approved evidence at "
                             + contentPath);
         }
+    }
+
+    private boolean canonicalCompanyEvidenceMatches(
+            String content,
+            List<ApprovedEvidenceRecord> evidence
+    ) {
+        boolean exactOrganisation = evidence.stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(record -> record.source() == EvidenceSource.JOB)
+                .filter(record -> record.evidenceId().equals("JOB.COMPANY")
+                        || record.evidenceId().equals(
+                                "JOB.HIRING_ORGANISATION"))
+                .anyMatch(record -> equalText(content, record.value()));
+        if (exactOrganisation) {
+            return true;
+        }
+        return equalText(content, "the client organisation")
+                && evidence.stream()
+                        .filter(java.util.Objects::nonNull)
+                        .filter(record -> record.source() == EvidenceSource.JOB)
+                        .filter(record -> record.evidenceId().equals(
+                                "JOB.ADVERTISER_TYPE"))
+                        .anyMatch(record -> equalText(
+                                record.value(),
+                                "RECRUITER"));
     }
 
     private boolean isCanonicalApplicationBookend(
@@ -2859,7 +2918,11 @@ public class ClaimEvidenceValidator {
             return record -> record.evidenceId().equals("JOB.TITLE");
         }
         if (path.equals("/coverLetter/companyName")) {
-            return record -> record.evidenceId().equals("JOB.COMPANY");
+            return record -> record.evidenceId().equals("JOB.COMPANY")
+                    || record.evidenceId().equals(
+                            "JOB.HIRING_ORGANISATION")
+                    || record.evidenceId().equals(
+                            "JOB.ADVERTISER_TYPE");
         }
         return null;
     }
