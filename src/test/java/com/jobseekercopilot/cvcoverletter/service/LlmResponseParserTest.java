@@ -22,6 +22,7 @@ class LlmResponseParserTest {
     private ObjectMapper objectMapper;
     private LlmResponseParser parser;
     private JsonNode schema;
+    private JsonNode detailedSchema;
     private JsonNode inlineNarrativeSchema;
     private JsonNode coreSkillProjectionRollbackSchema;
     private JsonNode dedicatedRollbackSchema;
@@ -48,6 +49,14 @@ class LlmResponseParserTest {
                         "Inline narrative output schema fixture is missing.");
             }
             inlineNarrativeSchema = objectMapper.readTree(input);
+        }
+        try (InputStream input = getClass().getResourceAsStream(
+                "/prompts/bundles/cv-cover-letter-1.6.0/output-schema.json")) {
+            if (input == null) {
+                throw new IllegalStateException(
+                        "Detailed output schema fixture is missing.");
+            }
+            detailedSchema = objectMapper.readTree(input);
         }
         try (InputStream input = getClass().getResourceAsStream(
                 "/prompts/bundles/cv-cover-letter-1.5.6/output-schema.json")) {
@@ -96,6 +105,23 @@ class LlmResponseParserTest {
                 .count());
         assertEquals("3.5.2", parser.parserVersion(schema));
         assertEquals("2.19.0", parser.claimPolicyVersion(schema));
+    }
+
+    @Test
+    void acceptsReviewedDetailedClaimCapacityFromSelectedBundle() {
+        assertEquals(120, detailedSchema.at("/properties/claims/maxItems").asInt());
+        assertEquals("3.6.0", parser.parserVersion(detailedSchema));
+        assertEquals("2.19.0", parser.claimPolicyVersion(detailedSchema));
+    }
+
+    @Test
+    void rejectsUnreviewedDetailedClaimCapacity() {
+        ((ObjectNode) detailedSchema.path("properties").path("claims"))
+                .put("maxItems", 121);
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> parser.parserVersion(detailedSchema));
     }
 
     @Test
