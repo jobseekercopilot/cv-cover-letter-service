@@ -108,8 +108,8 @@ their exemplar output is compiled into a closed structural schema, but the
 response, text, array and active-content limits pinned by the selected bundle
 still apply.
 
-Active prompt release `1.5.11` pins schema `3.10.0`, evaluation policy `1.5.8`,
-parser `3.6.1`, claim policy `2.15.0` and quality policy `1.5.0`. Schema `3.10.0`
+Active prompt release `1.6.0` pins schema `4.0.0`, evaluation policy `1.6.0`,
+parser `3.6.2`, claim policy `2.20.0` and quality policy `1.5.0`. Schema `4.0.0`
 isolates the two canonical application claims and required `CLAIM-9003`
 personal-summary claim, requires exact-empty private skill evidence and
 constrains ordinary claims to exact final leaves. Ordinary claims cannot claim
@@ -119,8 +119,9 @@ personal-summary sibling has a fixed path and shape but its approved opaque
 evidence IDs remain untrusted request data; free-text evidence is never placed
 in the trusted schema.
 
-Parser `3.6.1` validates the complete raw object and active content before any
-normalisation. Claim policy `2.15.0` can then attach canonical title paths using
+Parser `3.6.2` validates the complete raw object and active content before any
+normalisation and preserves each inline narrative as an independently bounded
+claim. Claim policy `2.20.0` can then attach canonical title paths using
 server-owned `JOB.TITLE` provenance and clear only an optional non-empty
 `tailoredDescription` that no accepted claim owns. Canonical
 `PROFILE_REVISION` `DECLARED_SKILL` records are revision-bound, CV-only

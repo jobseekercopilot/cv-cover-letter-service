@@ -3024,6 +3024,57 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
+    void prioritizesMissingSpecificEvidenceAboveAFullProviderReferenceList()
+            throws Exception {
+        ObjectNode output = validOutput();
+        ((ObjectNode) output.path("coverLetter")).withArray("bodyParagraphs")
+                .set(1, objectMapper.getNodeFactory().textNode(
+                        "I build useful Java and Docker services."));
+
+        List<ApprovedEvidenceRecord> records =
+                new java.util.ArrayList<>(catalog.records());
+        records.add(new ApprovedEvidenceRecord(
+                "PROFILE.SKILL.DOCKER",
+                EvidenceSource.PROFILE,
+                "/profile/skills/docker",
+                "Docker",
+                "DEMONSTRATED_SKILL",
+                "PROFILE_SKILLS",
+                EvidencePurpose.COVER_LETTER));
+        ArrayNode providerEvidence =
+                (ArrayNode) output.at("/claims/7/evidenceIds");
+        providerEvidence.removeAll();
+        for (int index = 0; index < 30; index++) {
+            String evidenceId = "PROFILE.FILLER." + index;
+            records.add(new ApprovedEvidenceRecord(
+                    evidenceId,
+                    EvidenceSource.PROFILE,
+                    "/profile/filler/" + index,
+                    "General delivery evidence " + index,
+                    "DESCRIPTION",
+                    "EMPLOYMENT",
+                    EvidencePurpose.COVER_LETTER));
+            providerEvidence.add(evidenceId);
+        }
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                List.copyOf(records),
+                catalog.sectionOrder());
+
+        GeneratedApplicationDocuments accepted = parse(output);
+        GeneratedClaim paragraphClaim = accepted.getClaims().stream()
+                .filter(claim -> claim.getContentPaths().contains(
+                        "/coverLetter/bodyParagraphs/1"))
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals(30, paragraphClaim.getEvidenceIds().size());
+        assertTrue(paragraphClaim.getEvidenceIds().contains("PROFILE.SKILL.1"));
+        assertTrue(paragraphClaim.getEvidenceIds().contains("PROFILE.SKILL.DOCKER"));
+        assertFalse(paragraphClaim.getEvidenceIds().contains("PROFILE.FILLER.29"));
+    }
+
+    @Test
     void preservesSupportedSkillNarrativeInsteadOfReplacingItWithAnArbitraryFact()
             throws Exception {
         ObjectNode output = validOutput();

@@ -28,7 +28,7 @@ import org.springframework.web.util.HtmlUtils;
 @Component
 public class LlmResponseParser {
 
-    static final String PARSER_VERSION = "3.6.1";
+    static final String PARSER_VERSION = "3.6.2";
     static final String DEDICATED_PERSONAL_SUMMARY_PARSER_VERSION = "3.5.2";
     static final String CORE_SKILL_PROJECTION_PARSER_VERSION = "3.4.0";
     static final String DEDICATED_CANONICAL_PARSER_VERSION = "3.3.0";
@@ -427,32 +427,12 @@ public class LlmResponseParser {
             ClaimDisposition disposition,
             int nextClaimNumber
     ) {
-        List<String> paths = new ArrayList<>();
-        LinkedHashSet<String> evidenceIds = new LinkedHashSet<>();
         for (NarrativeItem item : items) {
-            LinkedHashSet<String> mergedEvidence =
-                    new LinkedHashSet<>(evidenceIds);
-            mergedEvidence.addAll(item.evidenceIds());
-            if (!paths.isEmpty()
-                    && (paths.size() == 30
-                            || mergedEvidence.size() > 30)) {
-                claims.add(narrativeClaim(
-                        nextClaimNumber++,
-                        disposition,
-                        paths,
-                        evidenceIds));
-                paths = new ArrayList<>();
-                evidenceIds = new LinkedHashSet<>();
-            }
-            paths.add(item.contentPath());
-            evidenceIds.addAll(item.evidenceIds());
-        }
-        if (!paths.isEmpty()) {
             claims.add(narrativeClaim(
                     nextClaimNumber++,
                     disposition,
-                    paths,
-                    evidenceIds));
+                    List.of(item.contentPath()),
+                    new LinkedHashSet<>(item.evidenceIds())));
         }
         return nextClaimNumber;
     }
