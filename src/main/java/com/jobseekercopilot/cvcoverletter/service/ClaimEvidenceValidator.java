@@ -12,6 +12,7 @@ import com.jobseekercopilot.cvcoverletter.model.ClaimEvidenceCatalog;
 import com.jobseekercopilot.cvcoverletter.model.EvidenceSource;
 import com.jobseekercopilot.cvcoverletter.model.EvidencePurpose;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -28,7 +29,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.19.0";
+    static final String POLICY_VERSION = "2.20.0";
     static final String CORE_SKILL_PROJECTION_POLICY_VERSION = "2.11.0";
     static final String ROLLBACK_POLICY_VERSION = "2.10.0";
     private static final int MAX_CLAIMS = 200;
@@ -2055,6 +2056,8 @@ public class ClaimEvidenceValidator {
                     "$.claims");
             LinkedHashSet<String> requiredAtomicEvidenceIds =
                     new LinkedHashSet<>();
+            LinkedHashSet<String> requiredSpecificEvidenceIds =
+                    new LinkedHashSet<>();
             LinkedHashSet<String> supplementalEvidenceIds =
                     new LinkedHashSet<>();
             for (String contentPath : claim.getContentPaths()) {
@@ -2092,34 +2095,41 @@ public class ClaimEvidenceValidator {
                             .anyMatch(record -> equalText(
                                     value.textValue(),
                                     record.value()));
-                    boolean exactSupportedTerm = !projectedCoreSkill
-                            && candidates.stream()
-                            .filter(record -> record.purpose().supports(purpose))
-                            .filter(record -> !requiresConfirmedCandidateEvidence(
-                                    contentPath)
-                                    || candidateEvidence(record.source()))
-                            .anyMatch(record -> supportsAnySpecificTerm(
-                                    value.textValue(),
-                                    record.value()));
                     if (exactApprovedFact) {
                         requiredAtomicEvidenceIds.add(evidenceId);
                     }
                     if (exactApprovedNarrative) {
                         supplementalEvidenceIds.add(evidenceId);
                     }
-                    if (exactSupportedTerm) {
-                        supplementalEvidenceIds.add(evidenceId);
-                    }
                 });
+                if (!projectedCoreSkill) {
+                    List<String> currentEvidenceIds =
+                            mergeBoundedEvidenceReferences(
+                                    mergeBoundedEvidenceReferences(
+                                            List.copyOf(requiredAtomicEvidenceIds),
+                                            requiredSpecificEvidenceIds),
+                                    safe(claim.getEvidenceIds()));
+                    requiredSpecificEvidenceIds.addAll(
+                            requiredSpecificEvidenceReferences(
+                                    contentPath,
+                                    value.textValue(),
+                                    currentEvidenceIds,
+                                    evidenceById,
+                                    purpose));
+                }
             }
             GeneratedClaim copy = copyWithClaimId(
                     claim,
                     claim.getClaimId());
+            List<String> requiredEvidenceIds =
+                    mergeBoundedEvidenceReferences(
+                            List.copyOf(requiredAtomicEvidenceIds),
+                            requiredSpecificEvidenceIds);
             List<String> prioritizedEvidenceIds =
-                    requiredAtomicEvidenceIds.isEmpty()
+                    requiredEvidenceIds.isEmpty()
                             ? safe(claim.getEvidenceIds())
                             : mergeBoundedEvidenceReferences(
-                                    List.copyOf(requiredAtomicEvidenceIds),
+                                    requiredEvidenceIds,
                                     safe(claim.getEvidenceIds()));
             copy.setEvidenceIds(mergeBoundedEvidenceReferences(
                     prioritizedEvidenceIds,
@@ -2127,6 +2137,93 @@ public class ClaimEvidenceValidator {
             normalized.add(copy);
         }
         return List.copyOf(normalized);
+    }
+
+    private List<String> requiredSpecificEvidenceReferences(
+            String contentPath,
+            String content,
+            List<String> currentEvidenceIds,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            EvidencePurpose purpose
+    ) {
+        LinkedHashSet<String> required = new LinkedHashSet<>();
+        StringBuilder evidenceText = new StringBuilder(
+                evidenceText(
+                        contentPath,
+                        currentEvidenceIds,
+                        evidenceById,
+                        purpose));
+        for (Pattern pattern : List.of(NUMERIC_CLAIM, SENSITIVE_CLAIM)) {
+            Matcher matcher = pattern.matcher(content);
+            while (matcher.find()) {
+                String term = normalise(matcher.group());
+                if (containsSupportedTerm(evidenceText.toString(), term)) {
+                    continue;
+                }
+                SpecificEvidenceCandidate candidate = evidenceById.entrySet().stream()
+                        .flatMap(entry -> entry.getValue().stream()
+                                .filter(record -> record.purpose().supports(purpose))
+                                .filter(record -> !requiresCandidateSpecificEvidence(
+                                        contentPath)
+                                        || candidateEvidence(record.source()))
+                                .filter(record -> containsSupportedTerm(
+                                        record.value(),
+                                        term))
+                                .map(record -> new SpecificEvidenceCandidate(
+                                        entry.getKey(),
+                                        record.value())))
+                        .sorted(Comparator
+                                .comparing((SpecificEvidenceCandidate value) ->
+                                        !equalText(value.value(), term))
+                                .thenComparingInt(value ->
+                                        normalise(value.value()).length())
+                                .thenComparing(SpecificEvidenceCandidate::evidenceId))
+                        .findFirst()
+                        .orElse(null);
+                if (candidate != null && required.add(candidate.evidenceId())) {
+                    evidenceText.append(' ').append(normalise(candidate.value()));
+                }
+            }
+        }
+        return List.copyOf(required);
+    }
+
+    private String evidenceText(
+            String contentPath,
+            List<String> evidenceIds,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            EvidencePurpose purpose
+    ) {
+        return safe(evidenceIds).stream()
+                .flatMap(evidenceId -> evidenceById
+                        .getOrDefault(evidenceId, List.of())
+                .stream())
+                .filter(record -> record.purpose().supports(purpose))
+                .filter(record -> !requiresCandidateSpecificEvidence(
+                        contentPath)
+                        || candidateEvidence(record.source()))
+                .map(ApprovedEvidenceRecord::value)
+                .map(this::normalise)
+                .reduce("", (left, right) -> left + " " + right);
+    }
+
+    private boolean requiresCandidateSpecificEvidence(String contentPath) {
+        return contentPath.startsWith("/cv/")
+                || requiresConfirmedCandidateEvidence(contentPath);
+    }
+
+    private boolean containsSupportedTerm(String value, String term) {
+        return Pattern.compile(
+                        "(?<![\\p{L}\\p{N}])"
+                                + Pattern.quote(term)
+                                + "(?![\\p{L}\\p{N}])")
+                .matcher(normalise(value))
+                .find();
+    }
+
+    private record SpecificEvidenceCandidate(
+            String evidenceId,
+            String value) {
     }
 
     List<String> mergeBoundedEvidenceReferences(

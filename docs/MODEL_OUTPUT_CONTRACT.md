@@ -2,9 +2,9 @@
 
 CV and Cover Letter Service treats model output as untrusted until it passes
 the exact reviewed schema and local safe-content policy. The active prompt
-release is `cv-cover-letter-1.5.11`; it owns output schema `3.10.0` and
-evaluation policy `1.5.8` at
-`src/main/resources/prompts/bundles/cv-cover-letter-1.5.11/`. Its reviewed
+release is `cv-cover-letter-1.6.0`; it owns output schema `4.0.0` and
+evaluation policy `1.6.0` at
+`src/main/resources/prompts/bundles/cv-cover-letter-1.6.0/`. Its reviewed
 `output-schema.json` checksum is pinned in that release's immutable manifest.
 
 ## One contract at both boundaries
@@ -36,16 +36,16 @@ service's deliberately smaller subset.
 | Qualifications and work-history entries | 20 items each |
 | Responsibilities | 12 per work-history entry |
 | Generation-note lists | 20 items; 500 characters per item |
-| Active ordinary provider claims | 1–20 claims; 30 evidence IDs and final paths per claim |
+| Active ordinary provider claims | 1–120 claims; 30 evidence IDs and final paths per claim |
 | Inline narrative evidence | Required beside every project highlight, work responsibility and body paragraph |
 | Immediate `1.5.6` rollback ordinary claims | 1–26 claims; 30 evidence IDs and final paths per claim |
 | Older dedicated-sibling ordinary claims | 1–38 claims; 30 evidence IDs and final paths per claim |
 | Canonical application provider claims | Exactly two fixed sibling objects |
 | Active personal-summary provider claim | Exactly one fixed sibling object |
-| Active projected public claim ledger | 4–40 claims |
+| Active projected public claim ledger | 4–200 claims |
 | Immediate rollback projected public claim ledger | 3–40 claims |
 
-The active `1.5.11` provider ledger contains only `SUPPORTED` and `REWORDED`
+The active `1.6.0` provider ledger contains only `SUPPORTED` and `REWORDED`
 final-content claims. Each ordinary claim requires at least one approved
 evidence ID and one final path, and `reviewText` is exactly empty. Unsupported
 or unconfirmed material is omitted from both the documents and claims; a neutral
@@ -56,13 +56,15 @@ objects carry the two canonical application claims and the personal-summary
 claim; they are projected into that unchanged public ledger DTO only after raw
 schema validation.
 
-Schema `3.10.0` additionally represents every project highlight, work
+Schema `4.0.0` represents every project highlight, work
 responsibility and cover-letter body paragraph as a closed provider object with
-`text`, `disposition` and one to 30 approved `evidenceIds`. Parser `3.6.1`
+`text`, `disposition` and one to 30 approved `evidenceIds`. Parser `3.6.2`
 validates that raw shape, replaces each object with its text for the existing
-document DTOs, and projects bounded claims for every exact zero-based path.
+document DTOs, and projects one bounded claim for every exact zero-based path.
 Those paths are excluded from ordinary provider claims, preventing prose and
-its provenance from being generated independently.
+its provenance from being generated independently. Claim policy `2.20.0`
+places any approved evidence required for a numeric or specific term before
+optional submitted references, then enforces the unchanged 30-reference bound.
 
 Schema `3.5.0` fixes `/coverLetter/openingParagraph` to exactly `Please consider
 my application for this role.` and `/coverLetter/closingParagraph` to exactly
@@ -202,8 +204,8 @@ Successful response metadata and structured logs record the prompt release,
 template, rules and schema versions and their hashes. Request/response logs
 also record LLM contract `2.0`, the schema-applied parser version, claim policy
 version, the actual model ID and the gateway-owned deployment, admission and
-pricing-policy versions. Active release `1.5.11` records parser `3.6.1`, claim
-policy `2.15.0` and quality policy `1.5.0`; immediate rollback schema `3.7.0`
+pricing-policy versions. Active release `1.6.0` records parser `3.6.2`, claim
+policy `2.20.0` and quality policy `1.5.0`; immediate rollback schema `3.7.0`
 records parser `3.4.0` and claim policy `2.11.0`; schema `3.6.0` records parser
 `3.3.0` and claim policy `2.10.0`; selecting release `1.5.3` retains parser
 `3.2.0`. The consumer accepts gateway audit fields only from the mandatory

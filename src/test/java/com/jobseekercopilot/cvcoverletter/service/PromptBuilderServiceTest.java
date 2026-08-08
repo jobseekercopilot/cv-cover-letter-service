@@ -227,7 +227,7 @@ class PromptBuilderServiceTest {
                 .forEach(value -> schemaEvidenceIds.add(value.asText()));
         assertEquals(suppliedEvidenceIds, schemaEvidenceIds);
         assertEquals(
-                "3.6.1",
+                "3.6.2",
                 new LlmResponseParser(
                         objectMapper,
                         new ClaimEvidenceValidator(),
