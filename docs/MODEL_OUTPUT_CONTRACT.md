@@ -58,7 +58,7 @@ schema validation.
 
 Schema `3.10.0` additionally represents every project highlight, work
 responsibility and cover-letter body paragraph as a closed provider object with
-`text`, `disposition` and one to 30 approved `evidenceIds`. Parser `3.6.0`
+`text`, `disposition` and one to 30 approved `evidenceIds`. Parser `3.6.1`
 validates that raw shape, replaces each object with its text for the existing
 document DTOs, and projects bounded claims for every exact zero-based path.
 Those paths are excluded from ordinary provider claims, preventing prose and
@@ -137,9 +137,10 @@ Release `1.5.5` remains an approved deeper compatibility
 release with schema `3.6.0`, parser `3.3.0` and claim policy `2.10.0`.
 
 The local parser also caps every text node at 4,000 characters and every array
-at 40 items. These parser-wide limits are defence in depth and keep approved
-legacy rollback bundles bounded even though their structural schemas were
-compiled from output exemplars.
+at 240 items. This generic array ceiling is twice the active schema's reviewed
+120-claim maximum; each field remains subject to its tighter schema bound.
+These parser-wide limits are defence in depth and keep approved legacy rollback
+bundles bounded even when their structural schemas were compiled from exemplars.
 
 ## Validation and safe failure
 
@@ -201,7 +202,7 @@ Successful response metadata and structured logs record the prompt release,
 template, rules and schema versions and their hashes. Request/response logs
 also record LLM contract `2.0`, the schema-applied parser version, claim policy
 version, the actual model ID and the gateway-owned deployment, admission and
-pricing-policy versions. Active release `1.5.11` records parser `3.6.0`, claim
+pricing-policy versions. Active release `1.5.11` records parser `3.6.1`, claim
 policy `2.15.0` and quality policy `1.5.0`; immediate rollback schema `3.7.0`
 records parser `3.4.0` and claim policy `2.11.0`; schema `3.6.0` records parser
 `3.3.0` and claim policy `2.10.0`; selecting release `1.5.3` retains parser

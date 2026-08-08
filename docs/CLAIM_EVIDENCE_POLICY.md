@@ -1,7 +1,7 @@
 # Claim evidence policy
 
 Prompt release `cv-cover-letter-1.5.11`, output schema `3.10.0`, evaluation
-policy `1.5.8`, parser `3.6.0`, claim policy `2.15.0` and deterministic quality
+policy `1.5.8`, parser `3.6.1`, claim policy `2.15.0` and deterministic quality
 policy `1.5.0`
 establish the current claim-provenance and document-quality boundary.
 
@@ -41,7 +41,7 @@ ambiguous project evidence and every other omitted narrative still reject.
 Active `1.5.11` makes the high-volume narrative provenance structural. Every
 project highlight, work responsibility and cover-letter body paragraph carries
 its final text, disposition and approved evidence IDs in one closed object.
-Parser `3.6.0` projects those objects into bounded exact-path claims before
+Parser `3.6.1` projects those objects into bounded exact-path claims before
 claim policy `2.15.0` performs its existing grounding and coverage checks.
 
 Release `1.5.3` makes that exception explicit at both provider boundaries.
@@ -154,7 +154,7 @@ fail-closed in parser and claim validation.
 
 Version routing remains schema-bound; a release is excluded when a shared
 schema cannot safely distinguish its semantics. Active release `1.5.11` uses
-schema `3.10.0`, evaluation policy `1.5.8`, parser `3.6.0`,
+schema `3.10.0`, evaluation policy `1.5.8`, parser `3.6.1`,
 claim policy `2.15.0` and quality policy `1.5.0`. Immutable immediate rollback
 `1.5.6` retains schema `3.7.0`, evaluation policy `1.5.4`, parser `3.4.0` and
 claim policy `2.11.0`. Release `1.5.7` is preserved in version-control history

@@ -28,14 +28,18 @@ import org.springframework.web.util.HtmlUtils;
 @Component
 public class LlmResponseParser {
 
-    static final String PARSER_VERSION = "3.6.0";
+    static final String PARSER_VERSION = "3.6.1";
     static final String DEDICATED_PERSONAL_SUMMARY_PARSER_VERSION = "3.5.2";
     static final String CORE_SKILL_PROJECTION_PARSER_VERSION = "3.4.0";
     static final String DEDICATED_CANONICAL_PARSER_VERSION = "3.3.0";
     static final String LEGACY_PARSER_VERSION = "3.2.0";
     static final int MAX_RAW_RESPONSE_CHARACTERS = 100_000;
     static final int MAX_FALLBACK_TEXT_CHARACTERS = 4_000;
-    static final int MAX_FALLBACK_ARRAY_ITEMS = 40;
+    // This generic defence-in-depth ceiling must remain above every reviewed
+    // schema bound. The detailed release permits 120 ordinary claims, so keep
+    // two-times headroom for bounded nested/provider arrays while the schema
+    // continues to enforce the tighter field-specific limits.
+    static final int MAX_FALLBACK_ARRAY_ITEMS = 240;
     private static final int ACTIVE_ORDINARY_CLAIM_LIMIT = 29;
     private static final int INLINE_NARRATIVE_ORDINARY_CLAIM_LIMIT = 20;
     private static final int DETAILED_INLINE_NARRATIVE_ORDINARY_CLAIM_LIMIT =
