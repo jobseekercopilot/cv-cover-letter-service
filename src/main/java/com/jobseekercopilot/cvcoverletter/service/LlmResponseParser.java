@@ -38,6 +38,8 @@ public class LlmResponseParser {
     static final int MAX_FALLBACK_ARRAY_ITEMS = 40;
     private static final int ACTIVE_ORDINARY_CLAIM_LIMIT = 29;
     private static final int INLINE_NARRATIVE_ORDINARY_CLAIM_LIMIT = 20;
+    private static final int DETAILED_INLINE_NARRATIVE_ORDINARY_CLAIM_LIMIT =
+            120;
     private static final int CORE_SKILL_PROJECTION_ORDINARY_CLAIM_LIMIT = 26;
     private static final int DEDICATED_CANONICAL_ORDINARY_CLAIM_LIMIT = 38;
     private static final int MAX_HTML_DECODE_PASSES = 5;
@@ -591,25 +593,27 @@ public class LlmResponseParser {
                     "Dedicated canonical application claim schema is invalid.",
                     exception);
         }
-        int expectedOrdinaryClaimLimit;
+        Set<Integer> expectedOrdinaryClaimLimits;
         if (ORDINARY_CONTENT_PATH_PATTERN.equals(contentPathPattern)) {
-            expectedOrdinaryClaimLimit = ACTIVE_ORDINARY_CLAIM_LIMIT;
+            expectedOrdinaryClaimLimits = Set.of(ACTIVE_ORDINARY_CLAIM_LIMIT);
         } else if (INLINE_NARRATIVE_ORDINARY_CONTENT_PATH_PATTERN.equals(
                 contentPathPattern)) {
-            expectedOrdinaryClaimLimit =
-                    INLINE_NARRATIVE_ORDINARY_CLAIM_LIMIT;
+            expectedOrdinaryClaimLimits = Set.of(
+                    INLINE_NARRATIVE_ORDINARY_CLAIM_LIMIT,
+                    DETAILED_INLINE_NARRATIVE_ORDINARY_CLAIM_LIMIT);
         } else if (CORE_SKILL_PROJECTION_ORDINARY_CONTENT_PATH_PATTERN.equals(
                 contentPathPattern)) {
-            expectedOrdinaryClaimLimit =
-                    CORE_SKILL_PROJECTION_ORDINARY_CLAIM_LIMIT;
+            expectedOrdinaryClaimLimits = Set.of(
+                    CORE_SKILL_PROJECTION_ORDINARY_CLAIM_LIMIT);
         } else {
-            expectedOrdinaryClaimLimit =
-                    DEDICATED_CANONICAL_ORDINARY_CLAIM_LIMIT;
+            expectedOrdinaryClaimLimits = Set.of(
+                    DEDICATED_CANONICAL_ORDINARY_CLAIM_LIMIT);
         }
         requireSchemaContract(
                 properties.path("claims").path("maxItems").isIntegralNumber()
-                        && properties.path("claims").path("maxItems").asInt()
-                                == expectedOrdinaryClaimLimit,
+                        && expectedOrdinaryClaimLimits.contains(
+                                properties.path("claims").path("maxItems")
+                                        .asInt()),
                 "ordinary claim bound does not reserve canonical capacity");
         return true;
     }
@@ -742,6 +746,8 @@ public class LlmResponseParser {
                                                 == CORE_SKILL_PROJECTION_ORDINARY_CLAIM_LIMIT
                                         || ordinaryClaims.path("maxItems").asInt()
                                                 == INLINE_NARRATIVE_ORDINARY_CLAIM_LIMIT
+                                        || ordinaryClaims.path("maxItems").asInt()
+                                                == DETAILED_INLINE_NARRATIVE_ORDINARY_CLAIM_LIMIT
                                         || ordinaryClaims.path("maxItems").asInt()
                                                 == DEDICATED_CANONICAL_ORDINARY_CLAIM_LIMIT));
         requireSchemaContract(
