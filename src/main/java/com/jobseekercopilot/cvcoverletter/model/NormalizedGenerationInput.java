@@ -1,5 +1,6 @@
 package com.jobseekercopilot.cvcoverletter.model;
 
+import com.jobseekercopilot.cvcoverletter.dto.AdvertiserType;
 import com.jobseekercopilot.cvcoverletter.dto.ContactDetails;
 import com.jobseekercopilot.cvcoverletter.dto.EvidenceCategory;
 import com.jobseekercopilot.cvcoverletter.dto.EvidenceSnapshotPurpose;
@@ -52,10 +53,15 @@ public record NormalizedGenerationInput(
     public record PromptJob(
             String title,
             String company,
+            String advertiserName,
+            AdvertiserType advertiserType,
+            String hiringOrganisationName,
+            String applicationContactName,
             String location,
             String employmentType,
             LocalDate postedDate,
-            String description) {
+            String description,
+            String descriptionCompleteness) {
     }
 
     public record PromptEvidenceSnapshots(

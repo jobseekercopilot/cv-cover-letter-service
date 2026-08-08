@@ -27,20 +27,34 @@ public class CoverLetterDocumentRenderer {
                     + " at "
                     + letter.getCompanyName().trim());
         }
-        parts.add("Dear Hiring Manager,");
+        parts.add(punctuated(letter.getGreeting(), "Dear Hiring Manager", ","));
         parts.add(letter.getOpeningParagraph());
         parts.addAll(letter.getBodyParagraphs());
         parts.add(letter.getClosingParagraph());
-        parts.add(signOff(contactDetails));
+        parts.add(signOff(letter, contactDetails));
         return parts.stream().filter(value -> value != null && !value.isBlank())
                 .collect(java.util.stream.Collectors.joining("\n\n"));
     }
 
-    private String signOff(ContactDetails contactDetails) {
+    private String signOff(
+            GeneratedCoverLetter letter,
+            ContactDetails contactDetails) {
         String fullName = contactDetails == null ? null : contactDetails.fullName();
+        String signOff = punctuated(
+                letter.getSignOff(),
+                "Yours faithfully",
+                ",");
         return fullName == null || fullName.isBlank()
-                ? "Yours faithfully,"
-                : "Yours faithfully,\n" + fullName.trim();
+                ? signOff
+                : signOff + "\n" + fullName.trim();
+    }
+
+    private String punctuated(
+            String value,
+            String fallback,
+            String punctuation) {
+        String text = hasText(value) ? value.trim() : fallback;
+        return text.endsWith(punctuation) ? text : text + punctuation;
     }
 
     private boolean hasText(String value) {

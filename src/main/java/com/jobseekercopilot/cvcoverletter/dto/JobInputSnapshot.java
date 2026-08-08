@@ -29,6 +29,17 @@ public class JobInputSnapshot extends StrictInput {
     private String company;
 
     @Size(max = 160)
+    private String advertiserName;
+
+    private AdvertiserType advertiserType;
+
+    @Size(max = 160)
+    private String hiringOrganisationName;
+
+    @Size(max = 160)
+    private String applicationContactName;
+
+    @Size(max = 160)
     private String location;
 
     @Size(max = 80)
@@ -39,4 +50,6 @@ public class JobInputSnapshot extends StrictInput {
     @NotBlank
     @Size(max = 12000)
     private String description;
+
+    private JobDescriptionCompleteness descriptionCompleteness;
 }

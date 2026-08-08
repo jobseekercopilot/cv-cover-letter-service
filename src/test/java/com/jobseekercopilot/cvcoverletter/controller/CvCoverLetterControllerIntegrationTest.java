@@ -255,8 +255,10 @@ class CvCoverLetterControllerIntegrationTest {
                     "provenance":{"owner":"JOB_SERVICE","resourceId":"job-456",
                       "version":"job-v12","capturedAt":"2026-07-24T12:00:00Z"},
                     "title":"Java Developer","company":"Example Ltd",
+                    "advertiserName":"Example Ltd","advertiserType":"EMPLOYER",
                     "location":"Manchester","employmentType":"Permanent",
-                    "postedDate":"2026-07-20","description":"Build useful services"
+                    "postedDate":"2026-07-20","description":"Build useful services",
+                    "descriptionCompleteness":"USER_CONFIRMED"
                   }
                 }
                 """;

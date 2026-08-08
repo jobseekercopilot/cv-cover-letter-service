@@ -28,7 +28,7 @@ class ClaimEvidenceCatalogFactoryTest {
 
         assertEquals(first, second);
         assertEquals("1.0", first.catalogVersion());
-        assertEquals(20, first.records().size());
+        assertEquals(23, first.records().size());
         assertTrue(first.records().stream().anyMatch(record ->
                 record.evidenceId().equals("PROFILE.SKILL.1")
                         && record.sourcePath().equals("/profile/skills/0")
@@ -39,6 +39,12 @@ class ClaimEvidenceCatalogFactoryTest {
         assertTrue(first.records().stream().anyMatch(record ->
                 record.evidenceId().equals("JOB.TITLE")
                         && record.value().equals("Java Developer")));
+        assertTrue(first.records().stream().anyMatch(record ->
+                record.evidenceId().equals("JOB.ADVERTISER_TYPE")
+                        && record.value().equals("EMPLOYER")));
+        assertTrue(first.records().stream().anyMatch(record ->
+                record.evidenceId().equals("JOB.DESCRIPTION_COMPLETENESS")
+                        && record.value().equals("USER_CONFIRMED")));
         String boundary = first.toString();
         assertFalse(boundary.contains("owner-secret"));
         assertFalse(boundary.contains("profile-123"));

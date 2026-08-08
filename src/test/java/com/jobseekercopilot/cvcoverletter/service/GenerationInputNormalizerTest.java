@@ -7,9 +7,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.jobseekercopilot.cvcoverletter.dto.AdvertiserType;
 import com.jobseekercopilot.cvcoverletter.dto.EmploymentInput;
 import com.jobseekercopilot.cvcoverletter.dto.InputSourceOwner;
 import com.jobseekercopilot.cvcoverletter.dto.InputWarning;
+import com.jobseekercopilot.cvcoverletter.dto.JobDescriptionCompleteness;
 import com.jobseekercopilot.cvcoverletter.dto.RoleStatus;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidGenerationInputException;
 import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput;
@@ -73,6 +75,51 @@ class GenerationInputNormalizerTest {
         assertThrows(
                 InvalidGenerationInputException.class,
                 () -> normalizer.normalize("owner-123", reversed));
+    }
+
+    @Test
+    void rejectsAnUnconfirmedProviderPreviewBeforePromptConstruction() {
+        var request = validRequest();
+        request.getJob().setDescription("Short provider preview...");
+        request.getJob().setDescriptionCompleteness(
+                JobDescriptionCompleteness.PREVIEW);
+
+        InvalidGenerationInputException failure = assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize("owner-123", request));
+
+        assertTrue(failure.getMessage().contains("full or explicitly user-confirmed"));
+    }
+
+    @Test
+    void acceptsACompleteLegacyGatewayAdvertDuringRollingDeployment() {
+        var request = validRequest();
+        request.getJob().setAdvertiserType(null);
+        request.getJob().setDescriptionCompleteness(null);
+        request.getJob().setDescription(
+                "A complete role description covering responsibilities, requirements, delivery and collaboration. "
+                        .repeat(8));
+
+        NormalizedGenerationInput actual =
+                normalizer.normalize("owner-123", request);
+
+        assertEquals(AdvertiserType.UNKNOWN, actual.job().advertiserType());
+        assertEquals("FULL", actual.job().descriptionCompleteness());
+    }
+
+    @Test
+    void rejectsALegacyGatewayPreviewDuringRollingDeployment() {
+        var request = validRequest();
+        request.getJob().setAdvertiserType(null);
+        request.getJob().setDescriptionCompleteness(null);
+        request.getJob().setDescription("Short provider preview...");
+
+        InvalidGenerationInputException failure = assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize("owner-123", request));
+
+        assertTrue(failure.getMessage().contains(
+                "full or explicitly user-confirmed"));
     }
 
     @Test

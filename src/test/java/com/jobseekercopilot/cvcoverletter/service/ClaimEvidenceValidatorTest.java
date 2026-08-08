@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.jobseekercopilot.cvcoverletter.dto.AdvertiserType;
 import com.jobseekercopilot.cvcoverletter.dto.ClaimDisposition;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedApplicationDocuments;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedClaim;
@@ -2263,16 +2264,57 @@ class ClaimEvidenceValidatorTest {
                 accepted.getCoverLetter());
 
         assertTrue(cv.contains("Technical Profile"));
-        assertTrue(cv.contains("Projects\nJob Seeker Copilot"));
+        assertTrue(cv.contains("Selected Projects\nJob Seeker Copilot"));
         assertTrue(cv.contains("Technical Skills\nJava"));
-        assertFalse(cv.contains("Employment History"));
+        assertFalse(cv.contains("Professional Experience"));
         assertTrue(cv.indexOf("Technical Profile")
-                < cv.indexOf("Projects"));
-        assertTrue(cv.indexOf("Projects")
                 < cv.indexOf("Technical Skills"));
+        assertTrue(cv.indexOf("Technical Skills")
+                < cv.indexOf("Selected Projects"));
         assertTrue(coverLetter.contains(
                 "Application for Java Developer at Example Ltd"));
         assertTrue(coverLetter.endsWith("Yours faithfully,"));
+    }
+
+    @Test
+    void recruiterAdvertUsesTheUnnamedClientAndNamedContactBookends()
+            throws Exception {
+        var request = validVersionedRequest();
+        request.getJob().setCompany("Harnham");
+        request.getJob().setAdvertiserName("Harnham");
+        request.getJob().setAdvertiserType(AdvertiserType.RECRUITER);
+        request.getJob().setHiringOrganisationName(null);
+        request.getJob().setApplicationContactName("Molly Bird");
+        catalog = new ClaimEvidenceCatalogFactory().create(
+                new GenerationInputNormalizer(
+                        Clock.fixed(
+                                Instant.parse("2026-07-24T13:00:00Z"),
+                                ZoneOffset.UTC))
+                        .normalize("owner-secret", request));
+        ObjectNode output = versionedOutput();
+        ((ObjectNode) output.at("/cv"))
+                .put("title", "Java Developer CV");
+        ((ObjectNode) output.at("/coverLetter"))
+                .put("title", "Java Developer Cover Letter")
+                .put("companyName", "the client organisation")
+                .put("greeting", "Dear Molly Bird")
+                .put("signOff", "Yours sincerely");
+        GeneratedApplicationDocuments documents = objectMapper.treeToValue(
+                output,
+                GeneratedApplicationDocuments.class);
+
+        new GeneratedDocumentQualityValidator().validate(
+                output,
+                documents,
+                catalog);
+
+        String rendered = new CoverLetterDocumentRenderer().render(
+                documents.getCoverLetter());
+        assertTrue(rendered.contains(
+                "Application for Java Developer at the client organisation"));
+        assertTrue(rendered.contains("Dear Molly Bird,"));
+        assertTrue(rendered.endsWith("Yours sincerely,"));
+        assertFalse(rendered.contains("at Harnham"));
     }
 
     @Test

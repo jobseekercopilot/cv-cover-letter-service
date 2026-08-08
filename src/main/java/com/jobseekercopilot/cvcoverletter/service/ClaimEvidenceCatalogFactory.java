@@ -126,6 +126,14 @@ public class ClaimEvidenceCatalogFactory {
 
         add(records, "JOB.TITLE", EvidenceSource.JOB, "/job/title", input.job().title());
         add(records, "JOB.COMPANY", EvidenceSource.JOB, "/job/company", input.job().company());
+        add(records, "JOB.ADVERTISER", EvidenceSource.JOB,
+                "/job/advertiserName", input.job().advertiserName());
+        add(records, "JOB.ADVERTISER_TYPE", EvidenceSource.JOB,
+                "/job/advertiserType", value(input.job().advertiserType()));
+        add(records, "JOB.HIRING_ORGANISATION", EvidenceSource.JOB,
+                "/job/hiringOrganisationName", input.job().hiringOrganisationName());
+        add(records, "JOB.APPLICATION_CONTACT", EvidenceSource.JOB,
+                "/job/applicationContactName", input.job().applicationContactName());
         add(records, "JOB.LOCATION", EvidenceSource.JOB, "/job/location", input.job().location());
         add(records, "JOB.EMPLOYMENT_TYPE", EvidenceSource.JOB,
                 "/job/employmentType", input.job().employmentType());
@@ -133,6 +141,8 @@ public class ClaimEvidenceCatalogFactory {
                 "/job/postedDate", value(input.job().postedDate()));
         add(records, "JOB.DESCRIPTION", EvidenceSource.JOB,
                 "/job/description", input.job().description());
+        add(records, "JOB.DESCRIPTION_COMPLETENESS", EvidenceSource.JOB,
+                "/job/descriptionCompleteness", input.job().descriptionCompleteness());
 
         return new ClaimEvidenceCatalog(
                 input.evidenceSnapshots() == null
