@@ -104,7 +104,7 @@ class LlmResponseParserTest {
                         .equals(claim.getContentPaths()))
                 .count());
         assertEquals("3.5.2", parser.parserVersion(schema));
-        assertEquals("2.20.0", parser.claimPolicyVersion(schema));
+        assertEquals("2.21.0", parser.claimPolicyVersion(schema));
     }
 
     @Test
@@ -113,7 +113,7 @@ class LlmResponseParserTest {
         assertTrue(LlmResponseParser.MAX_FALLBACK_ARRAY_ITEMS
                 >= detailedSchema.at("/properties/claims/maxItems").asInt() * 2);
         assertEquals("3.6.2", parser.parserVersion(detailedSchema));
-        assertEquals("2.20.0", parser.claimPolicyVersion(detailedSchema));
+        assertEquals("2.21.0", parser.claimPolicyVersion(detailedSchema));
     }
 
     @Test
@@ -135,7 +135,7 @@ class LlmResponseParserTest {
                 inlineNarrativeSchema);
 
         assertEquals("3.6.2", parser.parserVersion(inlineNarrativeSchema));
-        assertEquals("2.20.0", parser.claimPolicyVersion(inlineNarrativeSchema));
+        assertEquals("2.21.0", parser.claimPolicyVersion(inlineNarrativeSchema));
         assertEquals(
                 List.of("Delivered a reliable service."),
                 result.getCv().getProjects().get(0).getHighlights());
