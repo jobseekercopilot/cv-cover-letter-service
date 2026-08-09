@@ -3,6 +3,7 @@ package com.jobseekercopilot.cvcoverletter.service;
 import com.jobseekercopilot.cvcoverletter.dto.AdvertiserType;
 import com.jobseekercopilot.cvcoverletter.dto.ContactDetails;
 import com.jobseekercopilot.cvcoverletter.dto.ContactInputSnapshot;
+import com.jobseekercopilot.cvcoverletter.dto.DraftOutputType;
 import com.jobseekercopilot.cvcoverletter.dto.EmploymentInput;
 import com.jobseekercopilot.cvcoverletter.dto.EvidenceSnapshotFactInput;
 import com.jobseekercopilot.cvcoverletter.dto.EvidenceSnapshotInput;
@@ -18,6 +19,7 @@ import com.jobseekercopilot.cvcoverletter.dto.ProfileInputSnapshot;
 import com.jobseekercopilot.cvcoverletter.dto.QualificationInput;
 import com.jobseekercopilot.cvcoverletter.dto.QualificationStatus;
 import com.jobseekercopilot.cvcoverletter.dto.RoleStatus;
+import com.jobseekercopilot.cvcoverletter.dto.SelectedDraftGenerationRequest;
 import com.jobseekercopilot.cvcoverletter.dto.SnapshotProvenance;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidGenerationInputException;
 import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput;
@@ -124,6 +126,86 @@ public class GenerationInputNormalizer {
                 promptProfile,
                 promptJob,
                 evidenceSnapshots);
+
+        return new NormalizedGenerationInput(
+                ownerId.trim(),
+                request.getInputSchemaVersion(),
+                profileProvenance,
+                contactProvenance,
+                jobProvenance,
+                contact,
+                promptProfile,
+                promptJob,
+                evidenceSnapshots,
+                List.copyOf(warnings));
+    }
+
+    public NormalizedGenerationInput normalizeSelected(
+            String ownerId,
+            DraftOutputType outputType,
+            SelectedDraftGenerationRequest request) {
+        if (ownerId == null || ownerId.isBlank()) {
+            throw invalid("owner", "trusted owner is required");
+        }
+        if (outputType == null) {
+            throw invalid("outputType", "selected output is required");
+        }
+        if (request == null
+                || !EVIDENCE_INPUT_SCHEMA_VERSION.equals(
+                        request.getInputSchemaVersion())) {
+            throw invalid(
+                    "inputSchemaVersion",
+                    "selected generation requires schema 2.0");
+        }
+
+        List<InputWarning> warnings = new ArrayList<>();
+        ProfileInputSnapshot profile = require(request.getProfile(), "profile");
+        JobInputSnapshot job = require(request.getJob(), "job");
+        SnapshotProvenance profileProvenance = normalizeProvenance(
+                profile.getProvenance(),
+                InputSourceOwner.USER_PROFILE_SERVICE,
+                "profile.provenance");
+        SnapshotProvenance jobProvenance = normalizeProvenance(
+                job.getProvenance(),
+                InputSourceOwner.JOB_SERVICE,
+                "job.provenance");
+        ContactInputSnapshot contactInput = profile.getContact();
+        SnapshotProvenance contactProvenance = contactInput == null
+                ? null
+                : normalizeProvenance(
+                        contactInput.getProvenance(),
+                        InputSourceOwner.AUTHENTICATION_SERVICE,
+                        "profile.contact.provenance");
+
+        if (!safe(profile.getQualifications()).isEmpty()
+                || !safe(profile.getEmploymentHistory()).isEmpty()) {
+            throw invalid(
+                    "profile",
+                    "schema 2.0 does not accept browser-positioned qualifications or employment history");
+        }
+        EvidenceSnapshotPurpose purpose = outputType == DraftOutputType.CV
+                ? EvidenceSnapshotPurpose.CV
+                : EvidenceSnapshotPurpose.COVER_LETTER;
+        PromptEvidenceSnapshot selected = normalizeEvidenceSnapshot(
+                require(request.getEvidenceSnapshot(), "evidenceSnapshot"),
+                purpose,
+                "evidenceSnapshot",
+                warnings);
+        String expectedRevision = profileProvenance.getResourceId();
+        String expectedVersion = "sha256:" + selected.profileContentDigest();
+        if (!selected.profileRevisionId().toString().equals(expectedRevision)
+                || !expectedVersion.equals(profileProvenance.getVersion())) {
+            throw invalid(
+                    "evidenceSnapshot",
+                    "snapshot must bind to the exact supplied profile revision and digest");
+        }
+        PromptEvidenceSnapshots evidenceSnapshots = outputType == DraftOutputType.CV
+                ? new PromptEvidenceSnapshots(selected, null)
+                : new PromptEvidenceSnapshots(null, selected);
+        ContactDetails contact = normalizeContact(profile, warnings);
+        PromptProfile promptProfile = normalizeProfile(profile, warnings);
+        PromptJob promptJob = normalizeJob(job, warnings);
+        enforceTotalLimit(promptProfile, promptJob, evidenceSnapshots);
 
         return new NormalizedGenerationInput(
                 ownerId.trim(),
@@ -753,6 +835,9 @@ public class GenerationInputNormalizer {
     }
 
     private int evidenceCharacters(PromptEvidenceSnapshot snapshot) {
+        if (snapshot == null) {
+            return 0;
+        }
         return snapshot.selections().stream()
                 .flatMap(selection -> selection.facts().stream())
                 .map(PromptEvidenceFact::factValue)

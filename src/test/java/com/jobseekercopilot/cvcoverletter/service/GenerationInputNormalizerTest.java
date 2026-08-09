@@ -1,6 +1,7 @@
 package com.jobseekercopilot.cvcoverletter.service;
 
 import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validRequest;
+import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validSelectedRequest;
 import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validVersionedRequest;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -9,6 +10,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jobseekercopilot.cvcoverletter.dto.AdvertiserType;
 import com.jobseekercopilot.cvcoverletter.dto.EmploymentInput;
+import com.jobseekercopilot.cvcoverletter.dto.DraftOutputType;
+import com.jobseekercopilot.cvcoverletter.dto.EvidenceSnapshotPurpose;
 import com.jobseekercopilot.cvcoverletter.dto.InputSourceOwner;
 import com.jobseekercopilot.cvcoverletter.dto.InputWarning;
 import com.jobseekercopilot.cvcoverletter.dto.JobDescriptionCompleteness;
@@ -256,6 +259,41 @@ class GenerationInputNormalizerTest {
                 InvalidGenerationInputException.class,
                 () -> normalizer.normalize(
                         "owner-123", wrongPurpose));
+    }
+
+    @Test
+    void selectedFlowRetainsOnlyTheRequestedPurposeSnapshot() {
+        NormalizedGenerationInput cv = normalizer.normalizeSelected(
+                "owner-123",
+                DraftOutputType.CV,
+                validSelectedRequest(DraftOutputType.CV));
+        NormalizedGenerationInput coverLetter = normalizer.normalizeSelected(
+                "owner-123",
+                DraftOutputType.COVER_LETTER,
+                validSelectedRequest(DraftOutputType.COVER_LETTER));
+
+        assertTrue(cv.evidenceSnapshots().cv() != null);
+        assertTrue(cv.evidenceSnapshots().coverLetter() == null);
+        assertTrue(coverLetter.evidenceSnapshots().cv() == null);
+        assertTrue(coverLetter.evidenceSnapshots().coverLetter() != null);
+    }
+
+    @Test
+    void selectedFlowRejectsSchemaOneAndWrongPurposeBeforePrompting() {
+        var wrongSchema = validSelectedRequest(DraftOutputType.CV);
+        wrongSchema.setInputSchemaVersion("1.0");
+        assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalizeSelected(
+                        "owner-123", DraftOutputType.CV, wrongSchema));
+
+        var wrongPurpose = validSelectedRequest(DraftOutputType.CV);
+        wrongPurpose.getEvidenceSnapshot().setPurpose(
+                EvidenceSnapshotPurpose.COVER_LETTER);
+        assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalizeSelected(
+                        "owner-123", DraftOutputType.CV, wrongPurpose));
     }
 
     private List<String> codes(NormalizedGenerationInput input) {

@@ -35,12 +35,25 @@ jq -e '
         "PromptGenerationMetadata",
         "ProfileInputSnapshot",
         "QualificationInput",
+        "SelectedDraftGenerationRequest",
+        "SelectedDraftGenerationResponse",
         "SnapshotProvenance",
         "ValidatedClaim",
         "ValidatedClaimLedger"
     ] as $closed |
     (.openapi | type == "string" and startswith("3.")) and
-    (.info.version == "4.0.0") and
+    (.info.version == "4.1.0") and
+    (.paths["/api/v1/cv-cover-letter/drafts/{outputType}/estimate"].post.operationId
+        == "estimateSelectedDraft") and
+    (.paths["/api/v1/cv-cover-letter/drafts/{outputType}"].post.operationId
+        == "generateSelectedDraft") and
+    ($schemas.SelectedDraftGenerationRequest.required
+        | index("inputSchemaVersion") != null and index("profile") != null and
+          index("job") != null and index("evidenceSnapshot") != null) and
+    ($schemas.SelectedDraftGenerationRequest.properties.inputSchemaVersion.pattern
+        == "2\\.0") and
+    ($schemas.SelectedDraftGenerationRequest.properties
+        | has("evidenceSnapshots") | not) and
     (.paths["/api/v1/cv-cover-letter/drafts/estimate"].post.operationId
         == "estimateDraft") and
     (.paths["/api/v1/cv-cover-letter/drafts"].post.operationId
@@ -74,7 +87,7 @@ jq -e '
           index("claims") != null) and
     ($schemas.ValidatedClaimLedger.properties.ledgerSha256.pattern
         == "^[a-f0-9]{64}$") and
-    ($schemas.ValidatedClaimLedger.properties.claims.maxItems == 40) and
+    ($schemas.ValidatedClaimLedger.properties.claims.maxItems == 200) and
     ($schemas.ValidatedClaim.required
         | index("claimId") != null and index("disposition") != null and
           index("evidenceIds") != null and index("contentPaths") != null and

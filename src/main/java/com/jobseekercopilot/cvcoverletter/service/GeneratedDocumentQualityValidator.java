@@ -40,8 +40,8 @@ public class GeneratedDocumentQualityValidator {
     ) {
         require(output != null && output.isObject(), "$", "structured output is missing");
         require(documents != null
-                        && documents.getCv() != null
-                        && documents.getCoverLetter() != null,
+                        && (documents.getCv() != null
+                                || documents.getCoverLetter() != null),
                 "$",
                 "generated documents are missing");
         require(catalog != null
@@ -50,20 +50,32 @@ public class GeneratedDocumentQualityValidator {
                 "$",
                 "approved evidence catalogue is missing");
 
-        validateCanonicalIdentity(output, catalog.records());
-        validateSkills(documents.getCv());
-        validateDuplicateNarrative(output, "/cv", cvNarrative(output));
-        List<TextUnit> coverNarrative = coverLetterNarrative(output);
-        validateNoCoverLetterSkillList(coverNarrative);
-        validateDuplicateNarrative(output, "/coverLetter", coverNarrative);
-        validateQualifications(documents);
+        validateCanonicalIdentity(
+                output,
+                catalog.records(),
+                documents.getCv() != null,
+                documents.getCoverLetter() != null);
+        if (documents.getCv() != null) {
+            validateSkills(documents.getCv());
+            validateDuplicateNarrative(output, "/cv", cvNarrative(output));
+            validateQualifications(documents);
+        }
+        if (documents.getCoverLetter() != null) {
+            List<TextUnit> coverNarrative = coverLetterNarrative(output);
+            validateNoCoverLetterSkillList(coverNarrative);
+            validateDuplicateNarrative(output, "/coverLetter", coverNarrative);
+        }
         validateSelectedEvidenceCoverage(documents, catalog);
-        validateStructuredProjects(documents, catalog);
+        if (documents.getCv() != null) {
+            validateStructuredProjects(documents, catalog);
+        }
     }
 
     private void validateCanonicalIdentity(
             JsonNode output,
-            List<ApprovedEvidenceRecord> records
+            List<ApprovedEvidenceRecord> records,
+            boolean hasCv,
+            boolean hasCoverLetter
     ) {
         String jobTitle = evidenceValue(records, "JOB.TITLE");
         String hiringOrganisation = evidenceValue(
@@ -80,34 +92,38 @@ public class GeneratedDocumentQualityValidator {
         String applicationContact = evidenceValue(
                 records,
                 "JOB.APPLICATION_CONTACT");
-        require(StringUtils.hasText(jobTitle), "$.coverLetter.jobTitle",
+        require(StringUtils.hasText(jobTitle), "$.jobTitle",
                 "canonical job title evidence is missing");
-        require(StringUtils.hasText(companyName), "$.coverLetter.companyName",
-                "canonical company evidence is missing");
-        require(equalText(output.at("/cv/title").asText(), jobTitle + " CV"),
-                "$.cv.title", "title is not canonical");
-        require(equalText(output.at("/cv/targetRole").asText(), jobTitle),
-                "$.cv.targetRole", "target role is not canonical");
-        require(equalText(
-                        output.at("/coverLetter/title").asText(),
-                        jobTitle + " Cover Letter"),
-                "$.coverLetter.title", "title is not canonical");
-        require(equalText(output.at("/coverLetter/jobTitle").asText(), jobTitle),
-                "$.coverLetter.jobTitle", "job title is not canonical");
-        require(equalText(output.at("/coverLetter/companyName").asText(), companyName),
-                "$.coverLetter.companyName", "company name is not canonical");
-        require(equalText(
-                        output.at("/coverLetter/greeting").asText(),
-                        StringUtils.hasText(applicationContact)
-                                ? "Dear " + applicationContact
-                                : "Dear Hiring Manager"),
-                "$.coverLetter.greeting", "greeting is not canonical");
-        require(equalText(
-                        output.at("/coverLetter/signOff").asText(),
-                        StringUtils.hasText(applicationContact)
-                                ? "Yours sincerely"
-                                : "Yours faithfully"),
-                "$.coverLetter.signOff", "sign-off is not correct for the greeting");
+        if (hasCv) {
+            require(equalText(output.at("/cv/title").asText(), jobTitle + " CV"),
+                    "$.cv.title", "title is not canonical");
+            require(equalText(output.at("/cv/targetRole").asText(), jobTitle),
+                    "$.cv.targetRole", "target role is not canonical");
+        }
+        if (hasCoverLetter) {
+            require(StringUtils.hasText(companyName), "$.coverLetter.companyName",
+                    "canonical company evidence is missing");
+            require(equalText(
+                            output.at("/coverLetter/title").asText(),
+                            jobTitle + " Cover Letter"),
+                    "$.coverLetter.title", "title is not canonical");
+            require(equalText(output.at("/coverLetter/jobTitle").asText(), jobTitle),
+                    "$.coverLetter.jobTitle", "job title is not canonical");
+            require(equalText(output.at("/coverLetter/companyName").asText(), companyName),
+                    "$.coverLetter.companyName", "company name is not canonical");
+            require(equalText(
+                            output.at("/coverLetter/greeting").asText(),
+                            StringUtils.hasText(applicationContact)
+                                    ? "Dear " + applicationContact
+                                    : "Dear Hiring Manager"),
+                    "$.coverLetter.greeting", "greeting is not canonical");
+            require(equalText(
+                            output.at("/coverLetter/signOff").asText(),
+                            StringUtils.hasText(applicationContact)
+                                    ? "Yours sincerely"
+                                    : "Yours faithfully"),
+                    "$.coverLetter.signOff", "sign-off is not correct for the greeting");
+        }
     }
 
     private void validateSkills(GeneratedCv cv) {

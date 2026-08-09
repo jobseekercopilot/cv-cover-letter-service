@@ -1,16 +1,21 @@
 package com.jobseekercopilot.cvcoverletter.service;
 
 import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validRequest;
+import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validSelectedRequest;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jobseekercopilot.cvcoverletter.config.LlmProperties;
+import com.jobseekercopilot.cvcoverletter.config.PromptBundleProperties;
 import com.jobseekercopilot.cvcoverletter.dto.DraftGenerationResponse;
+import com.jobseekercopilot.cvcoverletter.dto.DraftOutputType;
+import com.jobseekercopilot.cvcoverletter.dto.EvidenceCategory;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateCvCoverLetterResponse;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateRequest;
 import com.jobseekercopilot.cvcoverletter.dto.PromptGenerationMetadata;
 import com.jobseekercopilot.cvcoverletter.dto.RejectedGenerationReplayResponse;
+import com.jobseekercopilot.cvcoverletter.dto.SelectedDraftGenerationResponse;
 import com.jobseekercopilot.cvcoverletter.exception.DownstreamServiceException;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidLlmResponseException;
 import com.jobseekercopilot.cvcoverletter.exception.RejectedGenerationQuarantineException;
@@ -41,6 +46,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.web.client.RestClientException;
+import org.springframework.core.io.DefaultResourceLoader;
 
 import java.util.UUID;
 import java.time.Instant;
@@ -95,7 +101,8 @@ class CvCoverLetterServiceTest {
 
         request = validRequest();
         normalizedInput = new GenerationInputNormalizer().normalize("user-123", request);
-        when(inputNormalizer.normalize("user-123", request)).thenReturn(normalizedInput);
+        lenient().when(inputNormalizer.normalize("user-123", request))
+                .thenReturn(normalizedInput);
         lenient().when(promptBuilderService.buildPrompt(normalizedInput))
                 .thenReturn(prompt(
                         activeOutputSchema(), promptMetadata()));
@@ -143,6 +150,66 @@ class CvCoverLetterServiceTest {
                 paymentBillingClient,
                 documentStoreApi,
                 applicationTrackerApi);
+    }
+
+    @ParameterizedTest
+    @MethodSource("selectedOutputs")
+    void generatesExactlyOneSelectedDraftWithoutOwningSideEffects(
+            DraftOutputType outputType) throws Exception {
+        var selectedRequest = validSelectedRequest(outputType);
+        if (outputType == DraftOutputType.CV) {
+            selectedRequest.getEvidenceSnapshot().setSectionOrder(
+                    List.of(EvidenceCategory.OTHER));
+            selectedRequest.getEvidenceSnapshot().getSelections().get(0)
+                    .setCategory(EvidenceCategory.OTHER);
+        }
+        var selectedInput = new GenerationInputNormalizer()
+                .normalizeSelected("user-123", outputType, selectedRequest);
+        CvCoverLetterPrompt selectedPrompt = selectedPrompt(
+                selectedInput, outputType);
+        when(inputNormalizer.normalizeSelected(
+                "user-123", outputType, selectedRequest))
+                .thenReturn(selectedInput);
+        when(promptBuilderService.buildPrompt(selectedInput, outputType))
+                .thenReturn(selectedPrompt);
+        when(llmGatewayApi.generateV2(any())).thenReturn(
+                successfulResponse(outputType == DraftOutputType.CV
+                                ? selectedCvJson()
+                                : selectedCoverLetterJson())
+                        .schemaId(selectedPrompt.getGenerationMetadata().schemaId())
+                        .schemaVersion(selectedPrompt.getGenerationMetadata().schemaVersion()));
+        UUID operationId = UUID.randomUUID();
+
+        SelectedDraftGenerationResponse result = service.generateSelectedDraft(
+                "user-123",
+                operationId,
+                outputType,
+                selectedRequest);
+
+        assertEquals(operationId, result.operationId());
+        assertEquals(outputType, result.outputType());
+        assertEquals("2.0", result.inputSchemaVersion());
+        assertEquals(
+                outputType == DraftOutputType.CV
+                        ? "Java Developer CV"
+                        : "Java Developer Cover Letter",
+                result.title());
+        ArgumentCaptor<GenerationRequest> requestCaptor =
+                ArgumentCaptor.forClass(GenerationRequest.class);
+        verify(llmGatewayApi).generateV2(requestCaptor.capture());
+        assertEquals(
+                selectedPrompt.getGenerationMetadata().schemaId(),
+                requestCaptor.getValue().getOutput().getSchemaId());
+        verifyNoInteractions(
+                paymentBillingClient,
+                documentStoreApi,
+                applicationTrackerApi);
+    }
+
+    private static Stream<DraftOutputType> selectedOutputs() {
+        return Stream.of(
+                DraftOutputType.CV,
+                DraftOutputType.COVER_LETTER);
     }
 
     @Test
@@ -803,6 +870,148 @@ class CvCoverLetterServiceTest {
                         new ClaimEvidenceCatalogFactory().create(
                                 normalizedInput))
                 .build();
+    }
+
+    private CvCoverLetterPrompt selectedPrompt(
+            NormalizedGenerationInput input,
+            DraftOutputType outputType) {
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        PromptBundleProperties properties = new PromptBundleProperties();
+        properties.setSelectedReleaseId("cv-cover-letter-1.6.0");
+        PromptBundleRegistry registry = new PromptBundleRegistry(
+                objectMapper,
+                new DefaultResourceLoader(),
+                properties);
+        registry.initialize();
+        return new PromptBuilderService(
+                objectMapper,
+                registry,
+                new LlmProperties(),
+                new ClaimEvidenceCatalogFactory())
+                .buildPrompt(input, outputType);
+    }
+
+    private static String selectedCvJson() {
+        return """
+                {
+                  "cv": {
+                    "title": "Java Developer CV",
+                    "targetRole": "Java Developer",
+                    "personalSummary": "Built useful services.",
+                    "coreSkills": [],
+                    "projects": [],
+                    "qualifications": [],
+                    "workHistory": []
+                  },
+                  "generationNotes": {
+                    "assumptionsMade": [],
+                    "missingInformation": [],
+                    "tailoringSummary": "Focused on the supplied role."
+                  },
+                  "claims": [
+                    {
+                      "claimId": "CLAIM-001",
+                      "disposition": "SUPPORTED",
+                      "evidenceIds": ["JOB.TITLE"],
+                      "contentPaths": ["/cv/targetRole"],
+                      "reviewText": ""
+                    }
+                  ],
+                  "personalSummaryClaim": {
+                    "claimId": "CLAIM-9003",
+                    "disposition": "SUPPORTED",
+                    "evidenceIds": ["80000000-0000-4000-8000-000000000002"],
+                    "contentPath": "/cv/personalSummary",
+                    "reviewText": ""
+                  }
+                }
+                """;
+    }
+
+    private static String selectedCoverLetterJson() {
+        return """
+                {
+                  "coverLetter": {
+                    "title": "Java Developer Cover Letter",
+                    "jobTitle": "Java Developer",
+                    "companyName": "Example Ltd",
+                    "greeting": "Dear Hiring Manager",
+                    "openingParagraph": "Please consider my application for this role.",
+                    "bodyParagraphs": [
+                      {
+                        "text": "My experience includes building useful services.",
+                        "disposition": "SUPPORTED",
+                        "evidenceIds": ["80000000-0000-4000-8000-000000000003"]
+                      },
+                      {
+                        "text": "The role calls for useful and reliable services.",
+                        "disposition": "REWORDED",
+                        "evidenceIds": ["80000000-0000-4000-8000-000000000003", "JOB.DESCRIPTION"]
+                      },
+                      {
+                        "text": "I would apply this experience to the role.",
+                        "disposition": "REWORDED",
+                        "evidenceIds": ["80000000-0000-4000-8000-000000000003"]
+                      },
+                      {
+                        "text": "This background would support reliable delivery.",
+                        "disposition": "REWORDED",
+                        "evidenceIds": ["80000000-0000-4000-8000-000000000003"]
+                      }
+                    ],
+                    "closingParagraph": "Thank you for considering my application.",
+                    "signOff": "Yours faithfully"
+                  },
+                  "generationNotes": {
+                    "assumptionsMade": [],
+                    "missingInformation": [],
+                    "tailoringSummary": "Focused on the supplied role."
+                  },
+                  "claims": [
+                    {
+                      "claimId": "CLAIM-003",
+                      "disposition": "SUPPORTED",
+                      "evidenceIds": ["JOB.TITLE"],
+                      "contentPaths": ["/coverLetter/title"],
+                      "reviewText": ""
+                    },
+                    {
+                      "claimId": "CLAIM-001",
+                      "disposition": "SUPPORTED",
+                      "evidenceIds": ["JOB.TITLE"],
+                      "contentPaths": ["/coverLetter/jobTitle"],
+                      "reviewText": ""
+                    },
+                    {
+                      "claimId": "CLAIM-002",
+                      "disposition": "SUPPORTED",
+                      "evidenceIds": ["JOB.COMPANY"],
+                      "contentPaths": ["/coverLetter/companyName"],
+                      "reviewText": ""
+                    }
+                  ],
+                  "canonicalApplicationClaims": {
+                    "opening": {
+                      "claimId": "CLAIM-9001",
+                      "disposition": "SUPPORTED",
+                      "generationIntentEvidenceId": "REQUEST.GENERATION_INTENT",
+                      "jobTitleEvidenceId": "JOB.TITLE",
+                      "companyEvidenceId": "JOB.COMPANY",
+                      "contentPath": "/coverLetter/openingParagraph",
+                      "reviewText": ""
+                    },
+                    "closing": {
+                      "claimId": "CLAIM-9002",
+                      "disposition": "SUPPORTED",
+                      "generationIntentEvidenceId": "REQUEST.GENERATION_INTENT",
+                      "jobTitleEvidenceId": "JOB.TITLE",
+                      "companyEvidenceId": "JOB.COMPANY",
+                      "contentPath": "/coverLetter/closingParagraph",
+                      "reviewText": ""
+                    }
+                  }
+                }
+                """;
     }
 
     static String validJson() {

@@ -1,6 +1,7 @@
 # Draft generation boundary
 
-OpenAPI `3.2.0` separates model-domain work from workflow ownership.
+OpenAPI `4.1.0` separates model-domain work from workflow ownership and adds
+backward-compatible selected-output operations.
 
 ## Operations
 
@@ -20,6 +21,18 @@ It calls LLM Gateway once and returns rendered draft content, prompt-release
 provenance, token usage, and non-payload provider audit evidence. It does not
 reserve or commit credit, save or approve a document, export a file, or create
 an application.
+
+`POST /api/v1/cv-cover-letter/drafts/{outputType}/estimate` and
+`POST /api/v1/cv-cover-letter/drafts/{outputType}` accept exactly `CV` or
+`COVER_LETTER`, schema `2.0`, and the single evidence snapshot whose purpose
+matches that output. Their strict provider schema omits the unselected document;
+the generation response contains one title/content pair and the usage/audit
+evidence for that call only. The estimate has no provider or owning side effect,
+and selected generation has no Payment, Document Store, Application Tracker,
+approval, export, or publication side effect.
+
+The pre-existing paired `/drafts` and `/drafts/estimate` contracts are retained
+unchanged for rolling consumers.
 
 ## Ownership and recovery
 

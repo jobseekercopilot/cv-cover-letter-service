@@ -1,7 +1,8 @@
 # Document-generation input contract
 
-OpenAPI `3.2.0` accepts input snapshot schema `1.0`. The Document Generation
-Gateway is the only caller. It authenticates the user, places the stable
+OpenAPI `4.1.0` retains input snapshot schema `1.0` on the paired draft contract
+and accepts schema `2.0` on selected-output draft operations. The Document
+Generation Gateway is the only caller. It authenticates the user, places the stable
 subject in `X-Document-Owner`, and assembles the request from authoritative
 service responses. The body deliberately has no user-selected owner.
 
@@ -57,6 +58,12 @@ Prompt construction serialises the accepted content into a server-owned evidence
 catalogue that includes opaque evidence IDs and provenance metadata. That assembled
 untrusted envelope is independently limited to 170,000 characters. The larger
 envelope limit does not increase any source-field or normalised-text allowance.
+
+For selected-output operations, `evidenceSnapshot` is singular and required.
+Its purpose must be `CV` for the `CV` path or `COVER_LETTER` for the
+`COVER_LETTER` path, and its profile revision ID/content digest must match the
+supplied profile snapshot. Schema `1.0`, missing snapshots, cross-purpose
+snapshots and unknown output path values fail before any provider call.
 
 ## Missing, duplicate, and conflicting data
 

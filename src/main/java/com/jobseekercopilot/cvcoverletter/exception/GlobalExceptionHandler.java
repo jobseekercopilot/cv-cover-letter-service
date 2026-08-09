@@ -7,6 +7,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.time.OffsetDateTime;
 import lombok.extern.slf4j.Slf4j;
@@ -17,6 +18,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler({
             MethodArgumentNotValidException.class,
+            MethodArgumentTypeMismatchException.class,
             HttpMessageNotReadableException.class,
             InvalidGenerationInputException.class
     })
@@ -27,7 +29,9 @@ public class GlobalExceptionHandler {
                     .orElse("Invalid request")
                 : exception instanceof InvalidGenerationInputException
                     ? exception.getMessage()
-                    : "Request body is not valid JSON";
+                    : exception instanceof MethodArgumentTypeMismatchException mismatch
+                        ? mismatch.getName() + ": unsupported value"
+                        : "Request body is not valid JSON";
         return response(HttpStatus.BAD_REQUEST, message, request);
     }
 
