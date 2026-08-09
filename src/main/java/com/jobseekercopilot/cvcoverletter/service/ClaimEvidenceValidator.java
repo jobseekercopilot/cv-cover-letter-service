@@ -389,18 +389,24 @@ public class ClaimEvidenceValidator {
                                 claims,
                                 evidenceById,
                                 versionedEvidence)));
-        claims = ensureCanonicalTitleCoverage(
-                claims,
-                evidenceById,
-                "/cv/title",
-                "/cv/targetRole",
-                EvidencePurpose.CV);
-        claims = ensureCanonicalTitleCoverage(
-                claims,
-                evidenceById,
-                "/coverLetter/title",
-                "/coverLetter/jobTitle",
-                EvidencePurpose.COVER_LETTER);
+        if (output.at("/cv/title").isTextual()
+                && output.at("/cv/targetRole").isTextual()) {
+            claims = ensureCanonicalTitleCoverage(
+                    claims,
+                    evidenceById,
+                    "/cv/title",
+                    "/cv/targetRole",
+                    EvidencePurpose.CV);
+        }
+        if (output.at("/coverLetter/title").isTextual()
+                && output.at("/coverLetter/jobTitle").isTextual()) {
+            claims = ensureCanonicalTitleCoverage(
+                    claims,
+                    evidenceById,
+                    "/coverLetter/title",
+                    "/coverLetter/jobTitle",
+                    EvidencePurpose.COVER_LETTER);
+        }
         claims = normalizeDuplicateClaimIds(claims);
 
         int remainingClaimCapacity = MAX_CLAIMS - claims.size();
@@ -2734,7 +2740,9 @@ public class ClaimEvidenceValidator {
                 enforceCanonicalApplicationBookends);
         for (String contentPath : contentPaths) {
             require(expectedPaths.contains(contentPath),
-                    claimPath + ".contentPaths", "content path is not an approved final claim path");
+                    claimPath + ".contentPaths",
+                    "content path is not an approved final claim path: "
+                            + contentPath);
             require(coveredPaths.add(contentPath),
                     claimPath + ".contentPaths", "content path is covered more than once");
             JsonNode value = output.at(contentPath);

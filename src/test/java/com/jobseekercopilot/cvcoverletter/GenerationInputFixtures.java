@@ -10,6 +10,7 @@ import com.jobseekercopilot.cvcoverletter.dto.EvidenceSnapshotPurpose;
 import com.jobseekercopilot.cvcoverletter.dto.EvidenceSnapshotSelectionInput;
 import com.jobseekercopilot.cvcoverletter.dto.EvidenceSnapshotsInput;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateRequest;
+import com.jobseekercopilot.cvcoverletter.dto.DraftOutputType;
 import com.jobseekercopilot.cvcoverletter.dto.InputSourceOwner;
 import com.jobseekercopilot.cvcoverletter.dto.JobInputSnapshot;
 import com.jobseekercopilot.cvcoverletter.dto.JobDescriptionCompleteness;
@@ -18,6 +19,7 @@ import com.jobseekercopilot.cvcoverletter.dto.QualificationInput;
 import com.jobseekercopilot.cvcoverletter.dto.QualificationStatus;
 import com.jobseekercopilot.cvcoverletter.dto.RoleStatus;
 import com.jobseekercopilot.cvcoverletter.dto.SnapshotProvenance;
+import com.jobseekercopilot.cvcoverletter.dto.SelectedDraftGenerationRequest;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -84,6 +86,18 @@ public final class GenerationInputFixtures {
                                         COVER_EXPERIENCE_FACT_ID,
                                         "DESCRIPTION",
                                         "My experience includes building useful services.")))));
+    }
+
+    public static SelectedDraftGenerationRequest validSelectedRequest(
+            DraftOutputType outputType) {
+        GenerateRequest request = validVersionedRequest();
+        return new SelectedDraftGenerationRequest(
+                request.getInputSchemaVersion(),
+                request.getProfile(),
+                request.getJob(),
+                outputType == DraftOutputType.CV
+                        ? request.getEvidenceSnapshots().getCv()
+                        : request.getEvidenceSnapshots().getCoverLetter());
     }
 
     public static ProfileInputSnapshot validProfile() {

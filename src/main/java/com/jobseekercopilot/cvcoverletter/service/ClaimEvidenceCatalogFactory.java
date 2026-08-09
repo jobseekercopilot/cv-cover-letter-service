@@ -1,6 +1,7 @@
 package com.jobseekercopilot.cvcoverletter.service;
 
 import com.jobseekercopilot.cvcoverletter.model.ApprovedEvidenceRecord;
+import com.jobseekercopilot.cvcoverletter.dto.DraftOutputType;
 import com.jobseekercopilot.cvcoverletter.model.ClaimEvidenceCatalog;
 import com.jobseekercopilot.cvcoverletter.model.EvidenceSource;
 import com.jobseekercopilot.cvcoverletter.model.EvidencePurpose;
@@ -21,12 +22,27 @@ public class ClaimEvidenceCatalogFactory {
     static final String SNAPSHOT_CATALOG_VERSION = "2.0";
 
     public ClaimEvidenceCatalog create(NormalizedGenerationInput input) {
-        return create(input, true);
+        return create(input, true, null);
     }
 
     ClaimEvidenceCatalog create(
             NormalizedGenerationInput input,
             boolean includeRevisionDeclaredSkills
+    ) {
+        return create(input, includeRevisionDeclaredSkills, null);
+    }
+
+    ClaimEvidenceCatalog create(
+            NormalizedGenerationInput input,
+            DraftOutputType outputType
+    ) {
+        return create(input, true, outputType);
+    }
+
+    private ClaimEvidenceCatalog create(
+            NormalizedGenerationInput input,
+            boolean includeRevisionDeclaredSkills,
+            DraftOutputType outputType
     ) {
         List<ApprovedEvidenceRecord> records = new ArrayList<>();
         add(
@@ -34,7 +50,7 @@ public class ClaimEvidenceCatalogFactory {
                 "REQUEST.GENERATION_INTENT",
                 EvidenceSource.REQUEST,
                 "/request/generationIntent",
-                "Generate an application CV and cover letter for the supplied canonical job."
+                generationIntent(outputType)
         );
 
         if (input.evidenceSnapshots() == null) {
@@ -58,7 +74,8 @@ public class ClaimEvidenceCatalogFactory {
                         input.profile().targetRoles().get(index)
                 );
             }
-        } else if (includeRevisionDeclaredSkills) {
+        } else if (includeRevisionDeclaredSkills
+                && input.evidenceSnapshots().cv() != null) {
             addRevisionDeclaredSkills(records, input);
         }
         for (int index = 0; index < input.profile().qualifications().size(); index++) {
@@ -101,27 +118,31 @@ public class ClaimEvidenceCatalogFactory {
         Map<EvidencePurpose, List<String>> sectionOrder =
                 new LinkedHashMap<>();
         if (input.evidenceSnapshots() != null) {
-            addSnapshot(
-                    records,
-                    input.evidenceSnapshots().cv(),
-                    EvidencePurpose.CV,
-                    "cv");
-            addSnapshot(
-                    records,
-                    input.evidenceSnapshots().coverLetter(),
-                    EvidencePurpose.COVER_LETTER,
-                    "coverLetter");
-            sectionOrder.put(
-                    EvidencePurpose.CV,
-                    input.evidenceSnapshots().cv().sectionOrder().stream()
-                            .map(Enum::name)
-                            .toList());
-            sectionOrder.put(
-                    EvidencePurpose.COVER_LETTER,
-                    input.evidenceSnapshots().coverLetter()
-                            .sectionOrder().stream()
-                            .map(Enum::name)
-                            .toList());
+            if (input.evidenceSnapshots().cv() != null) {
+                addSnapshot(
+                        records,
+                        input.evidenceSnapshots().cv(),
+                        EvidencePurpose.CV,
+                        "cv");
+                sectionOrder.put(
+                        EvidencePurpose.CV,
+                        input.evidenceSnapshots().cv().sectionOrder().stream()
+                                .map(Enum::name)
+                                .toList());
+            }
+            if (input.evidenceSnapshots().coverLetter() != null) {
+                addSnapshot(
+                        records,
+                        input.evidenceSnapshots().coverLetter(),
+                        EvidencePurpose.COVER_LETTER,
+                        "coverLetter");
+                sectionOrder.put(
+                        EvidencePurpose.COVER_LETTER,
+                        input.evidenceSnapshots().coverLetter()
+                                .sectionOrder().stream()
+                                .map(Enum::name)
+                                .toList());
+            }
         }
 
         add(records, "JOB.TITLE", EvidenceSource.JOB, "/job/title", input.job().title());
@@ -150,6 +171,16 @@ public class ClaimEvidenceCatalogFactory {
                         : SNAPSHOT_CATALOG_VERSION,
                 List.copyOf(records),
                 Map.copyOf(sectionOrder));
+    }
+
+    private String generationIntent(DraftOutputType outputType) {
+        if (outputType == DraftOutputType.CV) {
+            return "Generate an application CV for the supplied canonical job.";
+        }
+        if (outputType == DraftOutputType.COVER_LETTER) {
+            return "Generate an application cover letter for the supplied canonical job.";
+        }
+        return "Generate an application CV and cover letter for the supplied canonical job.";
     }
 
     private void addRevisionDeclaredSkills(

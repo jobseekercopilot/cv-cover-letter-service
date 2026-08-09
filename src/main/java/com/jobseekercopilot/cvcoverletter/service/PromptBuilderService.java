@@ -6,7 +6,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jobseekercopilot.cvcoverletter.config.LlmProperties;
+import com.jobseekercopilot.cvcoverletter.dto.DraftOutputType;
 import com.jobseekercopilot.cvcoverletter.dto.InputWarning;
+import com.jobseekercopilot.cvcoverletter.dto.PromptGenerationMetadata;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidGenerationInputException;
 import com.jobseekercopilot.cvcoverletter.model.ClaimEvidenceCatalog;
 import com.jobseekercopilot.cvcoverletter.model.CvCoverLetterPrompt;
@@ -48,28 +50,41 @@ public class PromptBuilderService {
     private final ClaimEvidenceCatalogFactory evidenceCatalogFactory;
 
     public CvCoverLetterPrompt buildPrompt(NormalizedGenerationInput input) {
-        return buildPrompt(input, promptBundleRegistry.selected());
+        return buildPrompt(input, promptBundleRegistry.selected(), null);
+    }
+
+    public CvCoverLetterPrompt buildPrompt(
+            NormalizedGenerationInput input,
+            DraftOutputType outputType) {
+        if (outputType == null) {
+            throw new IllegalArgumentException("Selected draft output is required.");
+        }
+        return buildPrompt(input, promptBundleRegistry.selected(), outputType);
     }
 
     public CvCoverLetterPrompt buildPrompt(
             NormalizedGenerationInput input,
             String approvedReleaseId) {
-        return buildPrompt(input, promptBundleRegistry.get(approvedReleaseId));
+        return buildPrompt(
+                input, promptBundleRegistry.get(approvedReleaseId), null);
     }
 
     private CvCoverLetterPrompt buildPrompt(
             NormalizedGenerationInput input,
-            PromptBundle bundle) {
+            PromptBundle bundle,
+            DraftOutputType outputType) {
         try {
             String template = bundle.template();
-            String rules = bundle.rules();
+            String rules = selectedRules(bundle.rules(), outputType);
             String outputSchemaJson = bundle.outputSchemaJson();
             boolean includeRevisionDeclaredSkills =
                     RULES_VERSIONS_WITH_CANONICAL_PROFILE_SKILLS.contains(
                             bundle.metadata().rulesVersion());
-            ClaimEvidenceCatalog evidenceCatalog = evidenceCatalogFactory.create(
-                    input,
-                    includeRevisionDeclaredSkills);
+            ClaimEvidenceCatalog evidenceCatalog = outputType == null
+                    ? evidenceCatalogFactory.create(
+                            input,
+                            includeRevisionDeclaredSkills)
+                    : evidenceCatalogFactory.create(input, outputType);
             ClaimEvidenceCatalog approvedEvidence = approvedEvidence(
                     evidenceCatalog,
                     bundle.metadata().rulesVersion());
@@ -110,6 +125,10 @@ public class PromptBuilderService {
             JsonNode outputSchema = isStrictJsonSchema(outputShape)
                     ? outputShape.deepCopy()
                     : compileStrictJsonSchema(outputShape);
+            if (outputType != null) {
+                outputSchema = selectedOutputSchema(
+                        outputSchema, outputType);
+            }
             bindApprovedEvidenceIds(outputSchema, approvedEvidence);
             requireWithinBoundary(
                     "trusted instructions",
@@ -129,13 +148,114 @@ public class PromptBuilderService {
                     .trustedInstructions(trustedInstructions)
                     .untrustedInput(untrustedInput)
                     .outputSchema(outputSchema)
-                    .generationMetadata(bundle.metadata())
+                    .generationMetadata(selectedMetadata(
+                            bundle.metadata(), outputType))
                     .evidenceCatalog(evidenceCatalog)
                     .build();
 
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to build CV and cover letter prompt", e);
         }
+    }
+
+    private PromptGenerationMetadata selectedMetadata(
+            PromptGenerationMetadata metadata,
+            DraftOutputType outputType) {
+        if (outputType == null) {
+            return metadata;
+        }
+        return new PromptGenerationMetadata(
+                metadata.releaseId(),
+                metadata.bundleId(),
+                metadata.bundleVersion(),
+                metadata.bundleSha256(),
+                metadata.templateVersion(),
+                metadata.templateSha256(),
+                metadata.rulesVersion(),
+                metadata.rulesSha256(),
+                metadata.schemaId()
+                        + "-"
+                        + outputType.name().toLowerCase(java.util.Locale.ROOT),
+                metadata.schemaVersion(),
+                metadata.schemaSha256(),
+                metadata.evaluationPolicyVersion(),
+                metadata.evaluationPolicySha256());
+    }
+
+    private String selectedRules(
+            String rules,
+            DraftOutputType outputType) {
+        if (outputType == null) {
+            return rules;
+        }
+        String name = outputType == DraftOutputType.CV
+                ? "CV"
+                : "cover letter";
+        return "SELECTED OUTPUT CONTRACT: Generate only the requested "
+                + name
+                + "; ignore shared rules for the unselected document.\n\n"
+                + rules;
+    }
+
+    private JsonNode selectedOutputSchema(
+            JsonNode source,
+            DraftOutputType outputType) {
+        if (!(source.deepCopy() instanceof ObjectNode selected)) {
+            throw new IllegalStateException(
+                    "Selected prompt bundle output schema is not an object.");
+        }
+        ObjectNode properties = (ObjectNode) selected.path("properties");
+        ArrayNode required = (ArrayNode) selected.path("required");
+        if (outputType == DraftOutputType.CV) {
+            properties.remove("coverLetter");
+            properties.remove("canonicalApplicationClaims");
+            replaceRequired(
+                    required,
+                    Set.of(
+                            "cv",
+                            "generationNotes",
+                            "personalSummaryClaim",
+                            "claims"));
+            selectedClaimPathPattern(
+                    properties,
+                    "^(?:/cv/targetRole"
+                            + "|/cv/projects/[0-9]+/(?:title|role|context|startDate|endDate|description)"
+                            + "|/cv/qualifications/[0-9]+/(?:qualificationName|issuingBody|status|grade|dateAchieved|expectedCompletion)"
+                            + "|/cv/workHistory/[0-9]+/(?:jobTitle|employer|startDate|endDate|tailoredDescription)"
+                            + ")$");
+        } else {
+            properties.remove("cv");
+            properties.remove("personalSummaryClaim");
+            replaceRequired(
+                    required,
+                    Set.of(
+                            "coverLetter",
+                            "generationNotes",
+                            "canonicalApplicationClaims",
+                            "claims"));
+            selectedClaimPathPattern(
+                    properties,
+                    "^/coverLetter/(?:title|jobTitle|companyName)$");
+        }
+        return selected;
+    }
+
+    private void selectedClaimPathPattern(
+            ObjectNode properties,
+            String pattern) {
+        ((ObjectNode) properties.path("claims")
+                .path("items")
+                .path("properties")
+                .path("contentPaths")
+                .path("items"))
+                .put("pattern", pattern);
+    }
+
+    private void replaceRequired(
+            ArrayNode required,
+            Set<String> fields) {
+        required.removeAll();
+        fields.stream().sorted().forEach(required::add);
     }
 
     private String toPrettyJson(Object value) throws JsonProcessingException {

@@ -1,8 +1,13 @@
 package com.jobseekercopilot.cvcoverletter.controller;
 
+import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validSelectedRequest;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobseekercopilot.cvcoverletter.dto.DraftGenerationResponse;
+import com.jobseekercopilot.cvcoverletter.dto.DraftOutputType;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateCvCoverLetterResponse;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateRequest;
+import com.jobseekercopilot.cvcoverletter.dto.SelectedDraftGenerationResponse;
 import com.jobseekercopilot.cvcoverletter.security.CvCoverLetterGatewayCredentials;
 import com.jobseekercopilot.cvcoverletter.security.CvCoverLetterIdentityFilter;
 import com.jobseekercopilot.cvcoverletter.service.CvCoverLetterService;
@@ -38,6 +43,7 @@ class CvCoverLetterControllerIntegrationTest {
             "test-only-cv-gateway-service-token-32-bytes";
 
     @Autowired private MockMvc mockMvc;
+    @Autowired private ObjectMapper objectMapper;
     @MockBean private CvCoverLetterService cvCoverLetterService;
 
     @Test
@@ -84,6 +90,57 @@ class CvCoverLetterControllerIntegrationTest {
 
         verify(cvCoverLetterService).generateDraft(
                 eq("owner-123"), eq(operationId), any());
+    }
+
+    @Test
+    void selectedDraftBindsTheExplicitOutputAndRejectsUnknownOutput()
+            throws Exception {
+        UUID operationId =
+                UUID.fromString("00000000-0000-0000-0000-000000000456");
+        when(cvCoverLetterService.generateSelectedDraft(
+                anyString(), any(), eq(DraftOutputType.CV), any()))
+                .thenReturn(new SelectedDraftGenerationResponse(
+                        operationId,
+                        DraftOutputType.CV,
+                        "Java Developer CV",
+                        "CV content",
+                        null,
+                        null,
+                        "2.0",
+                        List.of(),
+                        null,
+                        null,
+                        null));
+        String body = objectMapper.writeValueAsString(
+                validSelectedRequest(DraftOutputType.CV));
+
+        mockMvc.perform(post("/api/v1/cv-cover-letter/drafts/CV")
+                        .header("X-Service-Token", SERVICE_TOKEN)
+                        .header("X-Document-Owner", "owner-123")
+                        .header(
+                                "X-Generation-Operation-Id",
+                                operationId.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.outputType").value("CV"))
+                .andExpect(jsonPath("$.title").value("Java Developer CV"));
+
+        verify(cvCoverLetterService).generateSelectedDraft(
+                eq("owner-123"),
+                eq(operationId),
+                eq(DraftOutputType.CV),
+                any());
+
+        mockMvc.perform(post("/api/v1/cv-cover-letter/drafts/UNKNOWN")
+                        .header("X-Service-Token", SERVICE_TOKEN)
+                        .header("X-Document-Owner", "owner-123")
+                        .header(
+                                "X-Generation-Operation-Id",
+                                operationId.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

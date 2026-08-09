@@ -47,7 +47,13 @@ class OpenApiExportTest {
                 contract.path("paths").path("/api/v1/cv-cover-letter/drafts").path("post");
         JsonNode estimate =
                 contract.path("paths").path("/api/v1/cv-cover-letter/drafts/estimate").path("post");
-        assertEquals("3.4.0", contract.path("info").path("version").asText());
+        JsonNode selectedDraft = contract.path("paths")
+                .path("/api/v1/cv-cover-letter/drafts/{outputType}")
+                .path("post");
+        JsonNode selectedEstimate = contract.path("paths")
+                .path("/api/v1/cv-cover-letter/drafts/{outputType}/estimate")
+                .path("post");
+        assertEquals("4.1.0", contract.path("info").path("version").asText());
         assertEquals(
                 "X-Service-Token",
                 contract.path("components")
@@ -61,6 +67,12 @@ class OpenApiExportTest {
         assertTrue(draft.path("parameters").toString().contains("X-Document-Owner"));
         assertTrue(draft.path("parameters").toString().contains("X-Generation-Operation-Id"));
         assertTrue(estimate.path("parameters").toString().contains("X-Document-Owner"));
+        assertTrue(selectedDraft.path("parameters").toString()
+                .contains("X-Generation-Operation-Id"));
+        assertTrue(selectedDraft.path("parameters").toString()
+                .contains("outputType"));
+        assertTrue(selectedEstimate.path("parameters").toString()
+                .contains("outputType"));
         assertEquals(
                 "#/components/schemas/DraftGenerationResponse",
                 draft.path("responses")
@@ -87,6 +99,8 @@ class OpenApiExportTest {
                 "PromptGenerationMetadata",
                 "ProfileInputSnapshot",
                 "QualificationInput",
+                "SelectedDraftGenerationRequest",
+                "SelectedDraftGenerationResponse",
                 "SnapshotProvenance",
                 "ValidatedClaim",
                 "ValidatedClaimLedger")) {
@@ -111,6 +125,19 @@ class OpenApiExportTest {
                 .path("pattern")
                 .asText()
                 .contains("(?:1|2)"));
+        assertEquals(
+                "2\\.0",
+                schemas.path("SelectedDraftGenerationRequest")
+                        .path("properties")
+                        .path("inputSchemaVersion")
+                        .path("pattern")
+                        .asText());
+        assertTrue(schemas.path("SelectedDraftGenerationRequest")
+                .path("properties")
+                .has("evidenceSnapshot"));
+        assertFalse(schemas.path("SelectedDraftGenerationRequest")
+                .path("properties")
+                .has("evidenceSnapshots"));
         assertEquals(
                 50,
                 schemas.path("EvidenceSnapshotInput")

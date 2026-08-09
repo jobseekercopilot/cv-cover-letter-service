@@ -1,6 +1,7 @@
 package com.jobseekercopilot.cvcoverletter.service;
 
 import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validRequest;
+import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validSelectedRequest;
 import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validVersionedRequest;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -10,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobseekercopilot.cvcoverletter.config.LlmProperties;
 import com.jobseekercopilot.cvcoverletter.config.PromptBundleProperties;
 import com.jobseekercopilot.cvcoverletter.dto.EvidenceSnapshotFactInput;
+import com.jobseekercopilot.cvcoverletter.dto.DraftOutputType;
 import com.jobseekercopilot.cvcoverletter.model.CvCoverLetterPrompt;
 import com.jobseekercopilot.cvcoverletter.model.EvidenceSource;
 import java.nio.charset.StandardCharsets;
@@ -319,6 +321,88 @@ class PromptBuilderServiceTest {
         assertFalse(result.getUntrustedInput().contains("alex@example.com"));
         assertFalse(result.toString().contains("Build useful and reliable services."));
         assertFalse(result.toString().contains("TRUTHFULNESS RULES"));
+    }
+
+    @Test
+    void cvSelectionPublishesOnlyTheCvContractAndEvidence() {
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        var input = new GenerationInputNormalizer(
+                Clock.fixed(
+                        Instant.parse("2026-07-24T13:00:00Z"),
+                        ZoneOffset.UTC))
+                .normalizeSelected(
+                        "owner-123",
+                        DraftOutputType.CV,
+                        validSelectedRequest(DraftOutputType.CV));
+        CvCoverLetterPrompt prompt = new PromptBuilderService(
+                objectMapper,
+                registry(objectMapper, "cv-cover-letter-1.6.0"),
+                new LlmProperties(),
+                new ClaimEvidenceCatalogFactory())
+                .buildPrompt(input, DraftOutputType.CV);
+
+        assertTrue(prompt.getTrustedInstructions().contains(
+                "Generate only the requested CV"));
+        assertTrue(prompt.getOutputSchema().at("/properties/cv").isObject());
+        assertFalse(prompt.getOutputSchema().at("/properties/coverLetter").isObject());
+        assertTrue(prompt.getOutputSchema().at(
+                "/properties/personalSummaryClaim").isObject());
+        assertFalse(prompt.getOutputSchema().at(
+                "/properties/canonicalApplicationClaims").isObject());
+        assertEquals(
+                "cv-cover-letter-output-cv",
+                prompt.getGenerationMetadata().schemaId());
+        assertTrue(prompt.getEvidenceCatalog().records().stream()
+                .noneMatch(record -> record.purpose()
+                        == com.jobseekercopilot.cvcoverletter.model.EvidencePurpose.COVER_LETTER));
+        assertEquals(
+                "3.6.2",
+                parser(objectMapper).parserVersion(prompt.getOutputSchema()));
+    }
+
+    @Test
+    void coverLetterSelectionPublishesOnlyTheCoverLetterContractAndEvidence() {
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        var input = new GenerationInputNormalizer(
+                Clock.fixed(
+                        Instant.parse("2026-07-24T13:00:00Z"),
+                        ZoneOffset.UTC))
+                .normalizeSelected(
+                        "owner-123",
+                        DraftOutputType.COVER_LETTER,
+                        validSelectedRequest(DraftOutputType.COVER_LETTER));
+        CvCoverLetterPrompt prompt = new PromptBuilderService(
+                objectMapper,
+                registry(objectMapper, "cv-cover-letter-1.6.0"),
+                new LlmProperties(),
+                new ClaimEvidenceCatalogFactory())
+                .buildPrompt(input, DraftOutputType.COVER_LETTER);
+
+        assertTrue(prompt.getTrustedInstructions().contains(
+                "Generate only the requested cover letter"));
+        assertFalse(prompt.getOutputSchema().at("/properties/cv").isObject());
+        assertTrue(prompt.getOutputSchema().at(
+                "/properties/coverLetter").isObject());
+        assertFalse(prompt.getOutputSchema().at(
+                "/properties/personalSummaryClaim").isObject());
+        assertTrue(prompt.getOutputSchema().at(
+                "/properties/canonicalApplicationClaims").isObject());
+        assertEquals(
+                "cv-cover-letter-output-cover_letter",
+                prompt.getGenerationMetadata().schemaId());
+        assertTrue(prompt.getEvidenceCatalog().records().stream()
+                .noneMatch(record -> record.purpose()
+                        == com.jobseekercopilot.cvcoverletter.model.EvidencePurpose.CV));
+        assertEquals(
+                "3.6.2",
+                parser(objectMapper).parserVersion(prompt.getOutputSchema()));
+    }
+
+    private LlmResponseParser parser(ObjectMapper objectMapper) {
+        return new LlmResponseParser(
+                objectMapper,
+                new ClaimEvidenceValidator(),
+                new GeneratedDocumentQualityValidator());
     }
 
     private PromptBundleRegistry registry(ObjectMapper objectMapper, String releaseId) {

@@ -77,6 +77,13 @@ public class LlmResponseParser {
                     + "|/cv/qualifications/[0-9]+/(?:qualificationName|issuingBody|status|grade|dateAchieved|expectedCompletion)"
                     + "|/cv/workHistory/[0-9]+/(?:jobTitle|employer|startDate|endDate|tailoredDescription)"
                     + "|/coverLetter/(?:jobTitle|companyName))$";
+    private static final String SELECTED_CV_INLINE_NARRATIVE_CONTENT_PATH_PATTERN =
+            "^(?:/cv/targetRole"
+                    + "|/cv/projects/[0-9]+/(?:title|role|context|startDate|endDate|description)"
+                    + "|/cv/qualifications/[0-9]+/(?:qualificationName|issuingBody|status|grade|dateAchieved|expectedCompletion)"
+                    + "|/cv/workHistory/[0-9]+/(?:jobTitle|employer|startDate|endDate|tailoredDescription))$";
+    private static final String SELECTED_COVER_LETTER_INLINE_NARRATIVE_CONTENT_PATH_PATTERN =
+            "^/coverLetter/(?:title|jobTitle|companyName)$";
     private static final String CORE_SKILL_PROJECTION_ORDINARY_CONTENT_PATH_PATTERN =
             "^(?:/cv/(?:title|targetRole|personalSummary)"
                     + "|/cv/projects/[0-9]+/(?:title|role|context|startDate|endDate|description)"
@@ -226,14 +233,14 @@ public class LlmResponseParser {
                 usesDedicatedCanonicalApplicationClaims(schema);
         boolean usesDedicatedPersonalSummaryClaim =
                 usesDedicatedPersonalSummaryClaim(schema);
-        if (!usesDedicatedCanonicalClaims) {
-            return LEGACY_PARSER_VERSION;
-        }
         if (usesInlineNarrativeEvidence(schema)) {
             return PARSER_VERSION;
         }
         if (usesDedicatedPersonalSummaryClaim) {
             return DEDICATED_PERSONAL_SUMMARY_PARSER_VERSION;
+        }
+        if (!usesDedicatedCanonicalClaims) {
+            return LEGACY_PARSER_VERSION;
         }
         return usesDeterministicCoreSkillProjection(schema)
                 ? CORE_SKILL_PROJECTION_PARSER_VERSION
@@ -241,15 +248,11 @@ public class LlmResponseParser {
     }
 
     String claimPolicyVersion(JsonNode schema) {
-        boolean dedicated =
-                usesDedicatedCanonicalApplicationClaims(schema);
-        boolean dedicatedPersonalSummary =
-                usesDedicatedPersonalSummaryClaim(schema);
+        usesDedicatedCanonicalApplicationClaims(schema);
+        usesDedicatedPersonalSummaryClaim(schema);
         return ClaimEvidenceValidator.policyVersion(
-                dedicated
-                        && usesDeterministicCoreSkillProjection(schema),
-                dedicatedPersonalSummary
-                        && usesAdaptiveCoreSkillProjection(schema));
+                usesDeterministicCoreSkillProjection(schema),
+                usesAdaptiveCoreSkillProjection(schema));
     }
 
     private GeneratedApplicationDocuments bindDocuments(
@@ -258,7 +261,8 @@ public class LlmResponseParser {
             boolean usesDedicatedPersonalSummaryClaim,
             List<GeneratedClaim> projectedNarrativeClaims
     ) throws JsonProcessingException {
-        if (!usesDedicatedCanonicalClaims) {
+        if (!usesDedicatedCanonicalClaims
+                && !usesDedicatedPersonalSummaryClaim) {
             return objectMapper.treeToValue(
                     output, GeneratedApplicationDocuments.class);
         }
@@ -344,10 +348,12 @@ public class LlmResponseParser {
                     cvItems);
         }
         List<NarrativeItem> coverLetterItems = new ArrayList<>();
-        projectNarrativeArray(
-                output.at("/coverLetter/bodyParagraphs"),
-                "/coverLetter/bodyParagraphs",
-                coverLetterItems);
+        if (output.at("/coverLetter/bodyParagraphs").isArray()) {
+            projectNarrativeArray(
+                    output.at("/coverLetter/bodyParagraphs"),
+                    "/coverLetter/bodyParagraphs",
+                    coverLetterItems);
+        }
 
         List<GeneratedClaim> claims = new ArrayList<>();
         int nextClaimNumber = appendNarrativeClaims(
@@ -554,6 +560,8 @@ public class LlmResponseParser {
                 ORDINARY_CONTENT_PATH_PATTERN.equals(contentPathPattern)
                         || INLINE_NARRATIVE_ORDINARY_CONTENT_PATH_PATTERN.equals(
                                 contentPathPattern)
+                        || SELECTED_COVER_LETTER_INLINE_NARRATIVE_CONTENT_PATH_PATTERN.equals(
+                                contentPathPattern)
                         || CORE_SKILL_PROJECTION_ORDINARY_CONTENT_PATH_PATTERN.equals(
                                 contentPathPattern)
                         || DEDICATED_CANONICAL_ORDINARY_CONTENT_PATH_PATTERN.equals(
@@ -581,7 +589,9 @@ public class LlmResponseParser {
         if (ORDINARY_CONTENT_PATH_PATTERN.equals(contentPathPattern)) {
             expectedOrdinaryClaimLimits = Set.of(ACTIVE_ORDINARY_CLAIM_LIMIT);
         } else if (INLINE_NARRATIVE_ORDINARY_CONTENT_PATH_PATTERN.equals(
-                contentPathPattern)) {
+                        contentPathPattern)
+                || SELECTED_COVER_LETTER_INLINE_NARRATIVE_CONTENT_PATH_PATTERN.equals(
+                        contentPathPattern)) {
             expectedOrdinaryClaimLimits = Set.of(
                     INLINE_NARRATIVE_ORDINARY_CLAIM_LIMIT,
                     DETAILED_INLINE_NARRATIVE_ORDINARY_CLAIM_LIMIT);
@@ -613,6 +623,8 @@ public class LlmResponseParser {
         boolean activeContract = ORDINARY_CONTENT_PATH_PATTERN.equals(
                 contentPathPattern)
                 || INLINE_NARRATIVE_ORDINARY_CONTENT_PATH_PATTERN.equals(
+                        contentPathPattern)
+                || SELECTED_CV_INLINE_NARRATIVE_CONTENT_PATH_PATTERN.equals(
                         contentPathPattern);
         if (!activeContract) {
             requireSchemaContract(
@@ -712,6 +724,13 @@ public class LlmResponseParser {
         String contentPathPattern = ordinaryClaims.path("items")
                 .path("properties").path("contentPaths")
                 .path("items").path("pattern").asText();
+        if (SELECTED_CV_INLINE_NARRATIVE_CONTENT_PATH_PATTERN.equals(
+                        contentPathPattern)
+                && properties.has("cv")
+                && !properties.has("coverLetter")
+                && properties.has("personalSummaryClaim")) {
+            return;
+        }
         boolean dedicatedMarker =
                 ORDINARY_CLAIM_ID_PATTERN.equals(claimIdPattern)
                         || ORDINARY_CONTENT_PATH_PATTERN.equals(
@@ -840,6 +859,8 @@ public class LlmResponseParser {
         return ORDINARY_CONTENT_PATH_PATTERN.equals(contentPathPattern)
                 || INLINE_NARRATIVE_ORDINARY_CONTENT_PATH_PATTERN.equals(
                         contentPathPattern)
+                || SELECTED_CV_INLINE_NARRATIVE_CONTENT_PATH_PATTERN.equals(
+                        contentPathPattern)
                 || CORE_SKILL_PROJECTION_ORDINARY_CONTENT_PATH_PATTERN.equals(
                         contentPathPattern);
     }
@@ -852,6 +873,8 @@ public class LlmResponseParser {
                 .asText();
         return ORDINARY_CONTENT_PATH_PATTERN.equals(contentPathPattern)
                 || INLINE_NARRATIVE_ORDINARY_CONTENT_PATH_PATTERN.equals(
+                        contentPathPattern)
+                || SELECTED_CV_INLINE_NARRATIVE_CONTENT_PATH_PATTERN.equals(
                         contentPathPattern);
     }
 
@@ -859,25 +882,32 @@ public class LlmResponseParser {
         String contentPathPattern = schema.at(
                         "/properties/claims/items/properties/contentPaths/items/pattern")
                 .asText();
-        if (!INLINE_NARRATIVE_ORDINARY_CONTENT_PATH_PATTERN.equals(
-                contentPathPattern)) {
+        if (!Set.of(
+                        INLINE_NARRATIVE_ORDINARY_CONTENT_PATH_PATTERN,
+                        SELECTED_CV_INLINE_NARRATIVE_CONTENT_PATH_PATTERN,
+                        SELECTED_COVER_LETTER_INLINE_NARRATIVE_CONTENT_PATH_PATTERN)
+                .contains(contentPathPattern)) {
             return false;
         }
-        requireInlineNarrativeItemSchema(
-                schema.at(
-                        "/properties/cv/properties/projects/items/properties/highlights/items"),
-                schema,
-                "$.cv.projects[].highlights[]");
-        requireInlineNarrativeItemSchema(
-                schema.at(
-                        "/properties/cv/properties/workHistory/items/properties/responsibilities/items"),
-                schema,
-                "$.cv.workHistory[].responsibilities[]");
-        requireInlineNarrativeItemSchema(
-                schema.at(
-                        "/properties/coverLetter/properties/bodyParagraphs/items"),
-                schema,
-                "$.coverLetter.bodyParagraphs[]");
+        if (schema.at("/properties/cv").isObject()) {
+            requireInlineNarrativeItemSchema(
+                    schema.at(
+                            "/properties/cv/properties/projects/items/properties/highlights/items"),
+                    schema,
+                    "$.cv.projects[].highlights[]");
+            requireInlineNarrativeItemSchema(
+                    schema.at(
+                            "/properties/cv/properties/workHistory/items/properties/responsibilities/items"),
+                    schema,
+                    "$.cv.workHistory[].responsibilities[]");
+        }
+        if (schema.at("/properties/coverLetter").isObject()) {
+            requireInlineNarrativeItemSchema(
+                    schema.at(
+                            "/properties/coverLetter/properties/bodyParagraphs/items"),
+                    schema,
+                    "$.coverLetter.bodyParagraphs[]");
+        }
         return true;
     }
 

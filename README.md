@@ -51,6 +51,15 @@ the conservative reservation size without calling a provider.
 evidence. See
 [`docs/DRAFT_GENERATION_BOUNDARY.md`](docs/DRAFT_GENERATION_BOUNDARY.md).
 
+OpenAPI `4.1.0` also exposes additive, schema-`2.0` selected-output operations
+at `POST /api/v1/cv-cover-letter/drafts/{outputType}` and
+`POST /api/v1/cv-cover-letter/drafts/{outputType}/estimate`, where
+`outputType` is exactly `CV` or `COVER_LETTER`. Each request carries the one
+matching purpose-bound evidence snapshot, builds a strict schema containing
+only that document, and reports usage for only that provider call. The original
+paired draft and transitional generate operations remain unchanged for rolling
+compatibility.
+
 When the optional rejected-generation quarantine is enabled, an otherwise
 complete typed model response that fails deterministic validation is encrypted
 and retained for at most 24 hours under its owner-bound operation ID. A
