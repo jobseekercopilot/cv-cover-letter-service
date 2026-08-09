@@ -1,5 +1,13 @@
 # CV and Cover Letter Service
 
+## Role in Job Seeker Copilot
+
+| Role | Called by | Calls | Data | Local port |
+|---|---|---|---|---:|
+| Evidence-grounded prompt, validation and draft-generation domain | Document Generation Gateway | LLM Gateway and Payment; legacy Store/Tracker route during migration | No database; optional encrypted short-lived quarantine | 8091 |
+
+See the central [document journey](https://docs.jobseekercopilot.com/journeys/documents/), [domain services](https://docs.jobseekercopilot.com/services/domain-services/), and [configuration reference](https://docs.jobseekercopilot.com/operations/configuration/).
+
 Domain service that builds the CV/cover-letter prompt, requests generation from
 `llm-gateway`, validates the response, and returns bounded rendered drafts plus
 model-usage evidence. The additive draft API has no payment, document, export,
