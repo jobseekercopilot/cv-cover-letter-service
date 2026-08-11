@@ -25,6 +25,7 @@ import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput;
 import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationQuarantineService;
 import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationArtifact;
 import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationCaptureContext;
+import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationDiagnostic;
 import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationReplayAuditEvent;
 import com.jobseekercopilot.generated.applicationtrackerservice.api.ApplicationRecordsApi;
 import com.jobseekercopilot.generated.applicationtrackerservice.model.ApplicationRecordResponse;
@@ -58,11 +59,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.lenient;
@@ -98,7 +101,8 @@ class CvCoverLetterServiceTest {
                 new ValidatedClaimLedgerFactory(),
                 documentStoreApi,
                 applicationTrackerApi,
-                quarantineService);
+                quarantineService,
+                new DeterministicCvFallbackService(new ObjectMapper()));
 
         request = validRequest();
         normalizedInput = new GenerationInputNormalizer().normalize("user-123", request);
@@ -251,6 +255,8 @@ class CvCoverLetterServiceTest {
         org.junit.jupiter.api.Assertions.assertTrue(
                 result.content().contains(
                         "Profile-backed skills include Java."));
+        assertEquals(7300L, result.billableTokens());
+        assertFalse(result.recovery().fallbackUsed());
         assertEquals(
                 List.of(com.jobseekercopilot.cvcoverletter
                         .GenerationInputFixtures.CV_SKILL_FACT_ID.toString()),
@@ -260,6 +266,135 @@ class CvCoverLetterServiceTest {
                         .findFirst()
                         .orElseThrow()
                         .evidenceIds());
+    }
+
+    @Test
+    void selectedCvFallbackRecordsContentFreeRejectionCategory()
+            throws Exception {
+        DraftOutputType outputType = DraftOutputType.CV;
+        var selectedRequest = validSelectedRequest(outputType);
+        selectedRequest.getEvidenceSnapshot().setSectionOrder(
+                List.of(EvidenceCategory.OTHER));
+        selectedRequest.getEvidenceSnapshot().getSelections().get(0)
+                .setCategory(EvidenceCategory.OTHER);
+        var selectedInput = new GenerationInputNormalizer()
+                .normalizeSelected("user-123", outputType, selectedRequest);
+        CvCoverLetterPrompt selectedPrompt = selectedPrompt(
+                selectedInput, outputType);
+        when(inputNormalizer.normalizeSelected(
+                "user-123", outputType, selectedRequest))
+                .thenReturn(selectedInput);
+        when(promptBuilderService.buildPrompt(selectedInput, outputType))
+                .thenReturn(selectedPrompt);
+        String unsupported = selectedCvJson().replace(
+                "80000000-0000-4000-8000-000000000002",
+                "90000000-0000-4000-8000-000000000099");
+        when(llmGatewayApi.generateV2(any())).thenReturn(
+                successfulResponse(unsupported)
+                        .schemaId(selectedPrompt.getGenerationMetadata().schemaId())
+                        .schemaVersion(
+                                selectedPrompt.getGenerationMetadata()
+                                        .schemaVersion()));
+        when(quarantineService.diagnostic(any()))
+                .thenReturn(new RejectedGenerationDiagnostic(
+                        "CLAIM_EVIDENCE",
+                        "$.claims[0].evidenceIds",
+                        "claim is absent from approved evidence"));
+
+        SelectedDraftGenerationResponse result = service.generateSelectedDraft(
+                "user-123",
+                UUID.randomUUID(),
+                outputType,
+                selectedRequest);
+
+        assertTrue(result.recovery().fallbackUsed());
+        assertEquals(
+                "MODEL_OUTPUT_REJECTED_CLAIM_EVIDENCE",
+                result.recovery().fallbackReason());
+        assertEquals(0L, result.billableTokens());
+        verify(llmGatewayApi, times(1)).generateV2(any());
+    }
+
+    @Test
+    void richFictionalProfileStillProducesBoundedGroundedFallbackAfterProviderFailure()
+            throws Exception {
+        DraftOutputType outputType = DraftOutputType.CV;
+        var selectedRequest = validSelectedRequest(outputType);
+        selectedRequest.getProfile().setSkills(
+                java.util.stream.IntStream.rangeClosed(1, 40)
+                        .mapToObj(index -> "Evidence Skill " + index)
+                        .toList());
+        selectedRequest.getEvidenceSnapshot().setSectionOrder(List.of(
+                EvidenceCategory.EMPLOYMENT,
+                EvidenceCategory.QUALIFICATION_TRAINING,
+                EvidenceCategory.PROJECT));
+        for (int index = 1; index <= 12; index++) {
+            selectedRequest.getEvidenceSnapshot().getSelections().add(
+                    new com.jobseekercopilot.cvcoverletter.dto.EvidenceSnapshotSelectionInput(
+                            UUID.randomUUID(),
+                            UUID.randomUUID(),
+                            1,
+                            EvidenceCategory.EMPLOYMENT,
+                            "e".repeat(64),
+                            List.of(
+                                    richFact("ROLE_TITLE", "Software Role " + index),
+                                    richFact("ORGANISATION", "Fictional Employer " + index),
+                                    richFact("START_DATE", "2020-01"),
+                                    richFact("END_DATE", "2025-01"),
+                                    richFact("RESPONSIBILITIES",
+                                            "Delivered evidence-backed software capability "
+                                                    + index + "."))));
+        }
+        for (int index = 1; index <= 8; index++) {
+            selectedRequest.getEvidenceSnapshot().getSelections().add(
+                    new com.jobseekercopilot.cvcoverletter.dto.EvidenceSnapshotSelectionInput(
+                            UUID.randomUUID(),
+                            UUID.randomUUID(),
+                            1,
+                            EvidenceCategory.QUALIFICATION_TRAINING,
+                            "f".repeat(64),
+                            List.of(
+                                    richFact("QUALIFICATION_TITLE",
+                                            "Qualification " + index),
+                                    richFact("ISSUER", "Fictional Institute"),
+                                    richFact("RESULT", "Pass"),
+                                    richFact("ISSUE_DATE", "2025-01"))));
+        }
+        var selectedInput = new GenerationInputNormalizer()
+                .normalizeSelected("user-123", outputType, selectedRequest);
+        CvCoverLetterPrompt selectedPrompt = selectedPrompt(
+                selectedInput, outputType);
+        when(inputNormalizer.normalizeSelected(
+                "user-123", outputType, selectedRequest))
+                .thenReturn(selectedInput);
+        when(promptBuilderService.buildPrompt(selectedInput, outputType))
+                .thenReturn(selectedPrompt);
+        when(llmGatewayApi.generateV2(any()))
+                .thenThrow(new org.springframework.web.client.RestClientException(
+                        "provider unavailable"));
+
+        SelectedDraftGenerationResponse result =
+                service.generateSelectedDraft(
+                        "user-123",
+                        UUID.randomUUID(),
+                        outputType,
+                        selectedRequest);
+
+        assertEquals(0L, result.billableTokens());
+        assertTrue(result.recovery().fallbackUsed());
+        assertEquals("PROVIDER_FAILURE", result.recovery().fallbackReason());
+        assertTrue(result.content().contains("Fictional Employer 1"));
+        assertTrue(result.content().contains("Evidence Skill 1"));
+        assertTrue(result.content().contains("Fictional Employer 12"));
+        assertFalse(result.content().contains("Evidence Skill 13"));
+        assertTrue(result.claimLedger().claims().size() <= 120);
+        verify(llmGatewayApi, times(1)).generateV2(any());
+    }
+
+    private com.jobseekercopilot.cvcoverletter.dto.EvidenceSnapshotFactInput
+            richFact(String type, String value) {
+        return new com.jobseekercopilot.cvcoverletter.dto.EvidenceSnapshotFactInput(
+                UUID.randomUUID(), type, value, false);
     }
 
     @Test

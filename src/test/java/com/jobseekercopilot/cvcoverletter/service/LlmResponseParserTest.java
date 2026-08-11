@@ -112,7 +112,7 @@ class LlmResponseParserTest {
         assertEquals(120, detailedSchema.at("/properties/claims/maxItems").asInt());
         assertTrue(LlmResponseParser.MAX_FALLBACK_ARRAY_ITEMS
                 >= detailedSchema.at("/properties/claims/maxItems").asInt() * 2);
-        assertEquals("3.6.2", parser.parserVersion(detailedSchema));
+        assertEquals("3.6.9", parser.parserVersion(detailedSchema));
         assertEquals("2.24.0", parser.claimPolicyVersion(detailedSchema));
     }
 
@@ -130,11 +130,12 @@ class LlmResponseParserTest {
     void projectsEveryInlineNarrativeItemIntoBoundedClaims() throws Exception {
         JsonNode output = inlineNarrativeOutput();
 
-        GeneratedApplicationDocuments result = parser.parse(
+        LlmResponseParser.ParsedGeneration parsed = parser.parseDetailed(
                 objectMapper.writeValueAsString(output),
                 inlineNarrativeSchema);
+        GeneratedApplicationDocuments result = parsed.documents();
 
-        assertEquals("3.6.2", parser.parserVersion(inlineNarrativeSchema));
+        assertEquals("3.6.9", parser.parserVersion(inlineNarrativeSchema));
         assertEquals("2.24.0", parser.claimPolicyVersion(inlineNarrativeSchema));
         assertEquals(
                 List.of("Delivered a reliable service."),
@@ -179,6 +180,40 @@ class LlmResponseParserTest {
 
         assertTrue(error.getMessage().contains(
                 "$.coverLetter.bodyParagraphs[1].evidenceIds"));
+    }
+
+    @Test
+    void collapsesExactDuplicateBulletsInsideOneNarrativeList()
+            throws Exception {
+        JsonNode output = inlineNarrativeOutput();
+        ArrayNode highlights = (ArrayNode) output.at(
+                "/cv/projects/0/highlights");
+        ObjectNode duplicate = highlights.get(0).deepCopy();
+        duplicate.put("disposition", "SUPPORTED");
+        ((ArrayNode) duplicate.path("evidenceIds"))
+                .removeAll()
+                .add("PROFILE.SKILL.2");
+        highlights.add(duplicate);
+
+        LlmResponseParser.ParsedGeneration parsed = parser.parseDetailed(
+                objectMapper.writeValueAsString(output),
+                inlineNarrativeSchema);
+        GeneratedApplicationDocuments result = parsed.documents();
+
+        assertEquals(
+                List.of("Delivered a reliable service."),
+                result.getCv().getProjects().get(0).getHighlights());
+        assertEquals(
+                List.of("PROFILE.SKILL.1", "PROFILE.SKILL.2"),
+                claimFor(result, "/cv/projects/0/highlights/0")
+                        .getEvidenceIds());
+        assertEquals(
+                "REWORDED",
+                claimFor(result, "/cv/projects/0/highlights/0")
+                        .getDisposition().name());
+        assertTrue(parsed.repair().attempted());
+        assertTrue(parsed.repair().succeeded());
+        assertEquals(1, parsed.repair().duplicateItemsRemoved());
     }
 
     @Test
@@ -782,6 +817,217 @@ class LlmResponseParserTest {
         ((ObjectNode) control.path("cv"))
                 .put("personalSummary", "unsafe\u0000control");
         assertRejectedAt(control, "$.cv.personalSummary");
+    }
+
+    @Test
+    void selectedCvPolicyAcceptsTailoredFallbackAndRejectsGenericSummary()
+            throws Exception {
+        var request = com.jobseekercopilot.cvcoverletter.GenerationInputFixtures
+                .validSelectedRequest(
+                        com.jobseekercopilot.cvcoverletter.dto.DraftOutputType.CV);
+        request.getEvidenceSnapshot().getSectionOrder().add(
+                com.jobseekercopilot.cvcoverletter.dto.EvidenceCategory
+                        .QUALIFICATION_TRAINING);
+        request.getEvidenceSnapshot().getSelections().add(
+                new com.jobseekercopilot.cvcoverletter.dto
+                        .EvidenceSnapshotSelectionInput(
+                        java.util.UUID.randomUUID(),
+                        java.util.UUID.randomUUID(),
+                        1,
+                        com.jobseekercopilot.cvcoverletter.dto.EvidenceCategory
+                                .QUALIFICATION_TRAINING,
+                        "f".repeat(64),
+                        java.util.List.of(
+                                selectedFact(
+                                        "QUALIFICATION_TITLE",
+                                        "AWS Certified Cloud Practitioner"),
+                                selectedFact(
+                                        "ISSUER",
+                                        "Amazon Web Services"),
+                                selectedFact("ISSUE_DATE", "July 2021"))));
+        var input = new GenerationInputNormalizer().normalizeSelected(
+                "owner-123",
+                com.jobseekercopilot.cvcoverletter.dto.DraftOutputType.CV,
+                request);
+        var properties = new com.jobseekercopilot.cvcoverletter.config
+                .PromptBundleProperties();
+        properties.setSelectedReleaseId("cv-cover-letter-1.6.1");
+        var registry = new PromptBundleRegistry(
+                objectMapper,
+                new org.springframework.core.io.DefaultResourceLoader(),
+                properties);
+        registry.initialize();
+        var prompt = new PromptBuilderService(
+                objectMapper,
+                registry,
+                new com.jobseekercopilot.cvcoverletter.config.LlmProperties(),
+                new ClaimEvidenceCatalogFactory())
+                .buildPrompt(
+                        input,
+                        com.jobseekercopilot.cvcoverletter.dto.DraftOutputType.CV);
+        String fallback = new DeterministicCvFallbackService(objectMapper)
+                .build(input, prompt.getEvidenceCatalog());
+        String fallbackSummary = objectMapper.readTree(fallback)
+                .at("/cv/personalSummary").asText();
+        assertTrue(
+                fallbackSummary.matches(
+                        "(?s)^(?=.{40,1200}$)(?!Application for\\b).*"
+                                + "[.!?][ \\t]+.*[.!?]$"),
+                fallbackSummary);
+
+        GeneratedApplicationDocuments accepted = parser.parse(
+                fallback,
+                prompt.getOutputSchema(),
+                prompt.getEvidenceCatalog());
+        assertTrue(accepted.getCv().getPersonalSummary().contains(
+                "role's priorities"));
+
+        JsonNode fallbackTree = objectMapper.readTree(fallback);
+        ObjectNode missingEmptyReviewText =
+                (ObjectNode) fallbackTree.deepCopy();
+        ((ObjectNode) missingEmptyReviewText.at("/claims/0"))
+                .remove("reviewText");
+        missingEmptyReviewText.remove("coverLetter");
+        ObjectNode redundantNarrativeClaim =
+                ((ObjectNode) missingEmptyReviewText.at("/claims/0"))
+                        .deepCopy();
+        redundantNarrativeClaim.putArray("contentPaths")
+                .add("/cv/workHistory/0/responsibilities/0");
+        ((ArrayNode) missingEmptyReviewText.path("claims"))
+                .add(redundantNarrativeClaim);
+        ObjectNode redundantQualificationDescription =
+                ((ObjectNode) missingEmptyReviewText.at("/claims/0"))
+                        .deepCopy();
+        redundantQualificationDescription.putArray("contentPaths")
+                .add("/cv/qualifications/0/description");
+        ((ArrayNode) missingEmptyReviewText.path("claims"))
+                .add(redundantQualificationDescription);
+        missingEmptyReviewText.path("claims").forEach(claim ->
+                ((ObjectNode) claim).put(
+                        "claimId",
+                        java.util.UUID.randomUUID().toString()));
+        LlmResponseParser.ParsedGeneration reviewTextRepaired =
+                parser.parseDetailed(
+                        objectMapper.writeValueAsString(
+                                missingEmptyReviewText),
+                        prompt.getOutputSchema(),
+                        prompt.getEvidenceCatalog());
+        assertEquals(2,
+                reviewTextRepaired.repair().duplicateItemsRemoved());
+        assertTrue(reviewTextRepaired.repair().succeeded());
+        assertEquals("CLAIM-000",
+                reviewTextRepaired.documents().getClaims().get(0)
+                        .getClaimId());
+        assertEquals(accepted.getClaims().size(),
+                reviewTextRepaired.documents().getClaims().size());
+
+        ObjectNode mixedClaimIds = (ObjectNode) fallbackTree.deepCopy();
+        ((ObjectNode) mixedClaimIds.at("/claims/0")).put(
+                "claimId",
+                java.util.UUID.randomUUID().toString());
+        InvalidLlmResponseException mixedClaimIdRejection = assertThrows(
+                InvalidLlmResponseException.class,
+                () -> parser.parseDetailed(
+                        objectMapper.writeValueAsString(mixedClaimIds),
+                        prompt.getOutputSchema(),
+                        prompt.getEvidenceCatalog()));
+        assertTrue(mixedClaimIdRejection.getMessage().contains(
+                "$.claims[0].claimId"));
+
+        String exactDuplicate = fallback.substring(
+                0, fallback.lastIndexOf('}'))
+                + ",\"generationNotes\":"
+                + fallbackTree.path("generationNotes")
+                + "}";
+        LlmResponseParser.ParsedGeneration repaired = parser.parseDetailed(
+                exactDuplicate,
+                prompt.getOutputSchema(),
+                prompt.getEvidenceCatalog());
+        assertEquals(1, repaired.repair().duplicateItemsRemoved());
+        assertTrue(repaired.repair().succeeded());
+
+        String conflictingDuplicate = fallback.substring(
+                0, fallback.lastIndexOf('}'))
+                + ",\"generationNotes\":{"
+                + "\"assumptionsMade\":[\"conflict\"],"
+                + "\"missingInformation\":[],"
+                + "\"tailoringSummary\":\"conflict\"}}";
+        InvalidLlmResponseException conflict = assertThrows(
+                InvalidLlmResponseException.class,
+                () -> parser.parseDetailed(
+                        conflictingDuplicate,
+                        prompt.getOutputSchema(),
+                        prompt.getEvidenceCatalog()));
+        assertTrue(conflict.getMessage().contains(
+                "duplicate top-level field has different values"));
+
+        ObjectNode missingSelectedQualification =
+                (ObjectNode) fallbackTree.deepCopy();
+        ArrayNode qualifications =
+                (ArrayNode) missingSelectedQualification.at(
+                        "/cv/qualifications");
+        int omittedQualificationIndex = qualifications.size() - 1;
+        qualifications.remove(omittedQualificationIndex);
+        String omittedQualificationPrefix =
+                "/cv/qualifications/" + omittedQualificationIndex + "/";
+        ArrayNode claims = (ArrayNode) missingSelectedQualification
+                .path("claims");
+        for (int index = claims.size() - 1; index >= 0; index--) {
+            boolean coversOmittedQualification =
+                    java.util.stream.StreamSupport.stream(
+                                    claims.get(index)
+                                            .path("contentPaths")
+                                            .spliterator(),
+                                    false)
+                            .map(JsonNode::asText)
+                            .anyMatch(path -> path.startsWith(
+                                    omittedQualificationPrefix));
+            if (coversOmittedQualification) {
+                claims.remove(index);
+            }
+        }
+        InvalidLlmResponseException missingSelection = assertThrows(
+                InvalidLlmResponseException.class,
+                () -> parser.parse(
+                        objectMapper.writeValueAsString(
+                                missingSelectedQualification),
+                        prompt.getOutputSchema(),
+                        prompt.getEvidenceCatalog()));
+        assertTrue(missingSelection.getMessage().contains(
+                "selected evidence is absent from its governed section"));
+
+        ObjectNode generic = (ObjectNode) objectMapper.readTree(fallback);
+        ((ObjectNode) generic.path("cv")).put(
+                "title", accepted.getCv().getTitle());
+        ((ObjectNode) generic.path("cv")).put(
+                "personalSummary",
+                "Highly motivated developer who built useful services and maintained Java applications. "
+                        + "Passionate about applying Java and Spring skills to useful, reliable services "
+                        + "for customers in this excellent opportunity.");
+        accepted.getCv().setPersonalSummary(
+                generic.at("/cv/personalSummary").asText());
+        InvalidLlmResponseException error = assertThrows(
+                InvalidLlmResponseException.class,
+                () -> new GeneratedDocumentQualityValidator().validate(
+                        generic,
+                        accepted,
+                        prompt.getEvidenceCatalog(),
+                        true));
+        assertTrue(error.getMessage().contains(
+                "professional summary is generic or describes the document"),
+                error.getMessage());
+    }
+
+    private com.jobseekercopilot.cvcoverletter.dto
+            .EvidenceSnapshotFactInput selectedFact(
+                    String type,
+                    String value) {
+        return new com.jobseekercopilot.cvcoverletter.dto
+                .EvidenceSnapshotFactInput(
+                java.util.UUID.randomUUID(),
+                type,
+                value,
+                false);
     }
 
     private JsonNode inlineNarrativeOutput() throws Exception {

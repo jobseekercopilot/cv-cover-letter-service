@@ -14,7 +14,7 @@ changing the task. The release also owns exact bounded JSON Schema `4.0.0` and
 evaluation policy `1.6.0`, used at the provider boundary and by the local
 response parser and synthetic evaluation checks. The domain bundle cannot name
 a model provider or transport API; provider mechanics belong behind LLM
-Gateway. Applied parser `3.6.2`, claim policy `2.24.0` and deterministic quality
+Gateway. Applied parser `3.6.3`, claim policy `2.24.0` and deterministic quality
 policy `1.5.0` complete the active local validation route.
 
 Release `1.5.0` adds a dedicated project structure, separates employment from
@@ -114,7 +114,7 @@ accidentally cite its service-only ID in narrative provenance. Snapshot evidence
 IDs remain available for ordinary claim citations.
 
 Active release `1.6.0` retains the inline narrative schema in schema `4.0.0`
-and applies parser `3.6.2`. Project
+and applies parser `3.6.3`. Project
 highlights, work responsibilities and cover-letter body paragraphs are closed
 objects containing text, disposition and approved evidence IDs. The parser
 projects each item into its own claim in the unchanged public document and

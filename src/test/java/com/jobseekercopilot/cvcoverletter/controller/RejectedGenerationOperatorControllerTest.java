@@ -158,7 +158,7 @@ class RejectedGenerationOperatorControllerTest {
                         Instant.parse("2026-08-07T20:10:00Z"),
                         "REJECTED",
                         0,
-                        "3.6.2",
+                        "3.6.3",
                         "2.24.0",
                         new RejectedGenerationDiagnostic(
                                 "CLAIM_EVIDENCE",

@@ -58,8 +58,8 @@ verify_source \
 verify_source \
     llm-gateway \
     jobseekercopilot/llm-gateway \
-    d41de4d219f065dcf78c96d11b2e8236f310ba59 \
-    418d15c0ed1be362f0500464b8099e51158e4eba00bef6346f163816b330154b
+    9da2ceb95510cd5a6f2e32046775854dc094c2a8 \
+    774dac8dd6439233f6b4b32190e43b361354b41d3887455be1900b99a1642329
 verify_source \
     payment-service \
     jobseekercopilot/payment-service \
@@ -88,7 +88,7 @@ jq -e '
     (.components.schemas.GenerationOutputContract.properties.format.enum
         | index("JSON_SCHEMA") != null) and
     (.components.schemas.GenerationOutputContract.properties | has("jsonSchema")) and
-    (.components.schemas.GenerationLimits.properties.maxOutputTokens.maximum == 8192) and
+    (.components.schemas.GenerationLimits.properties.maxOutputTokens.maximum == 32768) and
     (.components.schemas.GenerationLimits.properties.temperature.maximum == 1) and
     (.components.schemas.GenerationResponse.properties
         | has("output") and has("finishReason") and has("usage") and
@@ -98,13 +98,15 @@ jq -e '
         == "#/components/schemas/GenerationAudit") and
     (.components.schemas.GenerationAudit.additionalProperties == false) and
     ((.components.schemas.GenerationAudit.required | sort)
-        == ["admissionPolicyVersion", "currency", "estimatedCostMicroUsd",
-            "estimatedInputTokensAtAdmission", "modelDeploymentVersion",
-            "modelId", "pricingVersion"]) and
+        == ["admissionPolicyVersion", "automaticRetryCount", "currency",
+            "estimatedCostMicroUsd", "estimatedInputTokensAtAdmission",
+            "modelDeploymentVersion", "modelId", "pricingVersion",
+            "providerAttemptCount"]) and
     ((.components.schemas.GenerationAudit.properties | keys)
-        == ["admissionPolicyVersion", "currency", "estimatedCostMicroUsd",
-            "estimatedInputTokensAtAdmission", "modelDeploymentVersion",
-            "modelId", "pricingVersion"]) and
+        == ["admissionPolicyVersion", "automaticRetryCount", "currency",
+            "estimatedCostMicroUsd", "estimatedInputTokensAtAdmission",
+            "modelDeploymentVersion", "modelId", "pricingVersion",
+            "providerAttemptCount", "retryReason"]) and
     (.components.schemas.GenerationAudit.properties | has("provider") | not) and
     (.components.schemas.GenerationUsage.properties
         | has("inputTokens") and has("outputTokens") and has("totalTokens"))

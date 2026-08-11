@@ -27,16 +27,35 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class GeneratedDocumentQualityValidator {
-    static final String POLICY_VERSION = "1.5.0";
+    static final String POLICY_VERSION = "1.6.1";
     private static final int MAX_SKILLS = 12;
     private static final Pattern COVER_LETTER_SKILL_LIST = Pattern.compile(
             "(?i)^\\s*(?:key skills|technical skills|skills\\s*&\\s*expertise)"
                     + "\\s*(?::|[-\u2013\u2014]|\\R|$)");
+    private static final Pattern SUMMARY_SENTENCE_END =
+            Pattern.compile("[.!?](?:\\s|$)");
+    private static final Pattern GENERIC_SUMMARY = Pattern.compile(
+            "(?i)^(?:application for|cv for|curriculum vitae for)\\b"
+                    + "|\\bsupported by the verified skills and experience"
+                    + "|\\b(?:passionate|highly motivated|results-driven|perfect candidate)\\b");
+    private static final Set<String> SUMMARY_STOP_WORDS = Set.of(
+            "and", "are", "but", "for", "from", "have", "into", "our",
+            "that", "the", "their", "this", "will", "with", "you", "your",
+            "role", "work", "working", "experience", "skills", "strong");
 
     public void validate(
             JsonNode output,
             GeneratedApplicationDocuments documents,
             ClaimEvidenceCatalog catalog
+    ) {
+        validate(output, documents, catalog, false);
+    }
+
+    public void validate(
+            JsonNode output,
+            GeneratedApplicationDocuments documents,
+            ClaimEvidenceCatalog catalog,
+            boolean enforceTailoredSummary
     ) {
         require(output != null && output.isObject(), "$", "structured output is missing");
         require(documents != null
@@ -56,6 +75,9 @@ public class GeneratedDocumentQualityValidator {
                 documents.getCv() != null,
                 documents.getCoverLetter() != null);
         if (documents.getCv() != null) {
+            if (enforceTailoredSummary) {
+                validateProfessionalSummary(documents.getCv(), catalog);
+            }
             validateSkills(documents.getCv());
             validateDuplicateNarrative(output, "/cv", cvNarrative(output));
             validateQualifications(documents);
@@ -65,10 +87,63 @@ public class GeneratedDocumentQualityValidator {
             validateNoCoverLetterSkillList(coverNarrative);
             validateDuplicateNarrative(output, "/coverLetter", coverNarrative);
         }
-        validateSelectedEvidenceCoverage(documents, catalog);
+        validateSelectedEvidenceCoverage(
+                documents,
+                catalog,
+                enforceTailoredSummary);
         if (documents.getCv() != null) {
             validateStructuredProjects(documents, catalog);
         }
+    }
+
+    private void validateProfessionalSummary(
+            GeneratedCv cv,
+            ClaimEvidenceCatalog catalog
+    ) {
+        String summary = cv.getPersonalSummary();
+        require(StringUtils.hasText(summary),
+                "$.cv.personalSummary", "professional summary is missing");
+        int sentences = 0;
+        var sentenceMatcher = SUMMARY_SENTENCE_END.matcher(summary.trim());
+        while (sentenceMatcher.find()) {
+            sentences++;
+        }
+        int words = summary.trim().split("\\s+").length;
+        require(sentences >= 2 && sentences <= 4,
+                "$.cv.personalSummary",
+                "professional summary must contain 2 to 4 concise sentences");
+        require(words >= 20 && words <= 170,
+                "$.cv.personalSummary",
+                "professional summary must contain 20 to 170 words");
+        require(!GENERIC_SUMMARY.matcher(summary.trim()).find(),
+                "$.cv.personalSummary",
+                "professional summary is generic or describes the document");
+
+        String jobDescription = catalog.records().stream()
+                .filter(record -> "JOB.DESCRIPTION".equals(
+                        record.evidenceId()))
+                .map(ApprovedEvidenceRecord::value)
+                .findFirst()
+                .orElse("");
+        Set<String> jobTerms = summaryTerms(jobDescription);
+        long overlap = summaryTerms(summary).stream()
+                .filter(jobTerms::contains)
+                .count();
+        require(overlap >= 2,
+                "$.cv.personalSummary",
+                "professional summary is not materially conditioned by the job description");
+    }
+
+    private Set<String> summaryTerms(String value) {
+        if (!StringUtils.hasText(value)) {
+            return Set.of();
+        }
+        return java.util.Arrays.stream(value.toLowerCase(Locale.ROOT)
+                        .replaceAll("<[^>]+>", " ")
+                        .split("[^\\p{L}\\p{N}#+.]+"))
+                .filter(term -> term.length() >= 3)
+                .filter(term -> !SUMMARY_STOP_WORDS.contains(term))
+                .collect(java.util.stream.Collectors.toSet());
     }
 
     private void validateCanonicalIdentity(
@@ -136,11 +211,11 @@ public class GeneratedDocumentQualityValidator {
             GeneratedCv.CoreSkill skill = skills.get(index);
             require(skill != null && StringUtils.hasText(skill.getName()),
                     "$.cv.coreSkills[" + index + "]", "skill name is missing");
-            require(uniqueNames.add(normalise(skill.getName())),
+            require(uniqueNames.add(normaliseNarrative(skill.getName())),
                     "$.cv.coreSkills[" + index + "].name",
                     "duplicate normalised skill");
             if (StringUtils.hasText(skill.getEvidence())) {
-                require(uniqueEvidence.add(normalise(skill.getEvidence())),
+                require(uniqueEvidence.add(normaliseNarrative(skill.getEvidence())),
                         "$.cv.coreSkills[" + index + "].evidence",
                         "repeated skill evidence");
             }
@@ -166,7 +241,7 @@ public class GeneratedDocumentQualityValidator {
                 documentPath, "document is malformed");
         Map<String, String> firstPathByText = new HashMap<>();
         for (TextUnit unit : units) {
-            String normalized = normalise(unit.text());
+            String normalized = normaliseNarrative(unit.text());
             if (normalized.isEmpty()) {
                 continue;
             }
@@ -214,7 +289,7 @@ public class GeneratedDocumentQualityValidator {
             String date = StringUtils.hasText(qualification.getDateAchieved())
                     ? qualification.getDateAchieved()
                     : qualification.getExpectedCompletion();
-            String key = normalise(
+            String key = normaliseNarrative(
                     qualification.getQualificationName()
                             + "|"
                             + qualification.getIssuingBody()
@@ -229,7 +304,8 @@ public class GeneratedDocumentQualityValidator {
 
     private void validateSelectedEvidenceCoverage(
             GeneratedApplicationDocuments documents,
-            ClaimEvidenceCatalog catalog
+            ClaimEvidenceCatalog catalog,
+            boolean requireEveryGovernedSelection
     ) {
         if (!"2.0".equals(catalog.catalogVersion())) {
             return;
@@ -251,11 +327,14 @@ public class GeneratedDocumentQualityValidator {
                             Set.of()));
                 }
             }
-            if (selectedPaths.isEmpty()) {
-                continue;
-            }
             String requiredPrefix = requiredSectionPrefix(entry.getKey());
             if (requiredPrefix != null) {
+                if (selectedPaths.isEmpty()) {
+                    require(!requireEveryGovernedSelection,
+                            "$.claims",
+                            "selected evidence is absent from its governed section");
+                    continue;
+                }
                 require(selectedPaths.stream()
                                 .anyMatch(path ->
                                         path.startsWith(requiredPrefix)),
@@ -555,10 +634,10 @@ public class GeneratedDocumentQualityValidator {
     }
 
     private boolean equalText(String left, String right) {
-        return normalise(left).equals(normalise(right));
+        return normaliseNarrative(left).equals(normaliseNarrative(right));
     }
 
-    private String normalise(String value) {
+    static String normaliseNarrative(String value) {
         return value == null
                 ? ""
                 : Normalizer.normalize(value, Normalizer.Form.NFKC)

@@ -6,6 +6,7 @@ import com.jobseekercopilot.cvcoverletter.dto.RejectedGenerationDeletionResponse
 import com.jobseekercopilot.cvcoverletter.dto.RejectedGenerationMetadataResponse;
 import com.jobseekercopilot.cvcoverletter.dto.RejectedGenerationReplayResponse;
 import com.jobseekercopilot.cvcoverletter.dto.RejectedSelectedGenerationReplayResponse;
+import com.jobseekercopilot.cvcoverletter.dto.SelectedDraftGenerationResponse;
 import com.jobseekercopilot.cvcoverletter.dto.SelectedDraftGenerationRequest;
 import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationQuarantineService;
 import com.jobseekercopilot.cvcoverletter.security.RejectedGenerationOperatorFilter;
@@ -65,6 +66,23 @@ public class RejectedGenerationOperatorController {
                     @Valid @RequestBody SelectedDraftGenerationRequest request) {
         return ResponseEntity.ok(
                 cvCoverLetterService.replayRejectedSelectedDraft(
+                        documentOwner,
+                        operationId,
+                        outputType,
+                        request));
+    }
+
+    @PostMapping("/{operationId}/fallback/{outputType}")
+    public ResponseEntity<SelectedDraftGenerationResponse>
+            fallbackSelected(
+                    @RequestAttribute(
+                            RejectedGenerationOperatorFilter.OWNER_ATTRIBUTE)
+                    String documentOwner,
+                    @PathVariable UUID operationId,
+                    @PathVariable DraftOutputType outputType,
+                    @Valid @RequestBody SelectedDraftGenerationRequest request) {
+        return ResponseEntity.ok(
+                cvCoverLetterService.generateDeterministicSelectedFallback(
                         documentOwner,
                         operationId,
                         outputType,
