@@ -48,14 +48,15 @@ class DeterministicCvFallbackServiceTest {
         assertTrue(backendSummary.contains("Spring Boot"));
         assertTrue(frontendSummary.contains("Angular"));
         assertTrue(frontendSummary.contains("TypeScript"));
+        assertFalse(backendSummary.contains("fresh produce"));
 
         assertEquals(
                 List.of(
                         "Founder & Full-Stack Software Developer",
-                        "Fresh Produce Team Member",
-                        "Full-Stack Software Developer"),
+                        "Full-Stack Software Developer",
+                        "Fresh Produce Team Member"),
                 roles(backend));
-        assertEquals(1, backend.at("/cv/workHistory/1/responsibilities").size());
+        assertEquals(1, backend.at("/cv/workHistory/2/responsibilities").size());
         assertTrue(backend.toString().contains(
                 "Maintained fresh produce availability and assisted customers."));
         assertFalse(backend.toString().contains("Kubernetes"));
@@ -68,6 +69,16 @@ class DeterministicCvFallbackServiceTest {
         assertNotEquals(
                 backend.at("/cv/workHistory/0/responsibilities/0/text").asText(),
                 frontend.at("/cv/workHistory/0/responsibilities/0/text").asText());
+        assertEquals(
+                "Created a reusable API contract and accessible job-search workflow.",
+                backend.at("/cv/projects/0/description").asText());
+        assertEquals(1, backend.at("/cv/projects").size());
+        assertEquals(
+                "Fictional API Toolkit",
+                backend.at("/cv/projects/0/title").asText());
+        assertFalse(backend.toString().contains("Fictional Community Award"));
+        assertFalse(backend.at("/cv/projects").toString().contains(
+                "Designed Java and Spring Boot REST APIs and provider integrations."));
     }
 
     private JsonNode generate(String description) throws Exception {
@@ -84,7 +95,9 @@ class DeterministicCvFallbackServiceTest {
         }
         request.getProfile().setSkills(skills);
         request.getEvidenceSnapshot().setSectionOrder(List.of(
-                EvidenceCategory.EMPLOYMENT));
+                EvidenceCategory.EMPLOYMENT,
+                EvidenceCategory.ACHIEVEMENT,
+                EvidenceCategory.PROJECT));
         request.getEvidenceSnapshot().setSelections(new ArrayList<>(List.of(
                 employment(
                         "Full-Stack Software Developer",
@@ -107,7 +120,17 @@ class DeterministicCvFallbackServiceTest {
                         "December 2025",
                         "May 2026",
                         "Maintained fresh produce availability and assisted customers.",
-                        "Worked reliably within operational routines."))));
+                        "Worked reliably within operational routines."),
+                achievement(
+                        "Fictional Community Award",
+                        "Recognised for supporting a fictional community programme."),
+                project(
+                        "Fictional Career Platform — Multi-service product",
+                        "Designed Java and Spring Boot REST APIs and provider integrations.",
+                        "Duplicated the employment evidence in a project entry."),
+                project(
+                        "Fictional API Toolkit",
+                        "Created a reusable API contract and accessible job-search workflow."))));
 
         NormalizedGenerationInput input = normalizer.normalizeSelected(
                 "fictional-owner", DraftOutputType.CV, request);
@@ -138,6 +161,40 @@ class DeterministicCvFallbackServiceTest {
                 1,
                 EvidenceCategory.EMPLOYMENT,
                 "e".repeat(64),
+                facts);
+    }
+
+    private EvidenceSnapshotSelectionInput project(
+            String title,
+            String... narratives) {
+        List<EvidenceSnapshotFactInput> facts = new ArrayList<>();
+        facts.add(fact("HEADING", title));
+        for (String narrative : narratives) {
+            facts.add(fact("DESCRIPTION", narrative));
+        }
+        return new EvidenceSnapshotSelectionInput(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                1,
+                EvidenceCategory.PROJECT,
+                "e".repeat(64),
+                facts);
+    }
+
+    private EvidenceSnapshotSelectionInput achievement(
+            String title,
+            String... narratives) {
+        List<EvidenceSnapshotFactInput> facts = new ArrayList<>();
+        facts.add(fact("HEADING", title));
+        for (String narrative : narratives) {
+            facts.add(fact("DESCRIPTION", narrative));
+        }
+        return new EvidenceSnapshotSelectionInput(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                1,
+                EvidenceCategory.ACHIEVEMENT,
+                "a".repeat(64),
                 facts);
     }
 

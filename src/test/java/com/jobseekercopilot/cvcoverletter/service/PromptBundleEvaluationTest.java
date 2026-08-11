@@ -36,7 +36,7 @@ class PromptBundleEvaluationTest {
     void setUp() throws IOException {
         objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBundleProperties bundleProperties = new PromptBundleProperties();
-        bundleProperties.setSelectedReleaseId("cv-cover-letter-1.6.1");
+        bundleProperties.setSelectedReleaseId("cv-cover-letter-1.7.0");
         PromptBundleRegistry registry =
                 new PromptBundleRegistry(objectMapper, new DefaultResourceLoader(), bundleProperties);
         registry.initialize();
@@ -48,7 +48,7 @@ class PromptBundleEvaluationTest {
         normalizer = new GenerationInputNormalizer(
                 Clock.fixed(Instant.parse("2026-07-24T13:00:00Z"), ZoneOffset.UTC));
         try (InputStream input = getClass().getResourceAsStream(
-                "/prompts/bundles/cv-cover-letter-1.6.1/evaluation-policy.json")) {
+                "/prompts/bundles/cv-cover-letter-1.7.0/evaluation-policy.json")) {
             if (input == null) {
                 throw new IllegalStateException("Prompt evaluation policy fixture is missing.");
             }
@@ -62,7 +62,7 @@ class PromptBundleEvaluationTest {
 
         assertEquals(policy.policyVersion(), prompt.getGenerationMetadata().evaluationPolicyVersion());
         assertEquals(
-                "2cb1f2bbcad9d1f13fd753a1e37e189955bfa7c9e2248a75c18c82e6bcac79bb",
+                "3e7070f92d28460c6771aa2b843de9001562bbaeb1b36e110bea1234027d2fc2",
                 sha256(boundaryMaterial(prompt)),
                 "The golden LLM boundary changed; review the trusted instructions, untrusted envelope, "
                         + "output schema and rollback metadata together.");
@@ -115,6 +115,8 @@ class PromptBundleEvaluationTest {
                 claims.path("disposition").path("enum").toString());
         assertEquals(1, claims.path("evidenceIds").path("minItems").asInt());
         assertEquals(1, claims.path("contentPaths").path("minItems").asInt());
+        assertEquals(0, prompt.getOutputSchema().at(
+                "/properties/claims/minItems").asInt());
         assertEquals("[\"\"]", claims.path("reviewText").path("enum").toString());
         assertEquals(
                 "[\"\"]",

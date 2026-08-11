@@ -15,7 +15,7 @@ class PromptBundleRegistryTest {
 
     @Test
     void loadsAndVerifiesEveryPackagedApprovedBundle() {
-        PromptBundleRegistry registry = registry("cv-cover-letter-1.6.1");
+        PromptBundleRegistry registry = registry("cv-cover-letter-1.7.0");
 
         assertEquals(
                 java.util.Set.of(
@@ -36,20 +36,21 @@ class PromptBundleRegistryTest {
                         "cv-cover-letter-1.5.10",
                         "cv-cover-letter-1.5.11",
                         "cv-cover-letter-1.6.0",
-                        "cv-cover-letter-1.6.1"),
+                        "cv-cover-letter-1.6.1",
+                        "cv-cover-letter-1.7.0"),
                 registry.approvedReleaseIds());
         assertEquals("ACTIVE", registry.selected().releaseStatus());
-        assertEquals("1.6.1", registry.selected().metadata().bundleVersion());
-        assertEquals("4.0.1", registry.selected().metadata().schemaVersion());
+        assertEquals("1.7.0", registry.selected().metadata().bundleVersion());
+        assertEquals("4.0.2", registry.selected().metadata().schemaVersion());
         assertEquals(64, registry.selected().metadata().evaluationPolicySha256().length());
         assertFalse(registry.selected().metadata().bundleSha256().isBlank());
     }
 
     @Test
     void comparesReviewedReleasesAndSupportsConfigurationRollback() {
-        PromptBundleRegistry active = registry("cv-cover-letter-1.6.1");
+        PromptBundleRegistry active = registry("cv-cover-letter-1.7.0");
         PromptBundleComparison comparison =
-                active.compare("cv-cover-letter-1.6.0", "cv-cover-letter-1.6.1");
+                active.compare("cv-cover-letter-1.6.1", "cv-cover-letter-1.7.0");
 
         assertFalse(comparison.templateChanged());
         assertTrue(comparison.rulesChanged());

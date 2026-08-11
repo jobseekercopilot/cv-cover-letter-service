@@ -10,6 +10,7 @@ import com.jobseekercopilot.cvcoverletter.dto.DraftOutputType;
 import com.jobseekercopilot.cvcoverletter.dto.InputWarning;
 import com.jobseekercopilot.cvcoverletter.dto.PromptGenerationMetadata;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidGenerationInputException;
+import com.jobseekercopilot.cvcoverletter.model.ApplicationQualityPlan;
 import com.jobseekercopilot.cvcoverletter.model.ClaimEvidenceCatalog;
 import com.jobseekercopilot.cvcoverletter.model.CvCoverLetterPrompt;
 import com.jobseekercopilot.cvcoverletter.model.EvidenceSource;
@@ -40,9 +41,14 @@ public class PromptBuilderService {
     private static final String SEPARATE_WARNINGS_MARKER =
             "[INPUT WARNINGS SUPPLIED THROUGH THE UNTRUSTED INPUT CHANNEL]";
     private static final Set<String> RULES_VERSIONS_WITH_CANONICAL_PROFILE_SKILLS =
-            Set.of("1.5.8", "1.5.9", "1.5.10", "1.5.11", "1.6.0", "1.6.1");
+            Set.of("1.5.8", "1.5.9", "1.5.10", "1.5.11", "1.6.0", "1.6.1", "1.7.0");
     private static final Set<String> SEPARATED_DECLARED_SKILLS_RULES_VERSIONS =
-            Set.of("1.5.9", "1.5.10", "1.5.11", "1.6.0", "1.6.1");
+            Set.of("1.5.9", "1.5.10", "1.5.11", "1.6.0", "1.6.1", "1.7.0");
+    private static final Set<String> APPLICATION_QUALITY_PLAN_RULES_VERSIONS =
+            Set.of("1.7.0");
+
+    private final ApplicationQualityPlanner applicationQualityPlanner =
+            new ApplicationQualityPlanner();
 
     private final ObjectMapper objectMapper;
     private final PromptBundleRegistry promptBundleRegistry;
@@ -120,7 +126,13 @@ public class PromptBuilderService {
                         "Selected prompt bundle contains an unresolved contract placeholder.");
             }
             Object untrustedPromptInput =
-                    SEPARATED_DECLARED_SKILLS_RULES_VERSIONS.contains(
+                    APPLICATION_QUALITY_PLAN_RULES_VERSIONS.contains(
+                            bundle.metadata().rulesVersion())
+                            ? qualityPlannedInput(
+                                    evidenceCatalog,
+                                    approvedEvidence,
+                                    input.warnings())
+                    : SEPARATED_DECLARED_SKILLS_RULES_VERSIONS.contains(
                             bundle.metadata().rulesVersion())
                             ? separatedDeclaredSkillInput(
                                     evidenceCatalog,
@@ -350,6 +362,44 @@ public class PromptBuilderService {
                 inputWarnings);
     }
 
+    private QualityPlannedSkillInput qualityPlannedInput(
+            ClaimEvidenceCatalog evidenceCatalog,
+            ClaimEvidenceCatalog approvedEvidence,
+            List<InputWarning> inputWarnings
+    ) {
+        List<String> candidates = evidenceCatalog.records().stream()
+                .filter(record -> record.source()
+                        == EvidenceSource.PROFILE_REVISION)
+                .map(record -> record.value())
+                .distinct()
+                .toList();
+        ApplicationQualityPlan qualityPlan =
+                applicationQualityPlanner.plan(approvedEvidence);
+        return new QualityPlannedSkillInput(
+                "UNTRUSTED_DATA_ONLY",
+                promptEvidence(approvedEvidence),
+                qualityPlan,
+                candidates,
+                inputWarnings);
+    }
+
+    private PromptEvidenceCatalog promptEvidence(
+            ClaimEvidenceCatalog approvedEvidence
+    ) {
+        return new PromptEvidenceCatalog(
+                approvedEvidence.catalogVersion(),
+                approvedEvidence.records().stream()
+                        .map(record -> new PromptEvidenceRecord(
+                                record.evidenceId(),
+                                record.source(),
+                                record.value(),
+                                record.factType(),
+                                record.category(),
+                                record.purpose()))
+                        .toList(),
+                approvedEvidence.sectionOrder());
+    }
+
     private ClaimEvidenceCatalog approvedEvidence(
             ClaimEvidenceCatalog evidenceCatalog,
             String rulesVersion
@@ -454,6 +504,34 @@ public class PromptBuilderService {
             ClaimEvidenceCatalog approvedEvidence,
             List<String> serviceProjectedCoreSkillCandidates,
             List<InputWarning> inputWarnings
+    ) {
+    }
+
+    private record QualityPlannedSkillInput(
+            String classification,
+            PromptEvidenceCatalog approvedEvidence,
+            ApplicationQualityPlan applicationQualityPlan,
+            List<String> serviceProjectedCoreSkillCandidates,
+            List<InputWarning> inputWarnings
+    ) {
+    }
+
+    private record PromptEvidenceCatalog(
+            String catalogVersion,
+            List<PromptEvidenceRecord> records,
+            java.util.Map<
+                    com.jobseekercopilot.cvcoverletter.model.EvidencePurpose,
+                    List<String>> sectionOrder
+    ) {
+    }
+
+    private record PromptEvidenceRecord(
+            String evidenceId,
+            EvidenceSource source,
+            String value,
+            String factType,
+            String category,
+            com.jobseekercopilot.cvcoverletter.model.EvidencePurpose purpose
     ) {
     }
 }

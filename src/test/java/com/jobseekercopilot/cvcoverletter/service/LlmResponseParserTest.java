@@ -24,6 +24,7 @@ class LlmResponseParserTest {
     private JsonNode schema;
     private JsonNode detailedSchema;
     private JsonNode inlineNarrativeSchema;
+    private JsonNode applicationQualitySchema;
     private JsonNode coreSkillProjectionRollbackSchema;
     private JsonNode dedicatedRollbackSchema;
     private JsonNode legacySchema;
@@ -57,6 +58,14 @@ class LlmResponseParserTest {
                         "Detailed output schema fixture is missing.");
             }
             detailedSchema = objectMapper.readTree(input);
+        }
+        try (InputStream input = getClass().getResourceAsStream(
+                "/prompts/bundles/cv-cover-letter-1.7.0/output-schema.json")) {
+            if (input == null) {
+                throw new IllegalStateException(
+                        "Application-quality output schema fixture is missing.");
+            }
+            applicationQualitySchema = objectMapper.readTree(input);
         }
         try (InputStream input = getClass().getResourceAsStream(
                 "/prompts/bundles/cv-cover-letter-1.5.6/output-schema.json")) {
@@ -104,7 +113,7 @@ class LlmResponseParserTest {
                         .equals(claim.getContentPaths()))
                 .count());
         assertEquals("3.5.2", parser.parserVersion(schema));
-        assertEquals("2.24.0", parser.claimPolicyVersion(schema));
+        assertEquals("2.25.0", parser.claimPolicyVersion(schema));
     }
 
     @Test
@@ -112,8 +121,8 @@ class LlmResponseParserTest {
         assertEquals(120, detailedSchema.at("/properties/claims/maxItems").asInt());
         assertTrue(LlmResponseParser.MAX_FALLBACK_ARRAY_ITEMS
                 >= detailedSchema.at("/properties/claims/maxItems").asInt() * 2);
-        assertEquals("3.6.9", parser.parserVersion(detailedSchema));
-        assertEquals("2.24.0", parser.claimPolicyVersion(detailedSchema));
+        assertEquals("3.6.13", parser.parserVersion(detailedSchema));
+        assertEquals("2.25.0", parser.claimPolicyVersion(detailedSchema));
     }
 
     @Test
@@ -135,8 +144,8 @@ class LlmResponseParserTest {
                 inlineNarrativeSchema);
         GeneratedApplicationDocuments result = parsed.documents();
 
-        assertEquals("3.6.9", parser.parserVersion(inlineNarrativeSchema));
-        assertEquals("2.24.0", parser.claimPolicyVersion(inlineNarrativeSchema));
+        assertEquals("3.6.13", parser.parserVersion(inlineNarrativeSchema));
+        assertEquals("2.25.0", parser.claimPolicyVersion(inlineNarrativeSchema));
         assertEquals(
                 List.of("Delivered a reliable service."),
                 result.getCv().getProjects().get(0).getHighlights());
@@ -180,6 +189,58 @@ class LlmResponseParserTest {
 
         assertTrue(error.getMessage().contains(
                 "$.coverLetter.bodyParagraphs[1].evidenceIds"));
+    }
+
+    @Test
+    void safelyCollapsesDuplicateInlineNarrativeEvidenceIds()
+            throws Exception {
+        JsonNode output = inlineNarrativeOutput();
+        ArrayNode evidenceIds = (ArrayNode) output.at(
+                "/coverLetter/bodyParagraphs/0/evidenceIds");
+        evidenceIds.add(evidenceIds.get(0).asText());
+
+        GeneratedApplicationDocuments result = parser.parseDetailed(
+                objectMapper.writeValueAsString(output),
+                inlineNarrativeSchema).documents();
+
+        assertEquals(
+                List.of("PROFILE.SKILL.1"),
+                claimFor(result, "/coverLetter/bodyParagraphs/0")
+                        .getEvidenceIds());
+    }
+
+    @Test
+    void acceptsNoOrdinaryClaimsWhenInlineAndCanonicalEvidenceAreComplete()
+            throws Exception {
+        JsonNode output = inlineNarrativeOutput();
+        ((ArrayNode) output.path("claims")).removeAll();
+        ((ObjectNode) output.path("cv")).put(
+                "personalSummary",
+                "Software developer who builds reliable Java services. "
+                        + "Applies practical engineering skills to useful products.");
+        ObjectNode additionalParagraph = ((ArrayNode) output.at(
+                "/coverLetter/bodyParagraphs")).addObject();
+        additionalParagraph.put(
+                "text",
+                "I would bring careful delivery and clear communication.");
+        additionalParagraph.put("disposition", "REWORDED");
+        additionalParagraph.putArray("evidenceIds")
+                .add("PROFILE.SKILL.1");
+
+        GeneratedApplicationDocuments result = parser.parseDetailed(
+                objectMapper.writeValueAsString(output),
+                applicationQualitySchema).documents();
+
+        assertEquals(0, applicationQualitySchema.at(
+                "/properties/claims/minItems").asInt());
+        assertEquals(
+                List.of("PROFILE.SKILL.1"),
+                claimFor(result, "/coverLetter/bodyParagraphs/0")
+                        .getEvidenceIds());
+        assertEquals(
+                List.of("PROFILE.SKILL.1"),
+                claimFor(result, "/cv/projects/0/highlights/0")
+                        .getEvidenceIds());
     }
 
     @Test
@@ -851,7 +912,7 @@ class LlmResponseParserTest {
                 request);
         var properties = new com.jobseekercopilot.cvcoverletter.config
                 .PromptBundleProperties();
-        properties.setSelectedReleaseId("cv-cover-letter-1.6.1");
+        properties.setSelectedReleaseId("cv-cover-letter-1.7.0");
         var registry = new PromptBundleRegistry(
                 objectMapper,
                 new org.springframework.core.io.DefaultResourceLoader(),
@@ -892,7 +953,7 @@ class LlmResponseParserTest {
                 ((ObjectNode) missingEmptyReviewText.at("/claims/0"))
                         .deepCopy();
         redundantNarrativeClaim.putArray("contentPaths")
-                .add("/cv/workHistory/0/responsibilities/0");
+                .add("/cv/workHistory/0/responsibilities/0/text");
         ((ArrayNode) missingEmptyReviewText.path("claims"))
                 .add(redundantNarrativeClaim);
         ObjectNode redundantQualificationDescription =
@@ -902,6 +963,11 @@ class LlmResponseParserTest {
                 .add("/cv/qualifications/0/description");
         ((ArrayNode) missingEmptyReviewText.path("claims"))
                 .add(redundantQualificationDescription);
+        ((ArrayNode) missingEmptyReviewText.at("/claims/0/contentPaths"))
+                .add("/cv/workHistory/0/responsibilities/0");
+        ArrayNode firstClaimPaths = (ArrayNode) missingEmptyReviewText.at(
+                "/claims/0/contentPaths");
+        firstClaimPaths.add(firstClaimPaths.get(0).asText());
         missingEmptyReviewText.path("claims").forEach(claim ->
                 ((ObjectNode) claim).put(
                         "claimId",
@@ -912,9 +978,14 @@ class LlmResponseParserTest {
                                 missingEmptyReviewText),
                         prompt.getOutputSchema(),
                         prompt.getEvidenceCatalog());
-        assertEquals(2,
+        assertEquals(4,
                 reviewTextRepaired.repair().duplicateItemsRemoved());
         assertTrue(reviewTextRepaired.repair().succeeded());
+        assertFalse(reviewTextRepaired.documents().getClaims().stream()
+                .anyMatch(claim -> claim.getContentPaths().contains(
+                                "/cv/targetRole")
+                        && claim.getContentPaths().contains(
+                                "/cv/workHistory/0/responsibilities/0")));
         assertEquals("CLAIM-000",
                 reviewTextRepaired.documents().getClaims().get(0)
                         .getClaimId());
@@ -925,14 +996,20 @@ class LlmResponseParserTest {
         ((ObjectNode) mixedClaimIds.at("/claims/0")).put(
                 "claimId",
                 java.util.UUID.randomUUID().toString());
-        InvalidLlmResponseException mixedClaimIdRejection = assertThrows(
-                InvalidLlmResponseException.class,
-                () -> parser.parseDetailed(
+        String retainedSecondClaimId = mixedClaimIds.at("/claims/1/claimId")
+                .asText();
+        LlmResponseParser.ParsedGeneration mixedClaimIdRepaired =
+                parser.parseDetailed(
                         objectMapper.writeValueAsString(mixedClaimIds),
                         prompt.getOutputSchema(),
-                        prompt.getEvidenceCatalog()));
-        assertTrue(mixedClaimIdRejection.getMessage().contains(
-                "$.claims[0].claimId"));
+                        prompt.getEvidenceCatalog());
+        assertTrue(mixedClaimIdRepaired.repair().succeeded());
+        assertEquals("CLAIM-000",
+                mixedClaimIdRepaired.documents().getClaims().get(0)
+                        .getClaimId());
+        assertEquals(retainedSecondClaimId,
+                mixedClaimIdRepaired.documents().getClaims().get(1)
+                        .getClaimId());
 
         String exactDuplicate = fallback.substring(
                 0, fallback.lastIndexOf('}'))
@@ -966,7 +1043,14 @@ class LlmResponseParserTest {
         ArrayNode qualifications =
                 (ArrayNode) missingSelectedQualification.at(
                         "/cv/qualifications");
-        int omittedQualificationIndex = qualifications.size() - 1;
+        int omittedQualificationIndex = java.util.stream.IntStream
+                .range(0, qualifications.size())
+                .filter(index -> "AWS Certified Cloud Practitioner".equals(
+                        qualifications.get(index)
+                                .path("qualificationName")
+                                .asText()))
+                .findFirst()
+                .orElseThrow();
         qualifications.remove(omittedQualificationIndex);
         String omittedQualificationPrefix =
                 "/cv/qualifications/" + omittedQualificationIndex + "/";
