@@ -14,11 +14,11 @@ model-usage evidence. The additive draft API has no payment, document, export,
 approval, or application side effects. The legacy generate-and-commit endpoint
 remains temporarily available for a coordinated Gateway migration.
 
-This service is **not beta-ready**. Its build is reproducible from committed
-source, its prompt releases are immutable and rollback-capable, and generated
-claims now fail closed against approved source facts. The Gateway must adopt
-the pure draft boundary and complete its durable approval workflow before the
-legacy endpoint and downstream credentials can be removed. See
+The evidence-grounded draft path is implemented, composed and exercised in the
+controlled private-beta/manual environment, including bounded live OpenAI
+generation, structural repair, retained-response recovery and deterministic CV
+fallback. It is not a production reliability claim. The legacy endpoint and
+downstream credentials remain only for rolling compatibility. See
 [`docs/BETA_READINESS_AUDIT.md`](docs/BETA_READINESS_AUDIT.md).
 
 ## Technology
@@ -258,9 +258,10 @@ they make no live or paid model request.
 
 ## Safe local use
 
-Use synthetic fixtures and the deterministic provider mode. Do not use real
-CVs, cover letters, profiles, job-seeker data, model credentials, or paid model
-requests while this service remains pre-beta.
+Automated tests and routine CI use synthetic fixtures and deterministic provider
+mode. Real profiles or paid model requests are permitted only in an explicitly
+authorised, private manual environment with runtime-only credentials and the
+document/privacy controls described above.
 
 ## Licence
 
