@@ -9,6 +9,7 @@ import com.jobseekercopilot.cvcoverletter.dto.GenerateRequest;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateCvCoverLetterResponse;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedApplicationDocuments;
 import com.jobseekercopilot.cvcoverletter.dto.RejectedGenerationReplayResponse;
+import com.jobseekercopilot.cvcoverletter.dto.RejectedSelectedGenerationReplayResponse;
 import com.jobseekercopilot.cvcoverletter.dto.SelectedDraftGenerationRequest;
 import com.jobseekercopilot.cvcoverletter.dto.SelectedDraftGenerationResponse;
 import com.jobseekercopilot.cvcoverletter.exception.DownstreamServiceException;
@@ -163,41 +164,11 @@ public class CvCoverLetterService {
                     "LLM gateway returned no response");
         }
         try {
-            validateGenerationResponse(llmResponse, prepared.prompt());
-            GeneratedApplicationDocuments documents = responseParser.parse(
-                    llmResponse.getOutput(),
-                    prepared.prompt().getOutputSchema(),
-                    prepared.prompt().getEvidenceCatalog());
-            String title;
-            String content;
-            if (outputType == DraftOutputType.CV) {
-                if (documents.getCv() == null
-                        || documents.getCoverLetter() != null) {
-                    throw new InvalidLlmResponseException(
-                            "Selected CV response contained the wrong document set");
-                }
-                title = documents.getCv().getTitle();
-                content = cvRenderer.render(
-                        documents.getCv(), prepared.input().contact());
-            } else {
-                if (documents.getCoverLetter() == null
-                        || documents.getCv() != null) {
-                    throw new InvalidLlmResponseException(
-                            "Selected cover-letter response contained the wrong document set");
-                }
-                title = documents.getCoverLetter().getTitle();
-                content = coverLetterRenderer.render(
-                        documents.getCoverLetter(),
-                        prepared.input().contact());
-            }
-            SelectedDraftGenerationResponse response = selectedDraftResponse(
+            SelectedDraftGenerationResponse response = materializeSelectedDraft(
                     operationId,
                     outputType,
                     prepared,
-                    llmResponse,
-                    documents,
-                    title,
-                    content);
+                    llmResponse);
             log.info(
                     "Selected draft generation completed operationId={} outputType={} jobId={} durationMs={}",
                     operationId,
@@ -272,12 +243,23 @@ public class CvCoverLetterService {
             String ownerId,
             DraftOutputType outputType,
             SelectedDraftGenerationRequest request) {
+        return prepareSelectedGeneration(
+                ownerId, outputType, request, null);
+    }
+
+    private PreparedGeneration prepareSelectedGeneration(
+            String ownerId,
+            DraftOutputType outputType,
+            SelectedDraftGenerationRequest request,
+            String approvedReleaseId) {
         NormalizedGenerationInput input = inputNormalizer.normalizeSelected(
                 ownerId, outputType, request);
         String jobId = input.jobProvenance().getResourceId();
         long startedAt = System.nanoTime();
-        CvCoverLetterPrompt prompt = promptBuilderService.buildPrompt(
-                input, outputType);
+        CvCoverLetterPrompt prompt = approvedReleaseId == null
+                ? promptBuilderService.buildPrompt(input, outputType)
+                : promptBuilderService.buildPrompt(
+                        input, approvedReleaseId, outputType);
         String parserVersion = responseParser.parserVersion(
                 prompt.getOutputSchema());
         String claimPolicyVersion = responseParser.claimPolicyVersion(
@@ -313,6 +295,48 @@ public class CvCoverLetterService {
                 jobId,
                 claimPolicyVersion,
                 parserVersion);
+    }
+
+    private SelectedDraftGenerationResponse materializeSelectedDraft(
+            UUID operationId,
+            DraftOutputType outputType,
+            PreparedGeneration prepared,
+            GenerationResponse llmResponse) {
+        validateGenerationResponse(llmResponse, prepared.prompt());
+        GeneratedApplicationDocuments documents = responseParser.parse(
+                llmResponse.getOutput(),
+                prepared.prompt().getOutputSchema(),
+                prepared.prompt().getEvidenceCatalog());
+        String title;
+        String content;
+        if (outputType == DraftOutputType.CV) {
+            if (documents.getCv() == null
+                    || documents.getCoverLetter() != null) {
+                throw new InvalidLlmResponseException(
+                        "Selected CV response contained the wrong document set");
+            }
+            title = documents.getCv().getTitle();
+            content = cvRenderer.render(
+                    documents.getCv(), prepared.input().contact());
+        } else {
+            if (documents.getCoverLetter() == null
+                    || documents.getCv() != null) {
+                throw new InvalidLlmResponseException(
+                        "Selected cover-letter response contained the wrong document set");
+            }
+            title = documents.getCoverLetter().getTitle();
+            content = coverLetterRenderer.render(
+                    documents.getCoverLetter(),
+                    prepared.input().contact());
+        }
+        return selectedDraftResponse(
+                operationId,
+                outputType,
+                prepared,
+                llmResponse,
+                documents,
+                title,
+                content);
     }
 
     private SelectedDraftGenerationResponse selectedDraftResponse(
@@ -401,6 +425,67 @@ public class CvCoverLetterService {
                     prepared.claimPolicyVersion(),
                     diagnostic);
             return new RejectedGenerationReplayResponse(
+                    operationId,
+                    replayEvent.recordedAt(),
+                    "REJECTED",
+                    0,
+                    prepared.parserVersion(),
+                    prepared.claimPolicyVersion(),
+                    diagnostic,
+                    null);
+        }
+    }
+
+    public RejectedSelectedGenerationReplayResponse replayRejectedSelectedDraft(
+            String ownerId,
+            UUID operationId,
+            DraftOutputType outputType,
+            SelectedDraftGenerationRequest request) {
+        var loaded = quarantineService.load(ownerId, operationId);
+        PreparedGeneration prepared = prepareSelectedGeneration(
+                ownerId,
+                outputType,
+                request,
+                loaded.artifact().promptReleaseId());
+        quarantineService.requireMatchingReplayContext(
+                loaded.artifact(),
+                prepared.llmRequest(),
+                prepared.prompt().getGenerationMetadata());
+        try {
+            SelectedDraftGenerationResponse draft = materializeSelectedDraft(
+                    operationId,
+                    outputType,
+                    prepared,
+                    loaded.response());
+            var replayEvent = quarantineService.recordReplay(
+                    ownerId,
+                    operationId,
+                    "ACCEPTED",
+                    prepared.prompt().getGenerationMetadata(),
+                    prepared.parserVersion(),
+                    prepared.claimPolicyVersion(),
+                    null);
+            return new RejectedSelectedGenerationReplayResponse(
+                    operationId,
+                    replayEvent.recordedAt(),
+                    "ACCEPTED",
+                    0,
+                    prepared.parserVersion(),
+                    prepared.claimPolicyVersion(),
+                    null,
+                    draft);
+        } catch (InvalidLlmResponseException rejection) {
+            RejectedGenerationDiagnostic diagnostic =
+                    quarantineService.diagnostic(rejection);
+            var replayEvent = quarantineService.recordReplay(
+                    ownerId,
+                    operationId,
+                    "REJECTED",
+                    prepared.prompt().getGenerationMetadata(),
+                    prepared.parserVersion(),
+                    prepared.claimPolicyVersion(),
+                    diagnostic);
+            return new RejectedSelectedGenerationReplayResponse(
                     operationId,
                     replayEvent.recordedAt(),
                     "REJECTED",

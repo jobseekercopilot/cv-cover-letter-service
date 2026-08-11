@@ -1,7 +1,7 @@
 # Claim evidence policy
 
 Prompt release `cv-cover-letter-1.6.0`, output schema `4.0.0`, evaluation
-policy `1.6.0`, parser `3.6.2`, claim policy `2.21.0` and deterministic quality
+policy `1.6.0`, parser `3.6.2`, claim policy `2.24.0` and deterministic quality
 policy `1.5.0`
 establish the current claim-provenance and document-quality boundary.
 
@@ -42,7 +42,7 @@ Active `1.6.0` retains structural high-volume narrative provenance. Every
 project highlight, work responsibility and cover-letter body paragraph carries
 its final text, disposition and approved evidence IDs in one closed object.
 Parser `3.6.2` projects each object into a separate bounded exact-path claim.
-Claim policy `2.21.0` deterministically inserts the minimum purpose-compatible
+Claim policy `2.24.0` deterministically inserts the minimum purpose-compatible
 approved evidence needed for a missing numeric or specific term ahead of
 optional submitted references. This prevents another paragraph's references
 or a full submitted list from crowding out required evidence while retaining
@@ -55,6 +55,27 @@ restores the normal confirmed-evidence requirement. When a recruiter has not
 named its client, canonical `the client organisation` prose is deterministically
 covered by the approved `JOB.ADVERTISER_TYPE=RECRUITER` fact rather than being
 left for the provider to invent or cite.
+
+For versioned CVs, policy `2.24.0` also compares exact declared or demonstrated
+skill values with the canonical job title and full description. If the model's
+bounded proposals contain no exact job-relevant skill but an approved profile
+skill does match, the service projects the first such skill with its own stable
+profile provenance. It never projects an advert-only skill or exceeds the
+existing 12-skill and claim-ledger limits.
+
+For a versioned cover letter, policy `2.24.0` may replace only the final body
+paragraph when it has no confirmed claimant evidence and is not already safe
+non-factual motivation. The replacement is the fixed pattern `I am keen to
+contribute to this role.` and cites only canonical `JOB.TITLE`
+evidence. Earlier unsupported paragraphs, unsupported specific facts and
+invalid selected-evidence prose remain fail-closed.
+
+For a versioned CV, an unsupported number in `/cv/personalSummary` is never
+passed through or silently deleted in place. When the deterministic core-skill
+projection has an exact `DEMONSTRATED_SKILL`, policy `2.24.0` replaces the whole
+summary with `Profile-backed skills include SKILL.` and cites only that stable
+evidence fact. If no demonstrated skill is available, or if unsupported content
+appears elsewhere, validation remains fail-closed.
 
 Release `1.5.3` makes that exception explicit at both provider boundaries.
 `/coverLetter/openingParagraph` must be exactly `Please consider my application
@@ -167,7 +188,10 @@ fail-closed in parser and claim validation.
 Version routing remains schema-bound; a release is excluded when a shared
 schema cannot safely distinguish its semantics. Active release `1.6.0` uses
 schema `4.0.0`, evaluation policy `1.6.0`, parser `3.6.2`,
-claim policy `2.21.0` and quality policy `1.5.0`. Immutable immediate rollback
+claim policy `2.24.0` and quality policy `1.5.0`. It also rejects model-authored
+email addresses, UK postcodes, placeholder names, reference boilerplate and
+qualified leadership or management assertions unless the complete matched fact
+appears in the cited approved evidence. Immutable immediate rollback
 `1.5.6` retains schema `3.7.0`, evaluation policy `1.5.4`, parser `3.4.0` and
 claim policy `2.11.0`. Release `1.5.7` is preserved in version-control history
 but is not packaged or included in the approved index because it shares schema

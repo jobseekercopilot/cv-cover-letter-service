@@ -875,7 +875,9 @@ public class LlmResponseParser {
                 || INLINE_NARRATIVE_ORDINARY_CONTENT_PATH_PATTERN.equals(
                         contentPathPattern)
                 || SELECTED_CV_INLINE_NARRATIVE_CONTENT_PATH_PATTERN.equals(
-                        contentPathPattern);
+                        contentPathPattern)
+                || SELECTED_COVER_LETTER_INLINE_NARRATIVE_CONTENT_PATH_PATTERN
+                        .equals(contentPathPattern);
     }
 
     private boolean usesInlineNarrativeEvidence(JsonNode schema) {

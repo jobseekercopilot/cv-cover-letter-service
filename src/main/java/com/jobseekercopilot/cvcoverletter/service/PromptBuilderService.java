@@ -69,6 +69,19 @@ public class PromptBuilderService {
                 input, promptBundleRegistry.get(approvedReleaseId), null);
     }
 
+    public CvCoverLetterPrompt buildPrompt(
+            NormalizedGenerationInput input,
+            String approvedReleaseId,
+            DraftOutputType outputType) {
+        if (outputType == null) {
+            throw new IllegalArgumentException("Selected draft output is required.");
+        }
+        return buildPrompt(
+                input,
+                promptBundleRegistry.get(approvedReleaseId),
+                outputType);
+    }
+
     private CvCoverLetterPrompt buildPrompt(
             NormalizedGenerationInput input,
             PromptBundle bundle,
