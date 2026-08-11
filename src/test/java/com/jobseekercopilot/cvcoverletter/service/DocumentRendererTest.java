@@ -59,6 +59,39 @@ class DocumentRendererTest {
         assertTrue(result.contains("Professional Experience\nEngineer - Acme\nMarch 2022 – Present"));
         assertTrue(result.contains(
                 "Education and Qualifications\n- BSc Computing"));
+        assertFalse(result.contains("Completed, First"));
+    }
+
+    @Test
+    void cvRendererDoesNotRepeatProjectRoleAlreadyPresentInTitle() {
+        documents.getCv().getProjects().get(0)
+                .setTitle("Codecademy Docs — Open Source Contributor");
+        documents.getCv().getProjects().get(0)
+                .setRole("Open Source Contributor");
+
+        String result = new CvDocumentRenderer().render(documents.getCv());
+
+        assertTrue(result.contains(
+                "Codecademy Docs — Open Source Contributor\n"));
+        assertFalse(result.contains(
+                "Open Source Contributor - Open Source Contributor"));
+    }
+
+    @Test
+    void cvRendererCollapsesIdenticalDatesAndNormalisesAwardedGrades() {
+        var project = documents.getCv().getProjects().get(0);
+        project.setStartDate("2021-12");
+        project.setEndDate("2021-12");
+        var qualification = documents.getCv().getQualifications().get(0);
+        qualification.setGrade(
+                "Awarded a UK upper second-class honours degree (2:1).");
+
+        String result = new CvDocumentRenderer().render(documents.getCv());
+
+        assertTrue(result.contains("December 2021\n"));
+        assertFalse(result.contains("December 2021 – December 2021"));
+        assertTrue(result.contains("Example University, 2:1, 2024"));
+        assertFalse(result.contains("Awarded a UK"));
     }
 
     @Test

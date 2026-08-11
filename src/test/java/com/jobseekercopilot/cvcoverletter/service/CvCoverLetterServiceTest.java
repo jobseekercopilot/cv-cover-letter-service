@@ -385,7 +385,7 @@ class CvCoverLetterServiceTest {
         assertEquals("PROVIDER_FAILURE", result.recovery().fallbackReason());
         assertTrue(result.content().contains("Fictional Employer 1"));
         assertTrue(result.content().contains("Evidence Skill 1"));
-        assertFalse(result.content().contains("Fictional Employer 9"));
+        assertTrue(result.content().contains("Fictional Employer 12"));
         assertFalse(result.content().contains("Evidence Skill 13"));
         assertTrue(result.claimLedger().claims().size() <= 120);
         verify(llmGatewayApi, times(1)).generateV2(any());

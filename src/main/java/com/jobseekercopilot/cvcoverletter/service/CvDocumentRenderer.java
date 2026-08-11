@@ -13,10 +13,13 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
 @Component
 public class CvDocumentRenderer {
+    private static final Pattern UK_DEGREE_CLASSIFICATION =
+            Pattern.compile("(?i)\\((1st|2:1|2:2|3rd)\\)");
 
     public String render(GeneratedCv cv) {
         return render(cv, new ContactDetails(null, null, null));
@@ -72,7 +75,8 @@ public class CvDocumentRenderer {
         if (!safe(cv.getProjects()).isEmpty()) {
             StringBuilder projects = new StringBuilder("Selected Projects");
             for (GeneratedProject project : cv.getProjects()) {
-                String heading = join(" - ", project.getTitle(), project.getRole());
+                String heading = joinNonRedundant(
+                        " - ", project.getTitle(), project.getRole());
                 if (hasText(heading)) {
                     projects.append("\n").append(heading);
                 }
@@ -100,12 +104,14 @@ public class CvDocumentRenderer {
                 String date = hasText(qualification.getDateAchieved())
                         ? qualification.getDateAchieved()
                         : qualification.getExpectedCompletion();
+                String status = displayStatus(
+                        qualification.getStatus(), date);
                 qualifications.append("\n- ").append(joinDistinct(
                         ", ",
                         qualification.getQualificationName(),
                         qualification.getIssuingBody(),
-                        qualification.getStatus(),
-                        qualification.getGrade(),
+                        status,
+                        displayGrade(qualification.getGrade()),
                         naturalDate(date)));
             }
             sections.add(qualifications.toString());
@@ -141,8 +147,73 @@ public class CvDocumentRenderer {
         return String.join(separator, distinct);
     }
 
+    private String joinNonRedundant(String separator, String... values) {
+        List<String> selected = new ArrayList<>();
+        java.util.Arrays.stream(values)
+                .filter(this::hasText)
+                .map(String::trim)
+                .forEach(value -> {
+                    String normalized = normalizeHeading(value);
+                    boolean alreadyRepresented = selected.stream()
+                            .map(this::normalizeHeading)
+                            .anyMatch(existing -> existing.equals(normalized)
+                                    || containsPhrase(existing, normalized));
+                    if (!alreadyRepresented) {
+                        selected.add(value);
+                    }
+                });
+        return String.join(separator, selected);
+    }
+
+    private boolean containsPhrase(String text, String phrase) {
+        return !phrase.isBlank()
+                && (" " + text + " ").contains(" " + phrase + " ");
+    }
+
+    private String normalizeHeading(String value) {
+        return value.toLowerCase(Locale.ROOT)
+                .replaceAll("[^\\p{L}\\p{N}]+", " ")
+                .trim();
+    }
+
+    private String displayStatus(String status, String date) {
+        if (!hasText(status)) {
+            return status;
+        }
+        String normalized = status.trim()
+                .replace('_', ' ')
+                .toLowerCase(Locale.ROOT);
+        if (hasText(date) && (normalized.equals("completed")
+                || normalized.equals("complete"))) {
+            return "";
+        }
+        return normalized.equals("in progress")
+                ? "In progress"
+                : status.trim();
+    }
+
     private String dateRange(String start, String end) {
-        return join(" – ", naturalDate(start), naturalDate(end));
+        String naturalStart = naturalDate(start);
+        String naturalEnd = naturalDate(end);
+        if (hasText(naturalStart)
+                && hasText(naturalEnd)
+                && naturalStart.equalsIgnoreCase(naturalEnd)) {
+            return naturalStart;
+        }
+        return join(" – ", naturalStart, naturalEnd);
+    }
+
+    private String displayGrade(String grade) {
+        if (!hasText(grade)) {
+            return grade;
+        }
+        String trimmed = grade.trim().replaceFirst("[\\s.]+$", "");
+        var classification = UK_DEGREE_CLASSIFICATION.matcher(trimmed);
+        if (classification.find()) {
+            return classification.group(1);
+        }
+        return trimmed.replaceFirst(
+                "(?i)^awarded\\s+(?:a\\s+)?(?:uk\\s+)?", "");
     }
 
     private String naturalDate(String value) {

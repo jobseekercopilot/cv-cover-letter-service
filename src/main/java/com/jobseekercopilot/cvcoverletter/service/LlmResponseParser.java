@@ -1,12 +1,15 @@
 package com.jobseekercopilot.cvcoverletter.service;
 
 import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.util.TokenBuffer;
 import com.jobseekercopilot.cvcoverletter.dto.ClaimDisposition;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedApplicationDocuments;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedClaim;
@@ -30,7 +33,7 @@ import org.springframework.web.util.HtmlUtils;
 @Component
 public class LlmResponseParser {
 
-    static final String PARSER_VERSION = "3.6.3";
+    static final String PARSER_VERSION = "3.6.9";
     static final String DEDICATED_PERSONAL_SUMMARY_PARSER_VERSION = "3.5.2";
     static final String CORE_SKILL_PROJECTION_PARSER_VERSION = "3.4.0";
     static final String DEDICATED_CANONICAL_PARSER_VERSION = "3.3.0";
@@ -120,6 +123,9 @@ public class LlmResponseParser {
             Pattern.compile("(?i)\\bon[a-z]{3,20}\\s*=");
     private static final Pattern CONTROL =
             Pattern.compile("[\\p{Cc}&&[^\\r\\n\\t]]");
+    private static final Pattern UUID_CLAIM_ID = Pattern.compile(
+            "(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-"
+                    + "[89ab][0-9a-f]{3}-[0-9a-f]{12}$");
 
     private final ObjectMapper objectMapper;
     private final ClaimEvidenceValidator claimEvidenceValidator;
@@ -183,15 +189,36 @@ public class LlmResponseParser {
                 usesInlineNarrativeEvidence(schema);
 
         try {
-            JsonNode providerOutput = objectMapper.readTree(rawResponse);
+            ParsedProviderJson parsedProviderJson = parseProviderJson(
+                    rawResponse,
+                    usesInlineNarrativeEvidence);
+            JsonNode providerOutput = parsedProviderJson.output();
             if (providerOutput == null) {
                 throw new InvalidLlmResponseException("LLM response was not valid JSON");
             }
+            int missingReviewTextFieldsAdded = usesInlineNarrativeEvidence
+                    ? addEmptyReviewTextToClaims(providerOutput)
+                    : 0;
+            int inactiveDocumentNullsAdded = usesInlineNarrativeEvidence
+                    ? addMissingInactiveDocumentNulls(
+                            providerOutput,
+                            schema)
+                    : 0;
+            int redundantInlineNarrativeClaimsRemoved =
+                    usesInlineNarrativeEvidence
+                            ? removeRedundantInlineNarrativeClaims(
+                                    providerOutput)
+                            : 0;
+            int uuidClaimIdsRemapped = usesInlineNarrativeEvidence
+                    ? remapUuidClaimIds(providerOutput)
+                    : 0;
             validateSchema(providerOutput, schema, "$");
             validatePlainText(providerOutput, "$");
-            int duplicateItemsRemoved = 0;
+            int duplicateItemsRemoved =
+                    parsedProviderJson.exactDuplicateFieldsRemoved()
+                            + redundantInlineNarrativeClaimsRemoved;
             if (usesInlineNarrativeEvidence) {
-                duplicateItemsRemoved =
+                duplicateItemsRemoved +=
                         deduplicateInlineNarrativeArrays(providerOutput);
                 // The repair is deliberately narrow, but the repaired provider
                 // object must still satisfy the exact reviewed schema.
@@ -244,7 +271,8 @@ public class LlmResponseParser {
                     qualityValidator.validate(
                             output,
                             documents,
-                            evidenceCatalog);
+                            evidenceCatalog,
+                            usesTailoredSummaryQualityPolicy(schema));
                 }
             }
             return new ParsedGeneration(
@@ -252,11 +280,170 @@ public class LlmResponseParser {
                     new StructuralRepairReport(
                             usesInlineNarrativeEvidence,
                             duplicateItemsRemoved,
-                            duplicateItemsRemoved > 0));
+                            duplicateItemsRemoved > 0
+                                    || missingReviewTextFieldsAdded > 0
+                                    || inactiveDocumentNullsAdded > 0
+                                    || uuidClaimIdsRemapped > 0));
         } catch (JsonProcessingException exception) {
             // Parser exceptions can contain model-output fragments, so do not retain the cause.
             throw new InvalidLlmResponseException("LLM response was not valid JSON");
         }
+    }
+
+    private ParsedProviderJson parseProviderJson(
+            String rawResponse,
+            boolean allowExactDuplicateRepair) throws JsonProcessingException {
+        try {
+            return new ParsedProviderJson(
+                    objectMapper.readTree(rawResponse), 0);
+        } catch (JsonParseException exception) {
+            if (!allowExactDuplicateRepair
+                    || exception.getOriginalMessage() == null
+                    || !exception.getOriginalMessage().startsWith(
+                            "Duplicate field '")) {
+                throw exception;
+            }
+            return parseWithExactTopLevelDuplicateRepair(rawResponse);
+        }
+    }
+
+    private ParsedProviderJson parseWithExactTopLevelDuplicateRepair(
+            String rawResponse) throws JsonProcessingException {
+        ObjectMapper lenient = objectMapper.copy()
+                .disable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+        ObjectNode repaired = objectMapper.createObjectNode();
+        int duplicateFieldsRemoved = 0;
+        try (JsonParser parser = lenient.createParser(rawResponse)) {
+            require(parser.nextToken() == JsonToken.START_OBJECT,
+                    "$", "response must be a JSON object");
+            while (parser.nextToken() != JsonToken.END_OBJECT) {
+                require(parser.currentToken() == JsonToken.FIELD_NAME,
+                        "$", "response object contains an invalid field");
+                String field = parser.currentName();
+                require(parser.nextToken() != null,
+                        child("$", field), "field value is missing");
+                JsonNode value;
+                try (TokenBuffer buffer = new TokenBuffer(parser)) {
+                    buffer.copyCurrentStructure(parser);
+                    try (JsonParser valueParser = buffer.asParser()) {
+                        valueParser.enable(
+                                JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+                        value = objectMapper.readTree(valueParser);
+                    }
+                }
+                JsonNode existing = repaired.get(field);
+                if (existing == null) {
+                    repaired.set(field, value);
+                } else {
+                    require(existing.equals(value),
+                            child("$", field),
+                            "duplicate top-level field has different values");
+                    duplicateFieldsRemoved++;
+                }
+            }
+            require(parser.nextToken() == null,
+                    "$", "response contains trailing JSON content");
+        } catch (java.io.IOException exception) {
+            if (exception instanceof JsonProcessingException processing) {
+                throw processing;
+            }
+            throw new JsonParseException(null, "JSON repair could not read the response");
+        }
+        require(duplicateFieldsRemoved > 0,
+                "$", "duplicate-field repair found no exact duplicate");
+        return new ParsedProviderJson(repaired, duplicateFieldsRemoved);
+    }
+
+    private int addEmptyReviewTextToClaims(JsonNode output) {
+        JsonNode claims = output.path("claims");
+        if (!(claims instanceof ArrayNode array)) {
+            return 0;
+        }
+        int added = 0;
+        for (JsonNode claim : array) {
+            if (claim instanceof ObjectNode objectClaim
+                    && !objectClaim.has("reviewText")) {
+                objectClaim.put("reviewText", "");
+                added++;
+            }
+        }
+        return added;
+    }
+
+    private int addMissingInactiveDocumentNulls(
+            JsonNode output,
+            JsonNode schema) {
+        if (!(output instanceof ObjectNode objectOutput)) {
+            return 0;
+        }
+        int added = 0;
+        for (String document : List.of("cv", "coverLetter")) {
+            JsonNode documentSchema = schema.path("properties")
+                    .path(document);
+            if (!objectOutput.has(document)
+                    && "null".equals(documentSchema.path("type").asText())) {
+                objectOutput.putNull(document);
+                added++;
+            }
+        }
+        return added;
+    }
+
+    private int remapUuidClaimIds(JsonNode output) {
+        JsonNode claims = output.path("claims");
+        if (!(claims instanceof ArrayNode array) || array.isEmpty()) {
+            return 0;
+        }
+        boolean allUuidIds = true;
+        for (JsonNode claim : array) {
+            allUuidIds &= claim instanceof ObjectNode
+                    && UUID_CLAIM_ID.matcher(
+                            claim.path("claimId").asText("")).matches();
+        }
+        if (!allUuidIds) {
+            return 0;
+        }
+        for (int index = 0; index < array.size(); index++) {
+            ((ObjectNode) array.get(index)).put(
+                    "claimId",
+                    "CLAIM-%03d".formatted(index));
+        }
+        return array.size();
+    }
+
+    private int removeRedundantInlineNarrativeClaims(JsonNode output) {
+        JsonNode claims = output.path("claims");
+        if (!(claims instanceof ArrayNode array)) {
+            return 0;
+        }
+        int originalSize = array.size();
+        ArrayNode retained = objectMapper.createArrayNode();
+        for (JsonNode claim : array) {
+            List<String> paths = new ArrayList<>();
+            claim.path("contentPaths").forEach(path ->
+                    paths.add(path.asText("")));
+            boolean exclusivelyProjectedInlineNarrative = !paths.isEmpty()
+                    && paths.stream().allMatch(this::isInlineNarrativePath);
+            if (!exclusivelyProjectedInlineNarrative) {
+                retained.add(claim);
+            }
+        }
+        array.removeAll();
+        array.addAll(retained);
+        return originalSize - array.size();
+    }
+
+    private boolean isInlineNarrativePath(String path) {
+        return "/cv/title".equals(path)
+                || "/cv/personalSummary".equals(path)
+                || path.matches(
+                        "^/cv/coreSkills/[0-9]+/(?:name|evidence)$")
+                || path.matches(
+                        "^/cv/workHistory/[0-9]+/(?:responsibilities/[0-9]+|highlights(?:/[0-9]+)?)$")
+                || path.matches(
+                        "^/cv/projects/[0-9]+/highlights/[0-9]+$")
+                || path.matches(
+                        "^/cv/qualifications/[0-9]+/description$");
     }
 
     String parserVersion(JsonNode schema) {
@@ -276,6 +463,13 @@ public class LlmResponseParser {
         return usesDeterministicCoreSkillProjection(schema)
                 ? CORE_SKILL_PROJECTION_PARSER_VERSION
                 : DEDICATED_CANONICAL_PARSER_VERSION;
+    }
+
+    private boolean usesTailoredSummaryQualityPolicy(JsonNode schema) {
+        return schema.at(
+                        "/properties/cv/properties/personalSummary/pattern")
+                .asText("")
+                .contains("{40,1200}");
     }
 
     String claimPolicyVersion(JsonNode schema) {
@@ -456,6 +650,11 @@ public class LlmResponseParser {
             boolean attempted,
             int duplicateItemsRemoved,
             boolean succeeded) {
+    }
+
+    private record ParsedProviderJson(
+            JsonNode output,
+            int exactDuplicateFieldsRemoved) {
     }
 
     private void mergeDuplicateNarrativeEvidence(

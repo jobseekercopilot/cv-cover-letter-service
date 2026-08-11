@@ -3257,7 +3257,8 @@ public class ClaimEvidenceValidator {
                     || factType(
                             record,
                             "RESULT",
-                            "RESULT_OR_STATUS");
+                            "RESULT_OR_STATUS",
+                            "ACHIEVEMENTS");
         }
         if (path.matches("/cv/qualifications/\\d+/dateAchieved")) {
             return record -> suffix(".DATE_ACHIEVED").test(record)
