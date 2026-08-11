@@ -101,6 +101,20 @@ curl --fail-with-body \
   "${CV_SERVICE_URL}/internal/v1/cv-cover-letter/rejected-generations/${OPERATION_ID}/replay"
 ```
 
+For a response captured from an explicitly selected draft, supply the original
+`SelectedDraftGenerationRequest` and the matching `CV` or `COVER_LETTER`
+selector:
+
+```bash
+curl --fail-with-body \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -H "X-Operator-Token: ${REJECTED_GENERATION_OPERATOR_TOKEN}" \
+  -H "X-Document-Owner: ${DOCUMENT_OWNER}" \
+  --data-binary @protected-selected-generation-request.json \
+  "${CV_SERVICE_URL}/internal/v1/cv-cover-letter/rejected-generations/${OPERATION_ID}/replay/${OUTPUT_TYPE}"
+```
+
 The service rebuilds the recorded approved prompt release. A request, evidence,
 schema, bundle, or owner mismatch returns `409` or `404` without exposing the
 artifact. A replay result is either `ACCEPTED` with the recovered bounded draft

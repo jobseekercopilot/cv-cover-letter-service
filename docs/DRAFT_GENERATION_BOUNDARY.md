@@ -54,12 +54,13 @@ operation ID, owner-bound, encrypted, size/count limited, and automatically
 expired. The prompt and selected evidence are not copied; only their canonical
 request digest and immutable prompt/schema provenance are retained.
 
-An operator replay supplies the original owner-bound `GenerateRequest`. The
-service rebuilds the recorded immutable prompt release, requires its canonical
-request digest to match, and runs the stored response through current
-validators and renderers. Replay reports `providerInvocationCount: 0` and has
-no Payment, Document Store, Application Tracker, approval, export, or
-publication side effect.
+An operator replay supplies the original owner-bound `GenerateRequest`, or the
+original `SelectedDraftGenerationRequest` plus its `CV` or `COVER_LETTER`
+selector. The service rebuilds the recorded immutable prompt release and the
+same output-specific schema, requires its canonical request digest to match,
+and runs the stored response through current validators and renderers. Replay
+reports `providerInvocationCount: 0` and has no Payment, Document Store,
+Application Tracker, approval, export, or publication side effect.
 
 ## Transitional endpoint
 

@@ -1,6 +1,7 @@
 package com.jobseekercopilot.cvcoverletter.controller;
 
 import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validRequest;
+import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validSelectedRequest;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -13,6 +14,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobseekercopilot.cvcoverletter.config.RejectedGenerationQuarantineProperties;
 import com.jobseekercopilot.cvcoverletter.dto.RejectedGenerationMetadataResponse;
 import com.jobseekercopilot.cvcoverletter.dto.RejectedGenerationReplayResponse;
+import com.jobseekercopilot.cvcoverletter.dto.RejectedSelectedGenerationReplayResponse;
+import com.jobseekercopilot.cvcoverletter.dto.DraftOutputType;
 import com.jobseekercopilot.cvcoverletter.exception.GlobalExceptionHandler;
 import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationDiagnostic;
 import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationQuarantineService;
@@ -141,6 +144,40 @@ class RejectedGenerationOperatorControllerTest {
                 .andExpect(jsonPath("$.providerInvocationCount").value(0));
         verify(cvCoverLetterService).replayRejectedDraft(
                 any(), any(), any());
+    }
+
+    @Test
+    void selectedReplayAcceptsTheSelectedRequestShapeAndProvesZeroProviderCalls()
+            throws Exception {
+        MockMvc mvc = mockMvc();
+        UUID operationId = UUID.randomUUID();
+        when(cvCoverLetterService.replayRejectedSelectedDraft(
+                any(), any(), any(), any())).thenReturn(
+                new RejectedSelectedGenerationReplayResponse(
+                        operationId,
+                        Instant.parse("2026-08-07T20:10:00Z"),
+                        "REJECTED",
+                        0,
+                        "3.6.2",
+                        "2.24.0",
+                        new RejectedGenerationDiagnostic(
+                                "CLAIM_EVIDENCE",
+                                "$.claims[0]",
+                                "Still rejected."),
+                        null));
+
+        mvc.perform(post(path(operationId) + "/replay/COVER_LETTER")
+                        .header("X-Operator-Token", OPERATOR_TOKEN)
+                        .header("X-Document-Owner", OWNER)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(
+                                validSelectedRequest(
+                                        DraftOutputType.COVER_LETTER))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.outcome").value("REJECTED"))
+                .andExpect(jsonPath("$.providerInvocationCount").value(0));
+        verify(cvCoverLetterService).replayRejectedSelectedDraft(
+                any(), any(), any(), any());
     }
 
     private MockMvc mockMvc() {

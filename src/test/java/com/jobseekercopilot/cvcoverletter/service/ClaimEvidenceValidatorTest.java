@@ -1615,6 +1615,30 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
+    void rejectsLiveSampleIdentityContactReferenceAndLeadershipInventions()
+            throws Exception {
+        for (String unsupported : List.of(
+                "John Doe",
+                "Contact me at invented.candidate@example.com.",
+                "Based in Manchester, M1 1AE, UK.",
+                "References available upon request.",
+                "I bring inclusive leadership to multidisciplinary teams."
+        )) {
+            ObjectNode output = validOutput();
+            ((ArrayNode) output.at("/coverLetter/bodyParagraphs"))
+                    .set(0, objectMapper.getNodeFactory().textNode(unsupported));
+
+            InvalidLlmResponseException error = assertThrows(
+                    InvalidLlmResponseException.class,
+                    () -> parse(output),
+                    unsupported);
+            assertTrue(
+                    error.getMessage().contains("absent from approved evidence"),
+                    unsupported + " => " + error.getMessage());
+        }
+    }
+
+    @Test
     void rejectsJobAdvertAsSoleEvidenceForCandidateSkill() throws Exception {
         ObjectNode output = validOutput();
         ((ObjectNode) output.path("cv")).put("personalSummary", "A reliable service developer.");
@@ -1712,6 +1736,86 @@ class ClaimEvidenceValidatorTest {
                     unsupported,
                     "candidate claim has no confirmed claimant evidence");
         }
+    }
+
+    @Test
+    void replacesOnlyAnUnsupportedFinalContributionWithCanonicalJobProse()
+            throws Exception {
+        useVersionedCatalog();
+        useSchemaFixture("cv-cover-letter-1.6.0");
+        ObjectNode output = (ObjectNode) objectMapper.readTree(
+                CvCoverLetterServiceTest.selectedCoverLetterJson());
+        ObjectNode cvOutput = (ObjectNode) objectMapper.readTree(
+                CvCoverLetterServiceTest.selectedCvJson());
+        output.set("cv", cvOutput.path("cv"));
+        output.set(
+                "personalSummaryClaim",
+                cvOutput.path("personalSummaryClaim"));
+        ((ObjectNode) output.path("cv")).put(
+                "personalSummary",
+                "Java developer focused on useful services.");
+        ((ObjectNode) output.path("personalSummaryClaim"))
+                .withArray("evidenceIds")
+                .removeAll()
+                .add(com.jobseekercopilot.cvcoverletter
+                        .GenerationInputFixtures.CV_SKILL_FACT_ID
+                        .toString());
+        ObjectNode project = ((ObjectNode) output.path("cv"))
+                .withArray("projects")
+                .addObject();
+        project.put("title", "Job Seeker Copilot");
+        project.put("role", "");
+        project.put("context", "");
+        project.put("startDate", "");
+        project.put("endDate", "");
+        project.put("description", "Built useful services.");
+        project.putArray("highlights");
+        ArrayNode coverClaims = (ArrayNode) output.path("claims");
+        for (int index = coverClaims.size() - 1; index >= 0; index--) {
+            if (coverClaims.get(index).at("/contentPaths/0").asText()
+                    .equals("/coverLetter/title")) {
+                coverClaims.remove(index);
+            }
+        }
+        ((ArrayNode) cvOutput.path("claims"))
+                .forEach(coverClaims::add);
+        ObjectNode projectClaim = coverClaims.addObject();
+        projectClaim.put("claimId", "CLAIM-004");
+        projectClaim.put("disposition", "SUPPORTED");
+        projectClaim.putArray("evidenceIds")
+                .add(com.jobseekercopilot.cvcoverletter
+                        .GenerationInputFixtures.CV_PROJECT_TITLE_FACT_ID
+                        .toString())
+                .add(com.jobseekercopilot.cvcoverletter
+                        .GenerationInputFixtures.CV_PROJECT_FACT_ID
+                        .toString());
+        projectClaim.putArray("contentPaths")
+                .add("/cv/projects/0/title")
+                .add("/cv/projects/0/description");
+        projectClaim.put("reviewText", "");
+        ArrayNode paragraphs = (ArrayNode) output.at("/coverLetter/bodyParagraphs");
+        int finalIndex = paragraphs.size() - 1;
+        String finalPath = "/coverLetter/bodyParagraphs/" + finalIndex;
+        ObjectNode finalParagraph = (ObjectNode) paragraphs.get(finalIndex);
+        finalParagraph.put(
+                "text",
+                "I would bring a reliable approach.");
+        finalParagraph.withArray("evidenceIds")
+                .removeAll()
+                .add("JOB.DESCRIPTION");
+
+        GeneratedApplicationDocuments accepted = parse(output);
+
+        assertEquals(
+                "I am keen to contribute to this role.",
+                accepted.getCoverLetter().getBodyParagraphs().get(finalIndex));
+        GeneratedClaim repaired = accepted.getClaims().stream()
+                .filter(claim -> claim.getContentPaths().equals(
+                        List.of(finalPath)))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(List.of("JOB.TITLE"), repaired.getEvidenceIds());
+        assertEquals(ClaimDisposition.SUPPORTED, repaired.getDisposition());
     }
 
     @Test
@@ -2023,6 +2127,64 @@ class ClaimEvidenceValidatorTest {
                 documents.getClaims().stream()
                         .filter(claim -> claim.getContentPaths().equals(
                                 List.of("/cv/coreSkills/1/name")))
+                        .findFirst()
+                        .orElseThrow()
+                        .getEvidenceIds());
+    }
+
+    @Test
+    void versionedProjectionRetainsOneEvidenceBackedSkillNamedByTheAdvert()
+            throws Exception {
+        var request = validVersionedRequest();
+        request.getProfile().setSkills(List.of(
+                "Java",
+                "Angular",
+                "Testing"));
+        request.getJob().setTitle("QA Automation Engineer");
+        request.getJob().setDescription(
+                "Design and maintain automated testing frameworks with the delivery team.");
+        catalog = new ClaimEvidenceCatalogFactory().create(
+                new GenerationInputNormalizer(
+                        Clock.fixed(
+                                Instant.parse("2026-07-24T13:00:00Z"),
+                                ZoneOffset.UTC))
+                        .normalize("owner-secret", request));
+        ObjectNode output = versionedOutput();
+        ArrayNode proposed = (ArrayNode) output.at("/cv/coreSkills");
+        proposed.removeAll();
+        for (String name : List.of("Java", "Angular")) {
+            ObjectNode skill = proposed.addObject();
+            skill.put("name", name);
+            skill.put("evidence", "");
+        }
+        GeneratedApplicationDocuments documents = objectMapper.treeToValue(
+                output,
+                GeneratedApplicationDocuments.class);
+
+        new ClaimEvidenceValidator().validate(
+                output,
+                documents,
+                catalog,
+                false,
+                true);
+
+        assertEquals(
+                List.of("Java", "Angular", "Testing"),
+                output.at("/cv/coreSkills").findValues("name").stream()
+                        .map(JsonNode::asText)
+                        .toList());
+        String testingEvidenceId = catalog.records().stream()
+                .filter(record -> record.source()
+                        == EvidenceSource.PROFILE_REVISION)
+                .filter(record -> record.value().equals("Testing"))
+                .map(ApprovedEvidenceRecord::evidenceId)
+                .findFirst()
+                .orElseThrow();
+        assertEquals(
+                List.of(testingEvidenceId),
+                documents.getClaims().stream()
+                        .filter(claim -> claim.getContentPaths().equals(
+                                List.of("/cv/coreSkills/2/name")))
                         .findFirst()
                         .orElseThrow()
                         .getEvidenceIds());

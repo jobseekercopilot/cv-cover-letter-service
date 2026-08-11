@@ -29,7 +29,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.21.0";
+    static final String POLICY_VERSION = "2.24.0";
     static final String CORE_SKILL_PROJECTION_POLICY_VERSION = "2.11.0";
     static final String ROLLBACK_POLICY_VERSION = "2.10.0";
     private static final int MAX_CLAIMS = 200;
@@ -59,6 +59,15 @@ public class ClaimEvidenceValidator {
                     + "|docker|kubernetes|terraform|react|angular|python|java|spring)\\b");
     private static final Pattern MOTIVATIONAL_TONE = Pattern.compile(
             "(?i)\\b(?:passionate|enthusiastic|excited|motivated|keen)\\b");
+    private static final Pattern EMAIL_ADDRESS = Pattern.compile(
+            "(?i)\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,63}\\b");
+    private static final Pattern UK_POSTCODE = Pattern.compile(
+            "(?i)\\b(?:GIR\\s?0AA|(?:[A-Z]{1,2}\\d[A-Z\\d]?|[A-Z]{2}\\d{1,2})"
+                    + "\\s?\\d[A-Z]{2})\\b");
+    private static final Pattern BIOGRAPHICAL_BOILERPLATE = Pattern.compile(
+            "(?i)\\b(?:john doe|jane doe|references? available (?:upon|on) request"
+                    + "|(?:inclusive|executive|people|strategic) leadership"
+                    + "|(?:people|programme|program|project|product|engineering) management)\\b");
     private static final Pattern CANDIDATE_FACTUAL_PROSE = Pattern.compile(
             "(?i)\\b(?:my\\s+(?:experience|background|skills|expertise|qualifications?"
                     + "|track record)|i\\s+(?:have|hold|possess|bring|offer|worked|built"
@@ -356,7 +365,6 @@ public class ClaimEvidenceValidator {
                 submittedClaims,
                 evidenceById,
                 versionedEvidence);
-
         Set<String> nonSkillExpectedPaths = claimBearingPaths(output).stream()
                 .filter(path -> !isProjectedCoreSkillPath(path))
                 .filter(path -> !isCanonicalDocumentTitlePath(path))
@@ -417,6 +425,13 @@ public class ClaimEvidenceValidator {
                         versionedEvidence,
                         remainingClaimCapacity,
                         useCanonicalProfileSkills);
+        canonicalizeUnsupportedPersonalSummaryNumerics(
+                output,
+                documents,
+                claims,
+                evidenceById,
+                projectedCoreSkillEvidenceByPath,
+                versionedEvidence);
         Set<String> expectedPaths = claimBearingPaths(output);
         claims = addExactCoverageClaims(
                 output,
@@ -432,6 +447,12 @@ public class ClaimEvidenceValidator {
                 true,
                 true);
         claims = normalizeDuplicateClaimIds(claims);
+        canonicalizeUnsupportedFinalContribution(
+                output,
+                documents,
+                claims,
+                evidenceById,
+                versionedEvidence);
         documents.setClaims(claims);
         validateFinalClaimLedger(
                 output,
@@ -440,6 +461,151 @@ public class ClaimEvidenceValidator {
                 evidenceById,
                 versionedEvidence,
                 enforceCanonicalApplicationBookends);
+    }
+
+    private void canonicalizeUnsupportedFinalContribution(
+            JsonNode output,
+            GeneratedApplicationDocuments documents,
+            List<GeneratedClaim> claims,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            boolean versionedEvidence
+    ) {
+        if (!versionedEvidence
+                || documents.getCoverLetter() == null
+                || documents.getCoverLetter().getBodyParagraphs() == null
+                || !(output.at(BODY_PARAGRAPHS_PATH)
+                        instanceof ArrayNode paragraphs)
+                || paragraphs.isEmpty()) {
+            return;
+        }
+        int finalIndex = paragraphs.size() - 1;
+        String path = BODY_PARAGRAPHS_PATH + "/" + finalIndex;
+        List<GeneratedClaim> matchingClaims = claims.stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(candidate -> safe(candidate.getContentPaths())
+                        .contains(path))
+                .toList();
+        if (matchingClaims.isEmpty()) {
+            return;
+        }
+        String current = paragraphs.get(finalIndex).asText("");
+        String jobTitle = exactEvidenceValue(
+                evidenceById,
+                JOB_TITLE_EVIDENCE_ID);
+        if (!StringUtils.hasText(jobTitle)) {
+            return;
+        }
+        boolean repaired = false;
+        for (GeneratedClaim claim : matchingClaims) {
+            List<ApprovedEvidenceRecord> evidence = safe(
+                    claim.getEvidenceIds()).stream()
+                    .flatMap(id -> evidenceById.getOrDefault(
+                            id,
+                            List.of()).stream())
+                    .toList();
+            if (evidence.stream().anyMatch(record -> candidateEvidence(
+                            record.source()))
+                    || isNonFactualMotivationalCoverLetterProse(
+                            path,
+                            current,
+                            evidence)) {
+                continue;
+            }
+            claim.setDisposition(ClaimDisposition.SUPPORTED);
+            claim.setEvidenceIds(List.of(JOB_TITLE_EVIDENCE_ID));
+            claim.setReviewText("");
+            repaired = true;
+        }
+        if (!repaired) {
+            return;
+        }
+        String canonical = "I am keen to contribute to this role.";
+        paragraphs.set(
+                finalIndex,
+                paragraphs.textNode(canonical));
+        documents.getCoverLetter().getBodyParagraphs().set(
+                finalIndex,
+                canonical);
+    }
+
+    private void canonicalizeUnsupportedPersonalSummaryNumerics(
+            JsonNode output,
+            GeneratedApplicationDocuments documents,
+            List<GeneratedClaim> claims,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            Map<String, String> projectedCoreSkillEvidenceByPath,
+            boolean versionedEvidence
+    ) {
+        String path = "/cv/personalSummary";
+        JsonNode summaryNode = output.at(path);
+        if (!versionedEvidence
+                || documents.getCv() == null
+                || !summaryNode.isTextual()
+                || !NUMERIC_CLAIM.matcher(summaryNode.textValue()).find()) {
+            return;
+        }
+        List<GeneratedClaim> matchingClaims = claims.stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(candidate -> safe(candidate.getContentPaths())
+                        .contains(path))
+                .toList();
+        if (matchingClaims.isEmpty()) {
+            return;
+        }
+        String evidenceText = matchingClaims.stream()
+                .flatMap(claim -> safe(claim.getEvidenceIds()).stream())
+                .flatMap(id -> evidenceById.getOrDefault(id, List.of()).stream())
+                .map(ApprovedEvidenceRecord::value)
+                .filter(StringUtils::hasText)
+                .map(this::normalise)
+                .distinct()
+                .collect(java.util.stream.Collectors.joining(" "));
+        if (!hasUnsupportedMatch(
+                NUMERIC_CLAIM.matcher(summaryNode.textValue()),
+                evidenceText)) {
+            return;
+        }
+        ApprovedEvidenceRecord skill = projectedCoreSkillEvidenceByPath.values()
+                .stream()
+                .distinct()
+                .flatMap(id -> evidenceById.getOrDefault(id, List.of()).stream())
+                .filter(record -> candidateEvidence(record.source()))
+                .filter(record -> "DEMONSTRATED_SKILL".equals(
+                        record.factType()))
+                .filter(record -> StringUtils.hasText(record.value()))
+                .filter(record -> !NUMERIC_CLAIM.matcher(record.value()).find())
+                .findFirst()
+                .orElse(null);
+        if (skill == null) {
+            return;
+        }
+        String canonical = "Profile-backed skills include "
+                + skill.value().trim()
+                + ".";
+        replaceText(output, path, canonical);
+        documents.getCv().setPersonalSummary(canonical);
+        for (GeneratedClaim claim : matchingClaims) {
+            claim.setDisposition(ClaimDisposition.SUPPORTED);
+            claim.setEvidenceIds(List.of(skill.evidenceId()));
+            claim.setReviewText("");
+        }
+    }
+
+    private boolean hasUnsupportedMatch(
+            Matcher matcher,
+            String evidenceText
+    ) {
+        while (matcher.find()) {
+            String matched = normalise(matcher.group());
+            Pattern supported = Pattern.compile(
+                    "(?<![\\p{L}\\p{N}])"
+                            + Pattern.quote(matched)
+                            + "(?![\\p{L}\\p{N}])");
+            if (!supported.matcher(evidenceText).find()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void validateFinalClaimLedger(
@@ -573,6 +739,13 @@ public class ClaimEvidenceValidator {
                     selected.add(available);
                 }
             }
+        } else {
+            ensureJobRelevantCoreSkill(
+                    records,
+                    availableByNormalisedValue,
+                    selected,
+                    selectedValues,
+                    projectionLimit);
         }
 
         coreSkillArray.removeAll();
@@ -588,6 +761,62 @@ public class ClaimEvidenceValidator {
                     skill.evidenceId());
         }
         return evidenceByProjectedPath;
+    }
+
+    private void ensureJobRelevantCoreSkill(
+            List<ApprovedEvidenceRecord> records,
+            Map<String, ApprovedEvidenceRecord> availableByNormalisedValue,
+            List<ApprovedEvidenceRecord> selected,
+            Set<String> selectedValues,
+            int projectionLimit
+    ) {
+        if (projectionLimit == 0 || availableByNormalisedValue.isEmpty()) {
+            return;
+        }
+        String jobContext = records.stream()
+                .filter(record -> record.source() == EvidenceSource.JOB)
+                .filter(record -> "/job/title".equals(record.sourcePath())
+                        || "/job/description".equals(record.sourcePath()))
+                .map(ApprovedEvidenceRecord::value)
+                .filter(StringUtils::hasText)
+                .map(this::normalise)
+                .collect(java.util.stream.Collectors.joining(" "));
+        if (!StringUtils.hasText(jobContext)) {
+            return;
+        }
+        List<ApprovedEvidenceRecord> relevant =
+                availableByNormalisedValue.values().stream()
+                        .filter(record -> containsWholeTerm(
+                                jobContext,
+                                normalise(record.value())))
+                        .toList();
+        if (relevant.isEmpty()
+                || selected.stream().anyMatch(relevant::contains)) {
+            return;
+        }
+        ApprovedEvidenceRecord required = relevant.get(0);
+        String requiredValue = normalise(required.value());
+        if (selectedValues.contains(requiredValue)) {
+            return;
+        }
+        if (selected.size() >= projectionLimit) {
+            ApprovedEvidenceRecord removed = selected.remove(selected.size() - 1);
+            selectedValues.remove(normalise(removed.value()));
+        }
+        selected.add(required);
+        selectedValues.add(requiredValue);
+    }
+
+    private boolean containsWholeTerm(String text, String term) {
+        if (!StringUtils.hasText(text) || !StringUtils.hasText(term)) {
+            return false;
+        }
+        return Pattern.compile(
+                        "(?<![\\p{L}\\p{N}])"
+                                + Pattern.quote(term)
+                                + "(?![\\p{L}\\p{N}])")
+                .matcher(text)
+                .find();
     }
 
     private boolean isProjectedCoreSkillPath(String path) {
@@ -2866,6 +3095,24 @@ public class ClaimEvidenceValidator {
                 evidenceText,
                 claimPath,
                 "sensitive or specific claim is absent from approved evidence at "
+                        + contentPath);
+        requireMatchesAreSupported(
+                EMAIL_ADDRESS.matcher(content),
+                evidenceText,
+                claimPath,
+                "contact claim is absent from approved evidence at "
+                        + contentPath);
+        requireMatchesAreSupported(
+                UK_POSTCODE.matcher(content),
+                evidenceText,
+                claimPath,
+                "location claim is absent from approved evidence at "
+                        + contentPath);
+        requireMatchesAreSupported(
+                BIOGRAPHICAL_BOILERPLATE.matcher(content),
+                evidenceText,
+                claimPath,
+                "identity or biographical claim is absent from approved evidence at "
                         + contentPath);
         if (!contentPath.startsWith("/coverLetter/")) {
             requireMatchesAreSupported(

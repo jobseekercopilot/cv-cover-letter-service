@@ -15,6 +15,7 @@ import com.jobseekercopilot.cvcoverletter.dto.GenerateCvCoverLetterResponse;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateRequest;
 import com.jobseekercopilot.cvcoverletter.dto.PromptGenerationMetadata;
 import com.jobseekercopilot.cvcoverletter.dto.RejectedGenerationReplayResponse;
+import com.jobseekercopilot.cvcoverletter.dto.RejectedSelectedGenerationReplayResponse;
 import com.jobseekercopilot.cvcoverletter.dto.SelectedDraftGenerationResponse;
 import com.jobseekercopilot.cvcoverletter.exception.DownstreamServiceException;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidLlmResponseException;
@@ -143,7 +144,7 @@ class CvCoverLetterServiceTest {
         assertEquals("1.0", actual.inputSchemaVersion());
         assertEquals(10, actual.claimLedger().claims().size());
         assertEquals(64, actual.claimLedger().ledgerSha256().length());
-        assertEquals("2.21.0", actual.claimLedger().policyVersion());
+        assertEquals("2.24.0", actual.claimLedger().policyVersion());
         assertEquals("3.5.2", actual.claimLedger().parserVersion());
         verify(llmGatewayApi).generateV2(any());
         verifyNoInteractions(
@@ -189,6 +190,7 @@ class CvCoverLetterServiceTest {
         assertEquals(operationId, result.operationId());
         assertEquals(outputType, result.outputType());
         assertEquals("2.0", result.inputSchemaVersion());
+        assertEquals("2.24.0", result.claimLedger().policyVersion());
         assertEquals(
                 outputType == DraftOutputType.CV
                         ? "Java Developer CV"
@@ -210,6 +212,54 @@ class CvCoverLetterServiceTest {
         return Stream.of(
                 DraftOutputType.CV,
                 DraftOutputType.COVER_LETTER);
+    }
+
+    @Test
+    void selectedCvReplacesAnUnsupportedNumericSummaryWithProfileBackedSkillProse()
+            throws Exception {
+        DraftOutputType outputType = DraftOutputType.CV;
+        var selectedRequest = validSelectedRequest(outputType);
+        selectedRequest.getEvidenceSnapshot().setSectionOrder(
+                List.of(EvidenceCategory.OTHER));
+        selectedRequest.getEvidenceSnapshot().getSelections().get(0)
+                .setCategory(EvidenceCategory.OTHER);
+        var selectedInput = new GenerationInputNormalizer()
+                .normalizeSelected("user-123", outputType, selectedRequest);
+        CvCoverLetterPrompt selectedPrompt = selectedPrompt(
+                selectedInput, outputType);
+        when(inputNormalizer.normalizeSelected(
+                "user-123", outputType, selectedRequest))
+                .thenReturn(selectedInput);
+        when(promptBuilderService.buildPrompt(selectedInput, outputType))
+                .thenReturn(selectedPrompt);
+        String unsupported = selectedCvJson().replace(
+                "\"personalSummary\": \"Built useful services.\"",
+                "\"personalSummary\": \"Built useful services across 12 production releases.\"");
+        when(llmGatewayApi.generateV2(any())).thenReturn(
+                successfulResponse(unsupported)
+                        .schemaId(selectedPrompt.getGenerationMetadata().schemaId())
+                        .schemaVersion(
+                                selectedPrompt.getGenerationMetadata()
+                                        .schemaVersion()));
+
+        SelectedDraftGenerationResponse result = service.generateSelectedDraft(
+                "user-123",
+                UUID.randomUUID(),
+                outputType,
+                selectedRequest);
+
+        org.junit.jupiter.api.Assertions.assertTrue(
+                result.content().contains(
+                        "Profile-backed skills include Java."));
+        assertEquals(
+                List.of(com.jobseekercopilot.cvcoverletter
+                        .GenerationInputFixtures.CV_SKILL_FACT_ID.toString()),
+                result.claimLedger().claims().stream()
+                        .filter(claim -> claim.contentPaths().equals(
+                                List.of("/cv/personalSummary")))
+                        .findFirst()
+                        .orElseThrow()
+                        .evidenceIds());
     }
 
     @Test
@@ -389,6 +439,59 @@ class CvCoverLetterServiceTest {
         assertEquals(
                 "$.cv.coreSkills[0].evidence",
                 result.diagnostic().path());
+        verifyNoInteractions(
+                llmGatewayApi,
+                paymentBillingClient,
+                documentStoreApi,
+                applicationTrackerApi);
+    }
+
+    @Test
+    void acceptedSelectedReplayUsesTheOriginalOutputContractWithoutCallingAnyProvider()
+            throws Exception {
+        UUID operationId = UUID.randomUUID();
+        DraftOutputType outputType = DraftOutputType.COVER_LETTER;
+        var selectedRequest = validSelectedRequest(outputType);
+        var selectedInput = new GenerationInputNormalizer()
+                .normalizeSelected("user-123", outputType, selectedRequest);
+        CvCoverLetterPrompt selectedPrompt = selectedPrompt(
+                selectedInput, outputType);
+        GenerationResponse captured = successfulResponse(
+                        selectedCoverLetterJson())
+                .schemaId(selectedPrompt.getGenerationMetadata().schemaId())
+                .schemaVersion(
+                        selectedPrompt.getGenerationMetadata().schemaVersion());
+        RejectedGenerationArtifact artifact = rejectedArtifact(operationId);
+        when(quarantineService.load("user-123", operationId)).thenReturn(
+                new RejectedGenerationQuarantineService.LoadedRejectedGeneration(
+                        artifact,
+                        captured));
+        when(inputNormalizer.normalizeSelected(
+                "user-123", outputType, selectedRequest))
+                .thenReturn(selectedInput);
+        when(promptBuilderService.buildPrompt(
+                selectedInput,
+                artifact.promptReleaseId(),
+                outputType)).thenReturn(selectedPrompt);
+        when(quarantineService.recordReplay(
+                any(), any(), any(), any(), any(), any(), isNull()))
+                .thenReturn(replayEvent(2, "ACCEPTED", null));
+
+        RejectedSelectedGenerationReplayResponse result =
+                service.replayRejectedSelectedDraft(
+                        "user-123",
+                        operationId,
+                        outputType,
+                        selectedRequest);
+
+        assertEquals("ACCEPTED", result.outcome());
+        assertEquals(0, result.providerInvocationCount());
+        assertEquals(outputType, result.draft().outputType());
+        assertEquals(
+                "Java Developer Cover Letter",
+                result.draft().title());
+        verify(quarantineService).requireMatchingReplayContext(
+                any(), any(), any());
         verifyNoInteractions(
                 llmGatewayApi,
                 paymentBillingClient,
@@ -891,7 +994,7 @@ class CvCoverLetterServiceTest {
                 .buildPrompt(input, outputType);
     }
 
-    private static String selectedCvJson() {
+    static String selectedCvJson() {
         return """
                 {
                   "cv": {
@@ -928,7 +1031,7 @@ class CvCoverLetterServiceTest {
                 """;
     }
 
-    private static String selectedCoverLetterJson() {
+    static String selectedCoverLetterJson() {
         return """
                 {
                   "coverLetter": {

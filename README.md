@@ -84,15 +84,23 @@ Prompt bundle `cv-cover-letter-1.6.0`, output schema `4.0.0`, evaluation policy
 `1.6.0` and parser `3.6.2` render projects as projects, keep paid employment
 separate, select at most 12 exact job-relevant CV skills without a minimum or
 quota, omit unsupported empty sections, and use the correct UK generic
-greeting/sign-off pair. Claim policy `2.21.0` and post-grounding quality policy
+greeting/sign-off pair. Claim policy `2.24.0` and post-grounding quality policy
 `1.5.0` reject unsupported skills, literal cover-letter skill lists, duplicate
 narrative, duplicate CV qualification records, misplaced selected evidence and
 project fields assembled from different evidence entries. Schema `4.0.0` requires
 evidence beside every project highlight, work responsibility and cover-letter
 body paragraph; parser `3.6.2` projects each item into its own public-ledger
 claim so one paragraph cannot crowd out another paragraph's required evidence.
-Claim policy `2.21.0` prioritises approved facts required by specific terms
-before optional provider references, so their provenance cannot be omitted.
+Claim policy `2.24.0` prioritises approved facts required by specific terms
+before optional provider references, so their provenance cannot be omitted. It
+also retains at least one exact, profile-backed core skill named by the target
+job when one exists, even if the model proposes only less relevant skills. An
+unsupported final contribution paragraph is replaced only with server-owned,
+job-title-evidenced generic motivational prose; unsupported earlier evidence
+paragraphs still reject the complete response. A versioned CV summary whose
+numeric claim is absent from its cited evidence is replaced only when an exact
+demonstrated skill is already selected for deterministic projection; the
+replacement names that profile-backed skill and removes the unsupported number.
 Release `1.5.1` requires an explicit complete
 claim-path audit for every non-empty final field, including generic narrative
 and dynamic array indexes. Release `1.5.2` narrows the provider output ledger
