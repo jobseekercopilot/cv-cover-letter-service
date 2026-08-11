@@ -25,6 +25,7 @@ import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput;
 import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationQuarantineService;
 import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationArtifact;
 import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationCaptureContext;
+import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationDiagnostic;
 import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationReplayAuditEvent;
 import com.jobseekercopilot.generated.applicationtrackerservice.api.ApplicationRecordsApi;
 import com.jobseekercopilot.generated.applicationtrackerservice.model.ApplicationRecordResponse;
@@ -265,6 +266,53 @@ class CvCoverLetterServiceTest {
                         .findFirst()
                         .orElseThrow()
                         .evidenceIds());
+    }
+
+    @Test
+    void selectedCvFallbackRecordsContentFreeRejectionCategory()
+            throws Exception {
+        DraftOutputType outputType = DraftOutputType.CV;
+        var selectedRequest = validSelectedRequest(outputType);
+        selectedRequest.getEvidenceSnapshot().setSectionOrder(
+                List.of(EvidenceCategory.OTHER));
+        selectedRequest.getEvidenceSnapshot().getSelections().get(0)
+                .setCategory(EvidenceCategory.OTHER);
+        var selectedInput = new GenerationInputNormalizer()
+                .normalizeSelected("user-123", outputType, selectedRequest);
+        CvCoverLetterPrompt selectedPrompt = selectedPrompt(
+                selectedInput, outputType);
+        when(inputNormalizer.normalizeSelected(
+                "user-123", outputType, selectedRequest))
+                .thenReturn(selectedInput);
+        when(promptBuilderService.buildPrompt(selectedInput, outputType))
+                .thenReturn(selectedPrompt);
+        String unsupported = selectedCvJson().replace(
+                "80000000-0000-4000-8000-000000000002",
+                "90000000-0000-4000-8000-000000000099");
+        when(llmGatewayApi.generateV2(any())).thenReturn(
+                successfulResponse(unsupported)
+                        .schemaId(selectedPrompt.getGenerationMetadata().schemaId())
+                        .schemaVersion(
+                                selectedPrompt.getGenerationMetadata()
+                                        .schemaVersion()));
+        when(quarantineService.diagnostic(any()))
+                .thenReturn(new RejectedGenerationDiagnostic(
+                        "CLAIM_EVIDENCE",
+                        "$.claims[0].evidenceIds",
+                        "claim is absent from approved evidence"));
+
+        SelectedDraftGenerationResponse result = service.generateSelectedDraft(
+                "user-123",
+                UUID.randomUUID(),
+                outputType,
+                selectedRequest);
+
+        assertTrue(result.recovery().fallbackUsed());
+        assertEquals(
+                "MODEL_OUTPUT_REJECTED_CLAIM_EVIDENCE",
+                result.recovery().fallbackReason());
+        assertEquals(0L, result.billableTokens());
+        verify(llmGatewayApi, times(1)).generateV2(any());
     }
 
     @Test

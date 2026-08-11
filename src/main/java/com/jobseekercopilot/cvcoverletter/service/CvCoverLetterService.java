@@ -207,7 +207,8 @@ public class CvCoverLetterService {
                         operationId,
                         prepared,
                         llmResponse,
-                        "MODEL_OUTPUT_REJECTED",
+                        rejectionFallbackReason(
+                                "MODEL_OUTPUT_REJECTED", rejection),
                         false);
             }
             throw rejection;
@@ -409,8 +410,10 @@ public class CvCoverLetterService {
                         audit.getEstimatedInputTokensAtAdmission(),
                         audit.getEstimatedCostMicroUsd(),
                         audit.getCurrency(),
-                        audit.getProviderAttemptCount(),
-                        audit.getAutomaticRetryCount(),
+                        audit.getProviderAttemptCount() == null
+                                ? 0 : audit.getProviderAttemptCount(),
+                        audit.getAutomaticRetryCount() == null
+                                ? 0 : audit.getAutomaticRetryCount(),
                         audit.getRetryReason()),
                 usage == null || usage.getTotalTokens() == null
                         ? 0
@@ -492,8 +495,10 @@ public class CvCoverLetterService {
                         audit == null ? null : audit.getEstimatedInputTokensAtAdmission(),
                         audit == null ? null : audit.getEstimatedCostMicroUsd(),
                         audit == null ? null : audit.getCurrency(),
-                        audit == null ? 0 : audit.getProviderAttemptCount(),
-                        audit == null ? 0 : audit.getAutomaticRetryCount(),
+                        audit == null || audit.getProviderAttemptCount() == null
+                                ? 0 : audit.getProviderAttemptCount(),
+                        audit == null || audit.getAutomaticRetryCount() == null
+                                ? 0 : audit.getAutomaticRetryCount(),
                         audit == null ? null : audit.getRetryReason()),
                 0,
                 new DraftRecoveryMetadata(
@@ -614,7 +619,9 @@ public class CvCoverLetterService {
                                 operationId,
                                 prepared,
                                 loaded.response(),
-                                "RETAINED_MODEL_OUTPUT_REJECTED",
+                                rejectionFallbackReason(
+                                        "RETAINED_MODEL_OUTPUT_REJECTED",
+                                        rejection),
                                 true);
                 var replayEvent = quarantineService.recordReplay(
                         ownerId,
@@ -711,6 +718,17 @@ public class CvCoverLetterService {
         }
     }
 
+    private String rejectionFallbackReason(
+            String prefix,
+            InvalidLlmResponseException rejection) {
+        RejectedGenerationDiagnostic diagnostic =
+                quarantineService.diagnostic(rejection);
+        if (diagnostic == null || !StringUtils.hasText(diagnostic.phase())) {
+            return prefix + "_UNKNOWN";
+        }
+        return prefix + "_" + diagnostic.phase();
+    }
+
     private DraftGenerationResponse draftResponse(
             UUID operationId,
             PreparedGeneration prepared,
@@ -745,8 +763,10 @@ public class CvCoverLetterService {
                         audit.getEstimatedInputTokensAtAdmission(),
                         audit.getEstimatedCostMicroUsd(),
                         audit.getCurrency(),
-                        audit.getProviderAttemptCount(),
-                        audit.getAutomaticRetryCount(),
+                        audit.getProviderAttemptCount() == null
+                                ? 0 : audit.getProviderAttemptCount(),
+                        audit.getAutomaticRetryCount() == null
+                                ? 0 : audit.getAutomaticRetryCount(),
                         audit.getRetryReason()));
     }
 
