@@ -136,11 +136,11 @@ public class GeneratedDocumentQualityValidator {
             GeneratedCv.CoreSkill skill = skills.get(index);
             require(skill != null && StringUtils.hasText(skill.getName()),
                     "$.cv.coreSkills[" + index + "]", "skill name is missing");
-            require(uniqueNames.add(normalise(skill.getName())),
+            require(uniqueNames.add(normaliseNarrative(skill.getName())),
                     "$.cv.coreSkills[" + index + "].name",
                     "duplicate normalised skill");
             if (StringUtils.hasText(skill.getEvidence())) {
-                require(uniqueEvidence.add(normalise(skill.getEvidence())),
+                require(uniqueEvidence.add(normaliseNarrative(skill.getEvidence())),
                         "$.cv.coreSkills[" + index + "].evidence",
                         "repeated skill evidence");
             }
@@ -166,7 +166,7 @@ public class GeneratedDocumentQualityValidator {
                 documentPath, "document is malformed");
         Map<String, String> firstPathByText = new HashMap<>();
         for (TextUnit unit : units) {
-            String normalized = normalise(unit.text());
+            String normalized = normaliseNarrative(unit.text());
             if (normalized.isEmpty()) {
                 continue;
             }
@@ -214,7 +214,7 @@ public class GeneratedDocumentQualityValidator {
             String date = StringUtils.hasText(qualification.getDateAchieved())
                     ? qualification.getDateAchieved()
                     : qualification.getExpectedCompletion();
-            String key = normalise(
+            String key = normaliseNarrative(
                     qualification.getQualificationName()
                             + "|"
                             + qualification.getIssuingBody()
@@ -555,10 +555,10 @@ public class GeneratedDocumentQualityValidator {
     }
 
     private boolean equalText(String left, String right) {
-        return normalise(left).equals(normalise(right));
+        return normaliseNarrative(left).equals(normaliseNarrative(right));
     }
 
-    private String normalise(String value) {
+    static String normaliseNarrative(String value) {
         return value == null
                 ? ""
                 : Normalizer.normalize(value, Normalizer.Form.NFKC)

@@ -8,7 +8,7 @@ class LlmPropertiesTest {
 
     @Test
     void defaultsDocumentGenerationToTheGatewayOutputCeiling() {
-        assertEquals(8192, new LlmProperties().getMaxTokens());
+        assertEquals(16384, new LlmProperties().getMaxTokens());
         assertEquals(0.0, new LlmProperties().getTemperature());
     }
 }

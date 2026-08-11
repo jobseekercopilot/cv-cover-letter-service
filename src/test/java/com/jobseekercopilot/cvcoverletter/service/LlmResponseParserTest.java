@@ -112,7 +112,7 @@ class LlmResponseParserTest {
         assertEquals(120, detailedSchema.at("/properties/claims/maxItems").asInt());
         assertTrue(LlmResponseParser.MAX_FALLBACK_ARRAY_ITEMS
                 >= detailedSchema.at("/properties/claims/maxItems").asInt() * 2);
-        assertEquals("3.6.2", parser.parserVersion(detailedSchema));
+        assertEquals("3.6.3", parser.parserVersion(detailedSchema));
         assertEquals("2.24.0", parser.claimPolicyVersion(detailedSchema));
     }
 
@@ -134,7 +134,7 @@ class LlmResponseParserTest {
                 objectMapper.writeValueAsString(output),
                 inlineNarrativeSchema);
 
-        assertEquals("3.6.2", parser.parserVersion(inlineNarrativeSchema));
+        assertEquals("3.6.3", parser.parserVersion(inlineNarrativeSchema));
         assertEquals("2.24.0", parser.claimPolicyVersion(inlineNarrativeSchema));
         assertEquals(
                 List.of("Delivered a reliable service."),
@@ -179,6 +179,36 @@ class LlmResponseParserTest {
 
         assertTrue(error.getMessage().contains(
                 "$.coverLetter.bodyParagraphs[1].evidenceIds"));
+    }
+
+    @Test
+    void collapsesExactDuplicateBulletsInsideOneNarrativeList()
+            throws Exception {
+        JsonNode output = inlineNarrativeOutput();
+        ArrayNode highlights = (ArrayNode) output.at(
+                "/cv/projects/0/highlights");
+        ObjectNode duplicate = highlights.get(0).deepCopy();
+        duplicate.put("disposition", "SUPPORTED");
+        ((ArrayNode) duplicate.path("evidenceIds"))
+                .removeAll()
+                .add("PROFILE.SKILL.2");
+        highlights.add(duplicate);
+
+        GeneratedApplicationDocuments result = parser.parse(
+                objectMapper.writeValueAsString(output),
+                inlineNarrativeSchema);
+
+        assertEquals(
+                List.of("Delivered a reliable service."),
+                result.getCv().getProjects().get(0).getHighlights());
+        assertEquals(
+                List.of("PROFILE.SKILL.1", "PROFILE.SKILL.2"),
+                claimFor(result, "/cv/projects/0/highlights/0")
+                        .getEvidenceIds());
+        assertEquals(
+                "REWORDED",
+                claimFor(result, "/cv/projects/0/highlights/0")
+                        .getDisposition().name());
     }
 
     @Test

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jobseekercopilot.cvcoverletter.dto.ClaimDisposition;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedApplicationDocuments;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedClaim;
@@ -17,6 +18,7 @@ import com.jobseekercopilot.cvcoverletter.model.ClaimEvidenceCatalog;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -28,7 +30,7 @@ import org.springframework.web.util.HtmlUtils;
 @Component
 public class LlmResponseParser {
 
-    static final String PARSER_VERSION = "3.6.2";
+    static final String PARSER_VERSION = "3.6.3";
     static final String DEDICATED_PERSONAL_SUMMARY_PARSER_VERSION = "3.5.2";
     static final String CORE_SKILL_PROJECTION_PARSER_VERSION = "3.4.0";
     static final String DEDICATED_CANONICAL_PARSER_VERSION = "3.3.0";
@@ -171,6 +173,12 @@ public class LlmResponseParser {
             }
             validateSchema(providerOutput, schema, "$");
             validatePlainText(providerOutput, "$");
+            if (usesInlineNarrativeEvidence) {
+                deduplicateInlineNarrativeArrays(providerOutput);
+                // The repair is deliberately narrow, but the repaired provider
+                // object must still satisfy the exact reviewed schema.
+                validateSchema(providerOutput, schema, "$");
+            }
             JsonNode output = usesInlineNarrativeEvidence
                     ? providerOutput.deepCopy()
                     : providerOutput;
@@ -365,6 +373,69 @@ public class LlmResponseParser {
                 coverLetterItems,
                 nextClaimNumber);
         return List.copyOf(claims);
+    }
+
+    private void deduplicateInlineNarrativeArrays(JsonNode output) {
+        JsonNode projects = output.at("/cv/projects");
+        for (int projectIndex = 0;
+                projectIndex < projects.size();
+                projectIndex++) {
+            deduplicateInlineNarrativeArray(output.at(
+                    "/cv/projects/" + projectIndex + "/highlights"));
+        }
+        JsonNode workHistory = output.at("/cv/workHistory");
+        for (int workIndex = 0;
+                workIndex < workHistory.size();
+                workIndex++) {
+            deduplicateInlineNarrativeArray(output.at(
+                    "/cv/workHistory/" + workIndex + "/responsibilities"));
+        }
+        deduplicateInlineNarrativeArray(
+                output.at("/coverLetter/bodyParagraphs"));
+    }
+
+    private void deduplicateInlineNarrativeArray(JsonNode value) {
+        if (!(value instanceof ArrayNode array)) {
+            return;
+        }
+        LinkedHashMap<String, ObjectNode> firstByText = new LinkedHashMap<>();
+        ArrayNode deduplicated = objectMapper.createArrayNode();
+        for (JsonNode item : array) {
+            if (!(item instanceof ObjectNode objectItem)
+                    || !item.path("text").isTextual()) {
+                deduplicated.add(item);
+                continue;
+            }
+            String normalized = GeneratedDocumentQualityValidator
+                    .normaliseNarrative(item.path("text").asText());
+            ObjectNode first = firstByText.putIfAbsent(
+                    normalized, objectItem);
+            if (first == null) {
+                deduplicated.add(item);
+            } else {
+                mergeDuplicateNarrativeEvidence(first, objectItem);
+            }
+        }
+        array.removeAll();
+        array.addAll(deduplicated);
+    }
+
+    private void mergeDuplicateNarrativeEvidence(
+            ObjectNode first,
+            ObjectNode duplicate
+    ) {
+        LinkedHashSet<String> evidenceIds = new LinkedHashSet<>();
+        first.path("evidenceIds").forEach(
+                evidenceId -> evidenceIds.add(evidenceId.asText()));
+        duplicate.path("evidenceIds").forEach(
+                evidenceId -> evidenceIds.add(evidenceId.asText()));
+        ArrayNode mergedEvidence = first.putArray("evidenceIds");
+        evidenceIds.forEach(mergedEvidence::add);
+        if ("REWORDED".equals(first.path("disposition").asText())
+                || "REWORDED".equals(
+                        duplicate.path("disposition").asText())) {
+            first.put("disposition", "REWORDED");
+        }
     }
 
     private void projectNarrativeArray(
