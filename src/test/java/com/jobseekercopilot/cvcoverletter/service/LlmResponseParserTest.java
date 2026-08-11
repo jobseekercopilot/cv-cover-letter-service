@@ -130,9 +130,10 @@ class LlmResponseParserTest {
     void projectsEveryInlineNarrativeItemIntoBoundedClaims() throws Exception {
         JsonNode output = inlineNarrativeOutput();
 
-        GeneratedApplicationDocuments result = parser.parse(
+        LlmResponseParser.ParsedGeneration parsed = parser.parseDetailed(
                 objectMapper.writeValueAsString(output),
                 inlineNarrativeSchema);
+        GeneratedApplicationDocuments result = parsed.documents();
 
         assertEquals("3.6.3", parser.parserVersion(inlineNarrativeSchema));
         assertEquals("2.24.0", parser.claimPolicyVersion(inlineNarrativeSchema));
@@ -194,9 +195,10 @@ class LlmResponseParserTest {
                 .add("PROFILE.SKILL.2");
         highlights.add(duplicate);
 
-        GeneratedApplicationDocuments result = parser.parse(
+        LlmResponseParser.ParsedGeneration parsed = parser.parseDetailed(
                 objectMapper.writeValueAsString(output),
                 inlineNarrativeSchema);
+        GeneratedApplicationDocuments result = parsed.documents();
 
         assertEquals(
                 List.of("Delivered a reliable service."),
@@ -209,6 +211,9 @@ class LlmResponseParserTest {
                 "REWORDED",
                 claimFor(result, "/cv/projects/0/highlights/0")
                         .getDisposition().name());
+        assertTrue(parsed.repair().attempted());
+        assertTrue(parsed.repair().succeeded());
+        assertEquals(1, parsed.repair().duplicateItemsRemoved());
     }
 
     @Test

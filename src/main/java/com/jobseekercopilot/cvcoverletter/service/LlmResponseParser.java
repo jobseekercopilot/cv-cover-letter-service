@@ -146,6 +146,22 @@ public class LlmResponseParser {
             JsonNode schema,
             ClaimEvidenceCatalog evidenceCatalog
     ) {
+        return parseDetailed(rawResponse, schema, evidenceCatalog)
+                .documents();
+    }
+
+    public ParsedGeneration parseDetailed(
+            String rawResponse,
+            JsonNode schema
+    ) {
+        return parseDetailed(rawResponse, schema, null);
+    }
+
+    public ParsedGeneration parseDetailed(
+            String rawResponse,
+            JsonNode schema,
+            ClaimEvidenceCatalog evidenceCatalog
+    ) {
         if (rawResponse == null || rawResponse.isBlank()) {
             throw new InvalidLlmResponseException("LLM gateway returned an empty response");
         }
@@ -173,8 +189,10 @@ public class LlmResponseParser {
             }
             validateSchema(providerOutput, schema, "$");
             validatePlainText(providerOutput, "$");
+            int duplicateItemsRemoved = 0;
             if (usesInlineNarrativeEvidence) {
-                deduplicateInlineNarrativeArrays(providerOutput);
+                duplicateItemsRemoved =
+                        deduplicateInlineNarrativeArrays(providerOutput);
                 // The repair is deliberately narrow, but the repaired provider
                 // object must still satisfy the exact reviewed schema.
                 validateSchema(providerOutput, schema, "$");
@@ -229,7 +247,12 @@ public class LlmResponseParser {
                             evidenceCatalog);
                 }
             }
-            return documents;
+            return new ParsedGeneration(
+                    documents,
+                    new StructuralRepairReport(
+                            usesInlineNarrativeEvidence,
+                            duplicateItemsRemoved,
+                            duplicateItemsRemoved > 0));
         } catch (JsonProcessingException exception) {
             // Parser exceptions can contain model-output fragments, so do not retain the cause.
             throw new InvalidLlmResponseException("LLM response was not valid JSON");
@@ -375,29 +398,32 @@ public class LlmResponseParser {
         return List.copyOf(claims);
     }
 
-    private void deduplicateInlineNarrativeArrays(JsonNode output) {
+    private int deduplicateInlineNarrativeArrays(JsonNode output) {
+        int removed = 0;
         JsonNode projects = output.at("/cv/projects");
         for (int projectIndex = 0;
                 projectIndex < projects.size();
                 projectIndex++) {
-            deduplicateInlineNarrativeArray(output.at(
+            removed += deduplicateInlineNarrativeArray(output.at(
                     "/cv/projects/" + projectIndex + "/highlights"));
         }
         JsonNode workHistory = output.at("/cv/workHistory");
         for (int workIndex = 0;
                 workIndex < workHistory.size();
                 workIndex++) {
-            deduplicateInlineNarrativeArray(output.at(
+            removed += deduplicateInlineNarrativeArray(output.at(
                     "/cv/workHistory/" + workIndex + "/responsibilities"));
         }
-        deduplicateInlineNarrativeArray(
+        removed += deduplicateInlineNarrativeArray(
                 output.at("/coverLetter/bodyParagraphs"));
+        return removed;
     }
 
-    private void deduplicateInlineNarrativeArray(JsonNode value) {
+    private int deduplicateInlineNarrativeArray(JsonNode value) {
         if (!(value instanceof ArrayNode array)) {
-            return;
+            return 0;
         }
+        int originalSize = array.size();
         LinkedHashMap<String, ObjectNode> firstByText = new LinkedHashMap<>();
         ArrayNode deduplicated = objectMapper.createArrayNode();
         for (JsonNode item : array) {
@@ -418,6 +444,18 @@ public class LlmResponseParser {
         }
         array.removeAll();
         array.addAll(deduplicated);
+        return originalSize - array.size();
+    }
+
+    public record ParsedGeneration(
+            GeneratedApplicationDocuments documents,
+            StructuralRepairReport repair) {
+    }
+
+    public record StructuralRepairReport(
+            boolean attempted,
+            int duplicateItemsRemoved,
+            boolean succeeded) {
     }
 
     private void mergeDuplicateNarrativeEvidence(

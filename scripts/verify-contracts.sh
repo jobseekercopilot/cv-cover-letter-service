@@ -58,8 +58,8 @@ verify_source \
 verify_source \
     llm-gateway \
     jobseekercopilot/llm-gateway \
-    1f633d616bebb981579153fcf87850750891942a \
-    21c9f5f0ad57c0f4af4d57e51719c3836de5a6d2dc3bada26b174b036df31fda
+    9da2ceb95510cd5a6f2e32046775854dc094c2a8 \
+    774dac8dd6439233f6b4b32190e43b361354b41d3887455be1900b99a1642329
 verify_source \
     payment-service \
     jobseekercopilot/payment-service \
@@ -98,13 +98,15 @@ jq -e '
         == "#/components/schemas/GenerationAudit") and
     (.components.schemas.GenerationAudit.additionalProperties == false) and
     ((.components.schemas.GenerationAudit.required | sort)
-        == ["admissionPolicyVersion", "currency", "estimatedCostMicroUsd",
-            "estimatedInputTokensAtAdmission", "modelDeploymentVersion",
-            "modelId", "pricingVersion"]) and
+        == ["admissionPolicyVersion", "automaticRetryCount", "currency",
+            "estimatedCostMicroUsd", "estimatedInputTokensAtAdmission",
+            "modelDeploymentVersion", "modelId", "pricingVersion",
+            "providerAttemptCount"]) and
     ((.components.schemas.GenerationAudit.properties | keys)
-        == ["admissionPolicyVersion", "currency", "estimatedCostMicroUsd",
-            "estimatedInputTokensAtAdmission", "modelDeploymentVersion",
-            "modelId", "pricingVersion"]) and
+        == ["admissionPolicyVersion", "automaticRetryCount", "currency",
+            "estimatedCostMicroUsd", "estimatedInputTokensAtAdmission",
+            "modelDeploymentVersion", "modelId", "pricingVersion",
+            "providerAttemptCount", "retryReason"]) and
     (.components.schemas.GenerationAudit.properties | has("provider") | not) and
     (.components.schemas.GenerationUsage.properties
         | has("inputTokens") and has("outputTokens") and has("totalTokens"))

@@ -5,6 +5,7 @@ import com.jobseekercopilot.cvcoverletter.dto.ContactDetails;
 import com.jobseekercopilot.cvcoverletter.dto.DraftGenerationEstimateResponse;
 import com.jobseekercopilot.cvcoverletter.dto.DraftGenerationResponse;
 import com.jobseekercopilot.cvcoverletter.dto.DraftOutputType;
+import com.jobseekercopilot.cvcoverletter.dto.DraftRecoveryMetadata;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateRequest;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateCvCoverLetterResponse;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedApplicationDocuments;
@@ -62,6 +63,7 @@ public class CvCoverLetterService {
     private final GeneratedDocumentsApi documentStoreApi;
     private final ApplicationRecordsApi applicationTrackerApi;
     private final RejectedGenerationQuarantineService quarantineService;
+    private final DeterministicCvFallbackService deterministicCvFallback;
 
     public DraftGenerationEstimateResponse estimateDraft(
             String ownerId, GenerateRequest request) {
@@ -156,10 +158,26 @@ public class CvCoverLetterService {
                     prepared.jobId(),
                     exception.getClass().getSimpleName(),
                     exception);
+            if (outputType == DraftOutputType.CV) {
+                return deterministicFallback(
+                        operationId,
+                        prepared,
+                        null,
+                        "PROVIDER_FAILURE",
+                        false);
+            }
             throw new DownstreamServiceException(
                     "LLM gateway is unavailable", exception);
         }
         if (llmResponse == null) {
+            if (outputType == DraftOutputType.CV) {
+                return deterministicFallback(
+                        operationId,
+                        prepared,
+                        null,
+                        "EMPTY_PROVIDER_RESPONSE",
+                        false);
+            }
             throw new InvalidLlmResponseException(
                     "LLM gateway returned no response");
         }
@@ -168,7 +186,8 @@ public class CvCoverLetterService {
                     operationId,
                     outputType,
                     prepared,
-                    llmResponse);
+                    llmResponse,
+                    false);
             log.info(
                     "Selected draft generation completed operationId={} outputType={} jobId={} durationMs={}",
                     operationId,
@@ -183,6 +202,14 @@ public class CvCoverLetterService {
                     prepared,
                     llmResponse,
                     rejection);
+            if (outputType == DraftOutputType.CV) {
+                return deterministicFallback(
+                        operationId,
+                        prepared,
+                        llmResponse,
+                        "MODEL_OUTPUT_REJECTED",
+                        false);
+            }
             throw rejection;
         }
     }
@@ -301,12 +328,15 @@ public class CvCoverLetterService {
             UUID operationId,
             DraftOutputType outputType,
             PreparedGeneration prepared,
-            GenerationResponse llmResponse) {
+            GenerationResponse llmResponse,
+            boolean retainedResponseReplay) {
         validateGenerationResponse(llmResponse, prepared.prompt());
-        GeneratedApplicationDocuments documents = responseParser.parse(
+        LlmResponseParser.ParsedGeneration parsed =
+                responseParser.parseDetailed(
                 llmResponse.getOutput(),
                 prepared.prompt().getOutputSchema(),
                 prepared.prompt().getEvidenceCatalog());
+        GeneratedApplicationDocuments documents = parsed.documents();
         String title;
         String content;
         if (outputType == DraftOutputType.CV) {
@@ -336,7 +366,9 @@ public class CvCoverLetterService {
                 llmResponse,
                 documents,
                 title,
-                content);
+                content,
+                parsed.repair(),
+                retainedResponseReplay);
     }
 
     private SelectedDraftGenerationResponse selectedDraftResponse(
@@ -346,7 +378,9 @@ public class CvCoverLetterService {
             GenerationResponse llmResponse,
             GeneratedApplicationDocuments documents,
             String title,
-            String content) {
+            String content,
+            LlmResponseParser.StructuralRepairReport repair,
+            boolean retainedResponseReplay) {
         GenerationUsage usage = llmResponse.getUsage();
         GenerationAudit audit = llmResponse.getAudit();
         return new SelectedDraftGenerationResponse(
@@ -374,7 +408,103 @@ public class CvCoverLetterService {
                         audit.getPricingVersion(),
                         audit.getEstimatedInputTokensAtAdmission(),
                         audit.getEstimatedCostMicroUsd(),
-                        audit.getCurrency()));
+                        audit.getCurrency(),
+                        audit.getProviderAttemptCount(),
+                        audit.getAutomaticRetryCount(),
+                        audit.getRetryReason()),
+                usage == null || usage.getTotalTokens() == null
+                        ? 0
+                        : usage.getTotalTokens(),
+                new DraftRecoveryMetadata(
+                        "LLM",
+                        repair.attempted(),
+                        repair.succeeded(),
+                        repair.duplicateItemsRemoved(),
+                        retainedResponseReplay,
+                        false,
+                        null,
+                        "none"));
+    }
+
+    private SelectedDraftGenerationResponse deterministicFallback(
+            UUID operationId,
+            PreparedGeneration prepared,
+            GenerationResponse rejectedResponse,
+            String reason,
+            boolean retainedResponseReplay) {
+        String fallbackJson = deterministicCvFallback.build(
+                prepared.input(),
+                prepared.prompt().getEvidenceCatalog());
+        LlmResponseParser.ParsedGeneration parsed =
+                responseParser.parseDetailed(
+                        fallbackJson,
+                        prepared.prompt().getOutputSchema(),
+                        prepared.prompt().getEvidenceCatalog());
+        GeneratedApplicationDocuments documents = parsed.documents();
+        if (documents.getCv() == null
+                || documents.getCoverLetter() != null) {
+            throw new IllegalStateException(
+                    "Deterministic CV fallback produced the wrong document set.");
+        }
+        String content = cvRenderer.render(
+                documents.getCv(), prepared.input().contact());
+        GenerationUsage usage = rejectedResponse == null
+                ? null
+                : rejectedResponse.getUsage();
+        GenerationAudit audit = rejectedResponse == null
+                ? null
+                : rejectedResponse.getAudit();
+        log.warn(
+                "selected CV completed with deterministic fallback operationId={} jobId={} fallbackReason={} retainedResponseReplay={} providerInputTokens={} providerOutputTokens={} walletBillableTokens=0",
+                operationId,
+                prepared.jobId(),
+                reason,
+                retainedResponseReplay,
+                usage == null ? null : usage.getInputTokens(),
+                usage == null ? null : usage.getOutputTokens());
+        return new SelectedDraftGenerationResponse(
+                operationId,
+                DraftOutputType.CV,
+                documents.getCv().getTitle(),
+                content,
+                documents.getGenerationNotes(),
+                prepared.prompt().getGenerationMetadata(),
+                prepared.input().inputSchemaVersion(),
+                prepared.input().warnings(),
+                claimLedgerFactory.create(
+                        operationId,
+                        documents.getClaims(),
+                        prepared.claimPolicyVersion(),
+                        prepared.parserVersion()),
+                new DraftGenerationResponse.DraftGenerationUsage(
+                        usage == null ? null : usage.getInputTokens(),
+                        usage == null ? null : usage.getOutputTokens(),
+                        usage == null ? null : usage.getTotalTokens()),
+                new DraftGenerationResponse.DraftGenerationAudit(
+                        audit == null
+                                ? DeterministicCvFallbackService.FALLBACK_VERSION
+                                : audit.getModelId(),
+                        audit == null
+                                ? DeterministicCvFallbackService.FALLBACK_VERSION
+                                : audit.getModelDeploymentVersion(),
+                        audit == null ? "not-applicable" : audit.getAdmissionPolicyVersion(),
+                        audit == null ? "not-applicable" : audit.getPricingVersion(),
+                        audit == null ? null : audit.getEstimatedInputTokensAtAdmission(),
+                        audit == null ? null : audit.getEstimatedCostMicroUsd(),
+                        audit == null ? null : audit.getCurrency(),
+                        audit == null ? 0 : audit.getProviderAttemptCount(),
+                        audit == null ? 0 : audit.getAutomaticRetryCount(),
+                        audit == null ? null : audit.getRetryReason()),
+                0,
+                new DraftRecoveryMetadata(
+                        "DETERMINISTIC_FALLBACK",
+                        parsed.repair().attempted(),
+                        parsed.repair().succeeded(),
+                        parsed.repair().duplicateItemsRemoved(),
+                        retainedResponseReplay,
+                        true,
+                        reason,
+                        DeterministicCvFallbackService.FALLBACK_VERSION));
     }
 
     public RejectedGenerationReplayResponse replayRejectedDraft(
@@ -456,7 +586,8 @@ public class CvCoverLetterService {
                     operationId,
                     outputType,
                     prepared,
-                    loaded.response());
+                    loaded.response(),
+                    true);
             var replayEvent = quarantineService.recordReplay(
                     ownerId,
                     operationId,
@@ -477,6 +608,36 @@ public class CvCoverLetterService {
         } catch (InvalidLlmResponseException rejection) {
             RejectedGenerationDiagnostic diagnostic =
                     quarantineService.diagnostic(rejection);
+            if (outputType == DraftOutputType.CV) {
+                SelectedDraftGenerationResponse fallback =
+                        deterministicFallback(
+                                operationId,
+                                prepared,
+                                loaded.response(),
+                                "RETAINED_MODEL_OUTPUT_REJECTED",
+                                true);
+                var replayEvent = quarantineService.recordReplay(
+                        ownerId,
+                        operationId,
+                        "ACCEPTED",
+                        prepared.prompt().getGenerationMetadata(),
+                        prepared.parserVersion(),
+                        prepared.claimPolicyVersion(),
+                        null);
+                log.warn(
+                        "retained selected CV reconciled with deterministic fallback operationId={} originalFailureCategory={}",
+                        operationId,
+                        diagnostic == null ? null : diagnostic.phase());
+                return new RejectedSelectedGenerationReplayResponse(
+                        operationId,
+                        replayEvent.recordedAt(),
+                        "ACCEPTED",
+                        0,
+                        prepared.parserVersion(),
+                        prepared.claimPolicyVersion(),
+                        null,
+                        fallback);
+            }
             var replayEvent = quarantineService.recordReplay(
                     ownerId,
                     operationId,
@@ -495,6 +656,31 @@ public class CvCoverLetterService {
                     diagnostic,
                     null);
         }
+    }
+
+    /**
+     * Produces the conservative evidence-only CV without invoking the provider.
+     * This endpoint is deliberately operator-authenticated and CV-only: it is
+     * used after an ambiguous provider outcome has been reconciled for a
+     * bounded period and no retained response is available.
+     */
+    public SelectedDraftGenerationResponse generateDeterministicSelectedFallback(
+            String ownerId,
+            UUID operationId,
+            DraftOutputType outputType,
+            SelectedDraftGenerationRequest request) {
+        if (outputType != DraftOutputType.CV) {
+            throw new IllegalArgumentException(
+                    "A deterministic fallback is supported only for CV generation.");
+        }
+        PreparedGeneration prepared = prepareSelectedGeneration(
+                ownerId, outputType, request, null);
+        return deterministicFallback(
+                operationId,
+                prepared,
+                null,
+                "RECONCILIATION_EXHAUSTED",
+                false);
     }
 
     private void captureRejectedResponse(
@@ -558,7 +744,10 @@ public class CvCoverLetterService {
                         audit.getPricingVersion(),
                         audit.getEstimatedInputTokensAtAdmission(),
                         audit.getEstimatedCostMicroUsd(),
-                        audit.getCurrency()));
+                        audit.getCurrency(),
+                        audit.getProviderAttemptCount(),
+                        audit.getAutomaticRetryCount(),
+                        audit.getRetryReason()));
     }
 
     private GenerationResponse invokeModel(

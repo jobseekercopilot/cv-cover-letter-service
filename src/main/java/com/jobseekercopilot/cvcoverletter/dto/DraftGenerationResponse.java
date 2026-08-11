@@ -46,6 +46,21 @@ public record DraftGenerationResponse(
             String pricingVersion,
             Long estimatedInputTokensAtAdmission,
             Long estimatedCostMicroUsd,
-            String currency) {
+            String currency,
+            Integer providerAttemptCount,
+            Integer automaticRetryCount,
+            String retryReason) {
+        public DraftGenerationAudit(
+                String modelId,
+                String modelDeploymentVersion,
+                String admissionPolicyVersion,
+                String pricingVersion,
+                Long estimatedInputTokensAtAdmission,
+                Long estimatedCostMicroUsd,
+                String currency) {
+            this(modelId, modelDeploymentVersion, admissionPolicyVersion,
+                    pricingVersion, estimatedInputTokensAtAdmission,
+                    estimatedCostMicroUsd, currency, 1, 0, null);
+        }
     }
 }
