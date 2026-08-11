@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.jobseekercopilot.cvcoverletter.dto.ClaimDisposition;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedApplicationDocuments;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedClaim;
+import com.jobseekercopilot.cvcoverletter.dto.GeneratedCoverLetter;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedCv;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedQualification;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidLlmResponseException;
@@ -27,7 +28,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class GeneratedDocumentQualityValidator {
-    static final String POLICY_VERSION = "1.6.1";
+    static final String POLICY_VERSION = "1.7.0";
     private static final int MAX_SKILLS = 12;
     private static final Pattern COVER_LETTER_SKILL_LIST = Pattern.compile(
             "(?i)^\\s*(?:key skills|technical skills|skills\\s*&\\s*expertise)"
@@ -38,6 +39,9 @@ public class GeneratedDocumentQualityValidator {
             "(?i)^(?:application for|cv for|curriculum vitae for)\\b"
                     + "|\\bsupported by the verified skills and experience"
                     + "|\\b(?:passionate|highly motivated|results-driven|perfect candidate)\\b");
+    private static final Pattern LOW_VALUE_INTERNAL_INVENTORY = Pattern.compile(
+            "(?i)\\b(?:canonical system data|system data personas|waitlist foundations|"
+                    + "payment/ai-credit architecture|seed data|fixture-backed)\\b");
     private static final Set<String> SUMMARY_STOP_WORDS = Set.of(
             "and", "are", "but", "for", "from", "have", "into", "our",
             "that", "the", "their", "this", "will", "with", "you", "your",
@@ -48,7 +52,7 @@ public class GeneratedDocumentQualityValidator {
             GeneratedApplicationDocuments documents,
             ClaimEvidenceCatalog catalog
     ) {
-        validate(output, documents, catalog, false);
+        validate(output, documents, catalog, false, false);
     }
 
     public void validate(
@@ -56,6 +60,16 @@ public class GeneratedDocumentQualityValidator {
             GeneratedApplicationDocuments documents,
             ClaimEvidenceCatalog catalog,
             boolean enforceTailoredSummary
+    ) {
+        validate(output, documents, catalog, enforceTailoredSummary, false);
+    }
+
+    public void validate(
+            JsonNode output,
+            GeneratedApplicationDocuments documents,
+            ClaimEvidenceCatalog catalog,
+            boolean enforceTailoredSummary,
+            boolean enforceApplicationQuality
     ) {
         require(output != null && output.isObject(), "$", "structured output is missing");
         require(documents != null
@@ -76,7 +90,8 @@ public class GeneratedDocumentQualityValidator {
                 documents.getCoverLetter() != null);
         if (documents.getCv() != null) {
             if (enforceTailoredSummary) {
-                validateProfessionalSummary(documents.getCv(), catalog);
+                validateProfessionalSummary(
+                        documents.getCv(), catalog, enforceApplicationQuality);
             }
             validateSkills(documents.getCv());
             validateDuplicateNarrative(output, "/cv", cvNarrative(output));
@@ -86,6 +101,14 @@ public class GeneratedDocumentQualityValidator {
             List<TextUnit> coverNarrative = coverLetterNarrative(output);
             validateNoCoverLetterSkillList(coverNarrative);
             validateDuplicateNarrative(output, "/coverLetter", coverNarrative);
+            if (enforceApplicationQuality) {
+                validateCoverLetterQuality(documents.getCoverLetter());
+            }
+        }
+        if (enforceApplicationQuality
+                && documents.getCv() != null
+                && documents.getCoverLetter() != null) {
+            validateApplicationComplementarity(output);
         }
         validateSelectedEvidenceCoverage(
                 documents,
@@ -98,7 +121,8 @@ public class GeneratedDocumentQualityValidator {
 
     private void validateProfessionalSummary(
             GeneratedCv cv,
-            ClaimEvidenceCatalog catalog
+            ClaimEvidenceCatalog catalog,
+            boolean enforceApplicationQuality
     ) {
         String summary = cv.getPersonalSummary();
         require(StringUtils.hasText(summary),
@@ -112,12 +136,19 @@ public class GeneratedDocumentQualityValidator {
         require(sentences >= 2 && sentences <= 4,
                 "$.cv.personalSummary",
                 "professional summary must contain 2 to 4 concise sentences");
-        require(words >= 20 && words <= 170,
+        require(words >= 20 && words <= (enforceApplicationQuality ? 110 : 170),
                 "$.cv.personalSummary",
-                "professional summary must contain 20 to 170 words");
+                "professional summary must contain 20 to "
+                        + (enforceApplicationQuality ? 110 : 170)
+                        + " words");
         require(!GENERIC_SUMMARY.matcher(summary.trim()).find(),
                 "$.cv.personalSummary",
                 "professional summary is generic or describes the document");
+        if (enforceApplicationQuality) {
+            require(!LOW_VALUE_INTERNAL_INVENTORY.matcher(summary).find(),
+                    "$.cv.personalSummary",
+                    "professional summary is dominated by low-value internal inventory");
+        }
 
         String jobDescription = catalog.records().stream()
                 .filter(record -> "JOB.DESCRIPTION".equals(
@@ -229,6 +260,58 @@ public class GeneratedDocumentQualityValidator {
             require(!COVER_LETTER_SKILL_LIST.matcher(unit.text()).find(),
                     unit.path(),
                     "cover letter contains a literal skills list");
+        }
+    }
+
+    private void validateCoverLetterQuality(GeneratedCoverLetter coverLetter) {
+        List<String> body = safe(coverLetter.getBodyParagraphs()).stream()
+                .filter(StringUtils::hasText)
+                .toList();
+        require(body.size() >= 3 && body.size() <= 6,
+                "$.coverLetter.bodyParagraphs",
+                "cover letter must contain 3 to 6 concise body paragraphs");
+        int totalWords = body.stream()
+                .mapToInt(ApplicationQualityPlanner::wordCount)
+                .sum();
+        require(totalWords >= 100 && totalWords <= 500,
+                "$.coverLetter.bodyParagraphs",
+                "cover letter body must contain 100 to 500 words");
+        for (int index = 0; index < body.size(); index++) {
+            require(ApplicationQualityPlanner.wordCount(body.get(index)) <= 130,
+                    "$.coverLetter.bodyParagraphs[" + index + "]",
+                    "cover letter paragraph is too dense");
+        }
+    }
+
+    private void validateApplicationComplementarity(JsonNode output) {
+        List<TextUnit> cv = cvNarrative(output).stream()
+                .filter(unit -> ApplicationQualityPlanner.wordCount(unit.text()) >= 8)
+                .toList();
+        List<TextUnit> coverLetter = coverLetterNarrative(output).stream()
+                .filter(unit -> unit.path().contains("/bodyParagraphs/"))
+                .filter(unit -> ApplicationQualityPlanner.wordCount(unit.text()) >= 8)
+                .toList();
+        for (TextUnit coverUnit : coverLetter) {
+            Set<String> coverTerms = ApplicationQualityPlanner.terms(
+                    coverUnit.text());
+            for (TextUnit cvUnit : cv) {
+                Set<String> cvTerms = ApplicationQualityPlanner.terms(
+                        cvUnit.text());
+                if (coverTerms.isEmpty() || cvTerms.isEmpty()) {
+                    continue;
+                }
+                Set<String> intersection = new HashSet<>(coverTerms);
+                intersection.retainAll(cvTerms);
+                Set<String> union = new HashSet<>(coverTerms);
+                union.addAll(cvTerms);
+                double overlap = union.isEmpty()
+                        ? 0
+                        : (double) intersection.size() / union.size();
+                require(overlap < 0.82,
+                        coverUnit.path(),
+                        "cover letter substantially duplicates CV wording at "
+                                + cvUnit.path());
+            }
         }
     }
 

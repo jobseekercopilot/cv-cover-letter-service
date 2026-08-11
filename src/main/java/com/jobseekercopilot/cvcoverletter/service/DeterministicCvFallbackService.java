@@ -32,7 +32,9 @@ import org.springframework.util.StringUtils;
  */
 @Component
 public class DeterministicCvFallbackService {
-    static final String FALLBACK_VERSION = "deterministic-evidence-cv-1.1.0";
+    static final String FALLBACK_VERSION = "deterministic-evidence-cv-1.2.5";
+    private static final int MIN_DETAILED_EMPLOYMENT_RELEVANCE = 9;
+    private static final int MIN_DETAILED_ROLE_RELEVANCE = 6;
     private static final int MAX_SKILLS = 12;
     private static final int MAX_EMPLOYMENT = 12;
     private static final int MAX_QUALIFICATIONS = 8;
@@ -58,7 +60,7 @@ public class DeterministicCvFallbackService {
             ClaimEvidenceCatalog evidenceCatalog) {
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(evidenceCatalog, "evidenceCatalog");
-        EvidenceIndex evidence = new EvidenceIndex(evidenceCatalog.records());
+        EvidenceIndex evidence = new EvidenceIndex(evidenceCatalog);
         ObjectNode root = objectMapper.createObjectNode();
         ObjectNode cv = root.putObject("cv");
         ArrayNode claims = root.putArray("claims");
@@ -189,20 +191,31 @@ public class DeterministicCvFallbackService {
                         && List.of("EMPLOYMENT", "FREELANCE")
                                 .contains(record.category())).stream()
                 .sorted(Comparator
-                        .comparingInt(EvidenceGroup::startDateRank)
+                        .comparingInt((EvidenceGroup group) ->
+                                evidence.groupScore(group.records()))
                         .reversed()
+                        .thenComparing(Comparator.comparingInt(
+                                EvidenceGroup::startDateRank).reversed())
                         .thenComparing(EvidenceGroup::key))
                 .toList();
         Set<String> detailedGroups = groups.stream()
-                .sorted(Comparator
-                        .comparingInt((EvidenceGroup group) ->
-                                relevance(group.records(), evidence.jobText()))
-                        .reversed()
-                        .thenComparing(EvidenceGroup::key))
+                .filter(group -> relevance(
+                        group.records(), evidence.jobText())
+                        >= MIN_DETAILED_EMPLOYMENT_RELEVANCE)
+                .filter(group -> {
+                    ApprovedEvidenceRecord role = group.first(
+                            "ROLE_TITLE", "JOB_TITLE", "HEADING");
+                    return hasText(role)
+                            && relevance(role.value(), evidence.jobText())
+                                    >= MIN_DETAILED_ROLE_RELEVANCE;
+                })
                 .limit(2)
                 .map(EvidenceGroup::key)
                 .collect(java.util.stream.Collectors.toCollection(
                         LinkedHashSet::new));
+        if (detailedGroups.isEmpty() && !groups.isEmpty()) {
+            detailedGroups.add(groups.get(0).key());
+        }
         for (EvidenceGroup group : groups) {
             if (history.size() >= MAX_EMPLOYMENT) {
                 return;
@@ -212,7 +225,7 @@ public class DeterministicCvFallbackService {
             ApprovedEvidenceRecord employer = group.first(
                     "ORGANISATION", "ORGANISATION_CONTEXT");
             ApprovedEvidenceRecord start = group.first("START_DATE");
-            if (title == null || employer == null || start == null) {
+            if (!hasText(title) || !hasText(employer) || !hasText(start)) {
                 continue;
             }
             int outputIndex = history.size();
@@ -235,13 +248,13 @@ public class DeterministicCvFallbackService {
                             "DESCRIPTION"))
                     .sorted(Comparator
                             .comparingInt((ApprovedEvidenceRecord record) ->
-                                    relevance(record.value(), evidence.jobText()))
+                                    evidence.score(record))
                             .reversed()
                             .thenComparing(ApprovedEvidenceRecord::factType))
                     .limit(narrativeLimit)
                     .forEach(record -> narrative(
                             responsibilities,
-                            record.value(),
+                            conciseEvidenceSentence(record.value()),
                             record.evidenceId()));
             item.put("tailoredDescription", "");
         }
@@ -303,13 +316,19 @@ public class DeterministicCvFallbackService {
         for (EvidenceGroup group : evidence.groups(record ->
                 record.purpose() == EvidencePurpose.CV
                         && List.of("EDUCATION", "QUALIFICATION_TRAINING")
-                                .contains(record.category()))) {
+                                .contains(record.category())).stream()
+                .sorted(Comparator
+                        .comparingInt((EvidenceGroup group) ->
+                                evidence.groupScore(group.records()))
+                        .reversed()
+                        .thenComparing(EvidenceGroup::key))
+                .toList()) {
             if (qualifications.size() >= MAX_QUALIFICATIONS) {
                 return;
             }
             ApprovedEvidenceRecord name = group.first(
                     "QUALIFICATION_TITLE", "PROGRAMME_OR_SUBJECT");
-            if (name == null) {
+            if (!hasText(name)) {
                 continue;
             }
             int outputIndex = qualifications.size();
@@ -355,23 +374,64 @@ public class DeterministicCvFallbackService {
             EvidenceIndex evidence,
             ClaimSequence claims) {
         ArrayNode projects = cv.putArray("projects");
+        Set<String> employmentNarratives = evidence.records(record ->
+                        record.purpose().supports(EvidencePurpose.CV)
+                                && ("EMPLOYMENT".equals(record.category())
+                                        || "FREELANCE".equals(record.category()))
+                                && factTypeIn(record,
+                                        "DESCRIPTION",
+                                        "ACHIEVEMENTS",
+                                        "RESPONSIBILITIES"))
+                .stream()
+                .map(ApprovedEvidenceRecord::value)
+                .map(DeterministicCvFallbackService::normalise)
+                .collect(java.util.stream.Collectors.toSet());
+        Set<String> employmentOrganisations = evidence.records(record ->
+                        record.purpose().supports(EvidencePurpose.CV)
+                                && ("EMPLOYMENT".equals(record.category())
+                                        || "FREELANCE".equals(record.category()))
+                                && factTypeIn(record,
+                                        "ORGANISATION",
+                                        "ORGANISATION_CONTEXT",
+                                        "EMPLOYER"))
+                .stream()
+                .map(ApprovedEvidenceRecord::value)
+                .map(DeterministicCvFallbackService::normalise)
+                .collect(java.util.stream.Collectors.toSet());
         for (EvidenceGroup group : evidence.groups(record ->
                 record.purpose() != EvidencePurpose.COVER_LETTER
-                        && ("PROJECT".equals(record.category())
-                                || "ACHIEVEMENT".equals(
-                                        record.category()))).stream()
+                        && "PROJECT".equals(record.category())).stream()
                 .sorted(Comparator
                         .comparingInt((EvidenceGroup group) ->
-                                relevance(group.records(), evidence.jobText()))
+                                evidence.groupScore(group.records()))
                         .reversed()
                         .thenComparing(EvidenceGroup::key))
-                .limit(MAX_PROJECTS)
                 .toList()) {
+            if (projects.size() >= MAX_PROJECTS) {
+                return;
+            }
             ApprovedEvidenceRecord title = group.first(
                     "HEADING", "PROJECT_NAME", "ROLE_TITLE");
-            ApprovedEvidenceRecord description = group.first(
-                    "DESCRIPTION", "ACHIEVEMENTS", "RESPONSIBILITIES");
-            if (title == null || description == null) {
+            if (hasText(title) && duplicatesEmployer(
+                    title.value(), employmentOrganisations)) {
+                continue;
+            }
+            List<ApprovedEvidenceRecord> narratives = group.records().stream()
+                    .filter(record -> factTypeIn(record,
+                            "DESCRIPTION", "ACHIEVEMENTS", "RESPONSIBILITIES"))
+                    .filter(DeterministicCvFallbackService::hasText)
+                    .sorted(Comparator
+                            .comparingInt((ApprovedEvidenceRecord record) ->
+                                    evidence.score(record))
+                            .reversed()
+                            .thenComparing(ApprovedEvidenceRecord::factType))
+                    .toList();
+            ApprovedEvidenceRecord description = narratives.stream()
+                    .filter(record -> !employmentNarratives.contains(
+                            normalise(record.value())))
+                    .findFirst()
+                    .orElseGet(() -> narratives.stream().findFirst().orElse(null));
+            if (!hasText(title) || !hasText(description)) {
                 continue;
             }
             int outputIndex = projects.size();
@@ -388,16 +448,23 @@ public class DeterministicCvFallbackService {
                     "/cv/projects/" + outputIndex + "/startDate");
             projectField(project, "endDate", group.first("END_DATE"), claims,
                     "/cv/projects/" + outputIndex + "/endDate");
-            project.put("description", description.value());
-            claims.add("SUPPORTED", List.of(description.evidenceId()),
+            String projectDescription = conciseEvidenceSentence(
+                    description.value());
+            project.put("description", projectDescription);
+            claims.add(projectDescription.equals(description.value().trim())
+                            ? "SUPPORTED"
+                            : "REWORDED",
+                    List.of(description.evidenceId()),
                     "/cv/projects/" + outputIndex + "/description");
             ArrayNode highlights = project.putArray("highlights");
-            group.records().stream()
+            narratives.stream()
                     .filter(record -> List.of(
                             "ACHIEVEMENTS", "RESPONSIBILITIES")
                             .contains(record.factType()))
                     .filter(record -> !normalise(record.value()).equals(
                             normalise(description.value())))
+                    .filter(record -> !employmentNarratives.contains(
+                            normalise(record.value())))
                     .limit(4)
                     .forEach(record -> narrative(
                             highlights,
@@ -412,7 +479,7 @@ public class DeterministicCvFallbackService {
             ApprovedEvidenceRecord evidence,
             ClaimSequence claims,
             String path) {
-        if (evidence == null) {
+        if (!hasText(evidence)) {
             target.put(field, "");
             return;
         }
@@ -461,12 +528,7 @@ public class DeterministicCvFallbackService {
             ArrayNode target,
             String text,
             String evidenceId) {
-        String cleaned = text.trim()
-                .replaceAll(
-                        "(?i)\\s+without claiming\\s+[^.]*\\.?",
-                        ".")
-                .replaceAll("\\s+", " ")
-                .trim();
+        String cleaned = conciseEvidenceSentence(text);
         ObjectNode item = target.addObject();
         item.put("text", cleaned);
         item.put(
@@ -487,23 +549,41 @@ public class DeterministicCvFallbackService {
                         .trim();
     }
 
+    private static boolean hasText(ApprovedEvidenceRecord evidence) {
+        return evidence != null && StringUtils.hasText(evidence.value());
+    }
+
+    private static boolean duplicatesEmployer(
+            String projectTitle,
+            Set<String> employmentOrganisations) {
+        String normalizedTitle = normalise(projectTitle);
+        return employmentOrganisations.stream()
+                .filter(organisation -> organisation.length() >= 4)
+                .anyMatch(organisation -> normalizedTitle.equals(organisation)
+                        || normalizedTitle.startsWith(organisation + " "));
+    }
+
     private TailoredSummary tailoredSummary(
             NormalizedGenerationInput input,
             EvidenceIndex evidence) {
         List<SkillEvidence> skills = rankedSkills(input, evidence);
-        List<EvidenceGroup> employment = evidence.groups(record ->
+        List<EvidenceGroup> professionalEvidence = evidence.groups(record ->
                 record.purpose() == EvidencePurpose.CV
-                        && "EMPLOYMENT".equals(record.category())).stream()
+                        && List.of("EMPLOYMENT", "FREELANCE", "PROJECT")
+                                .contains(record.category())).stream()
                 .sorted(Comparator
                         .comparingInt((EvidenceGroup group) ->
-                                relevance(group.records(), evidence.jobText()))
+                                evidence.groupScore(group.records()))
                         .reversed()
                         .thenComparing(EvidenceGroup::key))
                 .toList();
-        EvidenceGroup primary = employment.isEmpty() ? null : employment.get(0);
+        EvidenceGroup primary = professionalEvidence.isEmpty()
+                ? null
+                : professionalEvidence.get(0);
         ApprovedEvidenceRecord role = primary == null
                 ? null
-                : primary.first("ROLE_TITLE", "HEADING", "JOB_TITLE");
+                : primary.first(
+                        "PROJECT_ROLE", "ROLE_TITLE", "HEADING", "JOB_TITLE");
         List<SkillEvidence> selectedSkills = skills.stream()
                 .filter(SkillEvidence::claimable)
                 .filter(skill -> relevance(skill.value(), evidence.jobText()) > 0)
@@ -519,7 +599,8 @@ public class DeterministicCvFallbackService {
         List<String> sentences = new ArrayList<>();
         LinkedHashSet<String> evidenceIds = new LinkedHashSet<>();
         if (role != null) {
-            StringBuilder opening = new StringBuilder(role.value().trim());
+            StringBuilder opening = new StringBuilder(
+                    professionalIdentity(role.value()));
             evidenceIds.add(role.evidenceId());
             if (!selectedSkills.isEmpty()) {
                 opening.append(" with experience in ")
@@ -544,7 +625,7 @@ public class DeterministicCvFallbackService {
                     + input.job().title()
                     + " role, with no extension beyond confirmed facts.");
         }
-        for (EvidenceGroup group : employment) {
+        for (EvidenceGroup group : professionalEvidence) {
             ApprovedEvidenceRecord narrative = group.records().stream()
                     .filter(record -> factTypeIn(
                             record,
@@ -553,7 +634,7 @@ public class DeterministicCvFallbackService {
                             "ACHIEVEMENTS"))
                     .sorted(Comparator
                             .comparingInt((ApprovedEvidenceRecord record) ->
-                                    relevance(record.value(), evidence.jobText()))
+                                    evidence.score(record))
                             .reversed()
                             .thenComparing(ApprovedEvidenceRecord::factType))
                     .findFirst()
@@ -561,7 +642,7 @@ public class DeterministicCvFallbackService {
             if (narrative == null) {
                 continue;
             }
-            String sentence = firstSentence(narrative.value());
+            String sentence = conciseEvidenceSentence(narrative.value());
             if (!sentence.isBlank()
                     && sentences.stream().noneMatch(existing ->
                             normalise(existing).equals(normalise(sentence)))) {
@@ -572,7 +653,9 @@ public class DeterministicCvFallbackService {
                 break;
             }
         }
-        if (sentences.size() < 2) {
+        if (sentences.size() < 2
+                || ApplicationQualityPlanner.wordCount(
+                        String.join(" ", sentences)) < 20) {
             String skillText = selectedSkills.isEmpty()
                     ? input.job().title()
                     : humanList(selectedSkills.stream()
@@ -618,13 +701,13 @@ public class DeterministicCvFallbackService {
                                         skill,
                                         record.evidenceId(),
                                         "DEMONSTRATED_SKILL".equals(
-                                                record.factType())));
+                                                record.factType()),
+                                        evidence.score(record)));
                     }
                 });
         return distinct.values().stream()
                 .sorted(Comparator
-                        .comparingInt((SkillEvidence skill) ->
-                                relevance(skill.value(), evidence.jobText()))
+                        .comparingInt(SkillEvidence::score)
                         .reversed()
                         .thenComparingInt(skill -> input.profile().skills()
                                 .indexOf(skill.value())))
@@ -695,6 +778,42 @@ public class DeterministicCvFallbackService {
         return sentence;
     }
 
+    private String conciseEvidenceSentence(String value) {
+        String sentence = firstSentence(value)
+                .replaceAll(
+                        "(?i)\\s+without claiming\\s+[^.]*\\.?",
+                        ".")
+                .replaceAll("\\s+", " ")
+                .trim();
+        if (ApplicationQualityPlanner.wordCount(sentence) <= 34) {
+            return sentence;
+        }
+        int semicolon = sentence.indexOf(';');
+        if (semicolon > 0) {
+            String shortened = sentence.substring(0, semicolon).trim();
+            return shortened.matches(".*[.!?]$")
+                    ? shortened
+                    : shortened + ".";
+        }
+        String[] words = sentence.split("\\s+");
+        String shortened = String.join(
+                " ", java.util.Arrays.copyOfRange(words, 0, 34));
+        return shortened.replaceAll("[,;:]$", "") + ".";
+    }
+
+    private String professionalIdentity(String role) {
+        String trimmed = role == null ? "" : role.trim();
+        String withoutFounder = trimmed.replaceFirst(
+                "(?i)^(?:co-)?founder\\s*(?:&|and|/)\\s*",
+                "");
+        if (!withoutFounder.equals(trimmed)
+                && withoutFounder.matches(
+                        "(?i).*\\b(?:developer|engineer|architect)\\b.*")) {
+            return withoutFounder;
+        }
+        return trimmed;
+    }
+
     private String humanList(List<String> values) {
         if (values.isEmpty()) {
             return "";
@@ -726,7 +845,8 @@ public class DeterministicCvFallbackService {
     private record SkillEvidence(
             String value,
             String evidenceId,
-            boolean claimable) {
+            boolean claimable,
+            int score) {
     }
 
     private static final class ClaimSequence {
@@ -754,9 +874,13 @@ public class DeterministicCvFallbackService {
     private static final class EvidenceIndex {
         private final Map<String, ApprovedEvidenceRecord> byId;
         private final List<ApprovedEvidenceRecord> records;
+        private final ClaimEvidenceCatalog catalog;
+        private final ApplicationQualityPlanner qualityPlanner =
+                new ApplicationQualityPlanner();
 
-        private EvidenceIndex(List<ApprovedEvidenceRecord> records) {
-            this.records = List.copyOf(records);
+        private EvidenceIndex(ClaimEvidenceCatalog catalog) {
+            this.catalog = catalog;
+            this.records = List.copyOf(catalog.records());
             this.byId = new LinkedHashMap<>();
             records.forEach(record -> byId.put(record.evidenceId(), record));
         }
@@ -820,6 +944,25 @@ public class DeterministicCvFallbackService {
                     .map(ApprovedEvidenceRecord::value)
                     .findFirst()
                     .orElse("");
+        }
+
+        private int score(ApprovedEvidenceRecord record) {
+            return qualityPlanner.score(record, catalog);
+        }
+
+        private int groupScore(List<ApprovedEvidenceRecord> groupRecords) {
+            return groupRecords.stream()
+                    .mapToInt(this::score)
+                    .boxed()
+                    .sorted(Comparator.reverseOrder())
+                    .limit(3)
+                    .mapToInt(Integer::intValue)
+                    .sum();
+        }
+
+        private List<ApprovedEvidenceRecord> records(
+                Predicate<ApprovedEvidenceRecord> predicate) {
+            return records.stream().filter(predicate).toList();
         }
 
         private List<EvidenceGroup> groups(

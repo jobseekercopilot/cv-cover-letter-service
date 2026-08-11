@@ -33,7 +33,7 @@ import org.springframework.web.util.HtmlUtils;
 @Component
 public class LlmResponseParser {
 
-    static final String PARSER_VERSION = "3.6.9";
+    static final String PARSER_VERSION = "3.6.10";
     static final String DEDICATED_PERSONAL_SUMMARY_PARSER_VERSION = "3.5.2";
     static final String CORE_SKILL_PROJECTION_PARSER_VERSION = "3.4.0";
     static final String DEDICATED_CANONICAL_PARSER_VERSION = "3.3.0";
@@ -272,7 +272,8 @@ public class LlmResponseParser {
                             output,
                             documents,
                             evidenceCatalog,
-                            usesTailoredSummaryQualityPolicy(schema));
+                            usesTailoredSummaryQualityPolicy(schema),
+                            usesApplicationQualityPolicy(schema));
                 }
             }
             return new ParsedGeneration(
@@ -416,21 +417,32 @@ public class LlmResponseParser {
         if (!(claims instanceof ArrayNode array)) {
             return 0;
         }
-        int originalSize = array.size();
+        int removedItems = 0;
         ArrayNode retained = objectMapper.createArrayNode();
         for (JsonNode claim : array) {
-            List<String> paths = new ArrayList<>();
-            claim.path("contentPaths").forEach(path ->
-                    paths.add(path.asText("")));
-            boolean exclusivelyProjectedInlineNarrative = !paths.isEmpty()
-                    && paths.stream().allMatch(this::isInlineNarrativePath);
-            if (!exclusivelyProjectedInlineNarrative) {
+            JsonNode contentPaths = claim.path("contentPaths");
+            if (!(claim instanceof ObjectNode objectClaim)
+                    || !(contentPaths instanceof ArrayNode paths)
+                    || paths.isEmpty()) {
                 retained.add(claim);
+                continue;
+            }
+            ArrayNode ordinaryPaths = objectMapper.createArrayNode();
+            for (JsonNode path : paths) {
+                if (isInlineNarrativePath(path.asText(""))) {
+                    removedItems++;
+                } else {
+                    ordinaryPaths.add(path);
+                }
+            }
+            if (!ordinaryPaths.isEmpty()) {
+                objectClaim.set("contentPaths", ordinaryPaths);
+                retained.add(objectClaim);
             }
         }
         array.removeAll();
         array.addAll(retained);
-        return originalSize - array.size();
+        return removedItems;
     }
 
     private boolean isInlineNarrativePath(String path) {
@@ -466,10 +478,11 @@ public class LlmResponseParser {
     }
 
     private boolean usesTailoredSummaryQualityPolicy(JsonNode schema) {
-        return schema.at(
+        String pattern = schema.at(
                         "/properties/cv/properties/personalSummary/pattern")
-                .asText("")
-                .contains("{40,1200}");
+                .asText("");
+        return pattern.contains("{40,1200}")
+                || pattern.contains("{40,900}");
     }
 
     String claimPolicyVersion(JsonNode schema) {
@@ -704,10 +717,9 @@ public class LlmResponseParser {
             LinkedHashSet<String> uniqueEvidence =
                     new LinkedHashSet<>(evidenceIds);
             require(
-                    !uniqueEvidence.isEmpty()
-                            && uniqueEvidence.size() == evidenceIds.size(),
+                    !uniqueEvidence.isEmpty(),
                     itemPath + "/evidenceIds",
-                    "inline narrative evidence IDs are empty or duplicated");
+                    "inline narrative evidence IDs are empty");
             projected.add(new NarrativeItem(
                     itemPath,
                     disposition,
@@ -1156,6 +1168,13 @@ public class LlmResponseParser {
         return schema.at(
                         "/properties/cv/properties/projects")
                 .isObject();
+    }
+
+    private boolean usesApplicationQualityPolicy(JsonNode schema) {
+        return schema.at(
+                        "/properties/cv/properties/personalSummary/pattern")
+                .asText()
+                .contains("{40,900}");
     }
 
     private boolean usesDeterministicCoreSkillProjection(

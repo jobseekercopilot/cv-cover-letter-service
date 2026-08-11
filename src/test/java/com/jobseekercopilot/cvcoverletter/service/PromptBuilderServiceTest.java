@@ -29,6 +29,38 @@ import org.springframework.core.io.DefaultResourceLoader;
 class PromptBuilderServiceTest {
 
     @Test
+    void activeQualityReleaseAddsDeterministicRankingOnlyToUntrustedInput() {
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        var input = new GenerationInputNormalizer(
+                Clock.fixed(
+                        Instant.parse("2026-08-11T12:00:00Z"),
+                        ZoneOffset.UTC))
+                .normalize("fictional-owner", validVersionedRequest());
+
+        CvCoverLetterPrompt active = new PromptBuilderService(
+                objectMapper,
+                registry(objectMapper, "cv-cover-letter-1.7.0"),
+                new LlmProperties(),
+                new ClaimEvidenceCatalogFactory())
+                .buildPrompt(input);
+        CvCoverLetterPrompt rollback = new PromptBuilderService(
+                objectMapper,
+                registry(objectMapper, "cv-cover-letter-1.6.1"),
+                new LlmProperties(),
+                new ClaimEvidenceCatalogFactory())
+                .buildPrompt(input);
+
+        assertTrue(active.getUntrustedInput().contains("\"applicationQualityPlan\""));
+        assertTrue(active.getUntrustedInput().contains("\"rankedEvidence\""));
+        assertTrue(active.getUntrustedInput().contains(
+                ApplicationQualityPlanner.VERSION));
+        assertFalse(active.getUntrustedInput().contains("\"sourcePath\""));
+        assertFalse(active.getTrustedInstructions().contains("\"rankedEvidence\""));
+        assertFalse(rollback.getUntrustedInput().contains(
+                "\"applicationQualityPlan\""));
+    }
+
+    @Test
     void replayCanRebuildAnApprovedHistoricalPromptReleaseExplicitly() {
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         PromptBuilderService service = new PromptBuilderService(
@@ -229,7 +261,7 @@ class PromptBuilderServiceTest {
                 .forEach(value -> schemaEvidenceIds.add(value.asText()));
         assertEquals(suppliedEvidenceIds, schemaEvidenceIds);
         assertEquals(
-                "3.6.9",
+                "3.6.10",
                 new LlmResponseParser(
                         objectMapper,
                         new ClaimEvidenceValidator(),
@@ -356,7 +388,7 @@ class PromptBuilderServiceTest {
                 .noneMatch(record -> record.purpose()
                         == com.jobseekercopilot.cvcoverletter.model.EvidencePurpose.COVER_LETTER));
         assertEquals(
-                "3.6.9",
+                "3.6.10",
                 parser(objectMapper).parserVersion(prompt.getOutputSchema()));
     }
 
@@ -394,7 +426,7 @@ class PromptBuilderServiceTest {
                 .noneMatch(record -> record.purpose()
                         == com.jobseekercopilot.cvcoverletter.model.EvidencePurpose.CV));
         assertEquals(
-                "3.6.9",
+                "3.6.10",
                 parser(objectMapper).parserVersion(prompt.getOutputSchema()));
     }
 

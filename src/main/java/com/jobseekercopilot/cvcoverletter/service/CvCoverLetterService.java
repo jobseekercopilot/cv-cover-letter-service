@@ -64,6 +64,8 @@ public class CvCoverLetterService {
     private final ApplicationRecordsApi applicationTrackerApi;
     private final RejectedGenerationQuarantineService quarantineService;
     private final DeterministicCvFallbackService deterministicCvFallback;
+    private final ApplicationQualityEvaluator applicationQualityEvaluator =
+            new ApplicationQualityEvaluator();
 
     public DraftGenerationEstimateResponse estimateDraft(
             String ownerId, GenerateRequest request) {
@@ -338,6 +340,8 @@ public class CvCoverLetterService {
                 prepared.prompt().getOutputSchema(),
                 prepared.prompt().getEvidenceCatalog());
         GeneratedApplicationDocuments documents = parsed.documents();
+        logApplicationQuality(
+                operationId, documents, prepared.prompt().getEvidenceCatalog());
         String title;
         String content;
         if (outputType == DraftOutputType.CV) {
@@ -451,6 +455,8 @@ public class CvCoverLetterService {
         }
         String content = cvRenderer.render(
                 documents.getCv(), prepared.input().contact());
+        logApplicationQuality(
+                operationId, documents, prepared.prompt().getEvidenceCatalog());
         GenerationUsage usage = rejectedResponse == null
                 ? null
                 : rejectedResponse.getUsage();
@@ -800,12 +806,39 @@ public class CvCoverLetterService {
                 llmResponse.getOutput(),
                 prepared.prompt().getOutputSchema(),
                 prepared.prompt().getEvidenceCatalog());
+        logApplicationQuality(
+                null, documents, prepared.prompt().getEvidenceCatalog());
         String cvContent = cvRenderer.render(
                 documents.getCv(), prepared.input().contact());
         String coverLetterContent = coverLetterRenderer.render(
                 documents.getCoverLetter(), prepared.input().contact());
         return new DraftContent(
                 documents, cvContent, coverLetterContent);
+    }
+
+    private void logApplicationQuality(
+            UUID operationId,
+            GeneratedApplicationDocuments documents,
+            com.jobseekercopilot.cvcoverletter.model.ClaimEvidenceCatalog catalog
+    ) {
+        var report = applicationQualityEvaluator.evaluate(documents, catalog);
+        var metrics = report.metrics();
+        log.info(
+                "Application quality evaluated operationId={} evaluatorVersion={} groundingPass={} jdRelevance={} evidenceCoverage={} strongEvidenceUtilisation={} weakEvidenceOveruse={} complementarity={} summarySpecificity={} bulletSpecificity={} readability={} concision={} seniorityFit={} overallPersuasiveness={}",
+                operationId,
+                report.version(),
+                report.groundingPass(),
+                metrics.jdRelevance(),
+                metrics.evidenceCoverage(),
+                metrics.strongEvidenceUtilisation(),
+                metrics.weakEvidenceOveruse(),
+                metrics.cvCoverLetterComplementarity(),
+                metrics.summarySpecificity(),
+                metrics.bulletSpecificity(),
+                metrics.readability(),
+                metrics.concision(),
+                metrics.roleSeniorityFit(),
+                metrics.overallInterviewPersuasiveness());
     }
 
     private record PreparedGeneration(

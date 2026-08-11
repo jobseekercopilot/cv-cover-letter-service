@@ -283,6 +283,10 @@ public class ClaimEvidenceValidator {
                                 claims,
                                 evidenceById,
                                 versionedEvidence)));
+        claims = canonicalizeCompanyClaimEvidence(
+                output,
+                claims,
+                evidenceById);
         documents.setClaims(claims);
         validateFinalClaimLedger(
                 output,
@@ -416,6 +420,10 @@ public class ClaimEvidenceValidator {
                     EvidencePurpose.COVER_LETTER);
         }
         claims = normalizeDuplicateClaimIds(claims);
+        claims = canonicalizeCompanyClaimEvidence(
+                output,
+                claims,
+                evidenceById);
 
         int remainingClaimCapacity = MAX_CLAIMS - claims.size();
         Map<String, String> projectedCoreSkillEvidenceByPath =
@@ -1535,6 +1543,69 @@ public class ClaimEvidenceValidator {
             return "the client organisation";
         }
         return exactEvidenceValue(evidenceById, "JOB.COMPANY");
+    }
+
+    private List<GeneratedClaim> canonicalizeCompanyClaimEvidence(
+            JsonNode output,
+            List<GeneratedClaim> claims,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById
+    ) {
+        JsonNode companyName = output.at("/coverLetter/companyName");
+        if (!companyName.isTextual()
+                || !StringUtils.hasText(companyName.textValue())) {
+            return claims;
+        }
+        String requiredEvidenceId = null;
+        if (evidenceById.getOrDefault(
+                        "JOB.HIRING_ORGANISATION",
+                        List.of()).stream()
+                .anyMatch(record -> equalText(
+                        companyName.textValue(),
+                        record.value()))) {
+            requiredEvidenceId = "JOB.HIRING_ORGANISATION";
+        } else if (equalText(
+                        companyName.textValue(),
+                        "the client organisation")
+                && evidenceById.getOrDefault(
+                        "JOB.ADVERTISER_TYPE",
+                        List.of()).stream()
+                    .anyMatch(record -> equalText(
+                            record.value(),
+                            "RECRUITER"))) {
+            requiredEvidenceId = "JOB.ADVERTISER_TYPE";
+        } else if (evidenceById.getOrDefault(
+                        JOB_COMPANY_EVIDENCE_ID,
+                        List.of()).stream()
+                .anyMatch(record -> equalText(
+                        companyName.textValue(),
+                        record.value()))) {
+            requiredEvidenceId = JOB_COMPANY_EVIDENCE_ID;
+        }
+        if (requiredEvidenceId == null) {
+            return claims;
+        }
+
+        List<GeneratedClaim> normalized = new ArrayList<>(claims.size());
+        for (GeneratedClaim claim : claims) {
+            if (claim == null
+                    || !safe(claim.getContentPaths()).contains(
+                            "/coverLetter/companyName")) {
+                normalized.add(claim);
+                continue;
+            }
+            GeneratedClaim copy = copyWithClaimId(
+                    claim,
+                    claim.getClaimId());
+            if (safe(claim.getContentPaths()).size() == 1) {
+                copy.setEvidenceIds(List.of(requiredEvidenceId));
+            } else {
+                copy.setEvidenceIds(mergeBoundedEvidenceReferences(
+                        List.of(requiredEvidenceId),
+                        safe(claim.getEvidenceIds())));
+            }
+            normalized.add(copy);
+        }
+        return List.copyOf(normalized);
     }
 
     private List<GeneratedClaim> ensureCanonicalTitleCoverage(

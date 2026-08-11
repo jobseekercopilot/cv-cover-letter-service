@@ -2562,6 +2562,39 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
+    void replacesAdvertiserEvidenceOnAnIsolatedUnnamedClientClaim()
+            throws Exception {
+        var request = validVersionedRequest();
+        request.getJob().setCompany("Fictional Recruitment Ltd");
+        request.getJob().setAdvertiserName("Fictional Recruitment Ltd");
+        request.getJob().setAdvertiserType(AdvertiserType.RECRUITER);
+        request.getJob().setHiringOrganisationName(null);
+        catalog = new ClaimEvidenceCatalogFactory().create(
+                new GenerationInputNormalizer(
+                        Clock.fixed(
+                                Instant.parse("2026-07-24T13:00:00Z"),
+                                ZoneOffset.UTC))
+                        .normalize("owner-secret", request));
+        ObjectNode output = versionedOutput();
+        ((ObjectNode) output.at("/coverLetter"))
+                .put("companyName", "Fictional Recruitment Ltd");
+
+        GeneratedApplicationDocuments accepted = parse(output);
+        GeneratedClaim companyClaim = accepted.getClaims().stream()
+                .filter(claim -> claim.getContentPaths().contains(
+                        "/coverLetter/companyName"))
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals(
+                "the client organisation",
+                accepted.getCoverLetter().getCompanyName());
+        assertEquals(
+                List.of("JOB.ADVERTISER_TYPE"),
+                companyClaim.getEvidenceIds());
+    }
+
+    @Test
     void approvedRollbackSchemaRemainsUsableWithAnEvidenceCatalogue()
             throws Exception {
         JsonNode rollbackSchema;
