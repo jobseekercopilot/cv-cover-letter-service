@@ -261,7 +261,7 @@ class PromptBuilderServiceTest {
                 .forEach(value -> schemaEvidenceIds.add(value.asText()));
         assertEquals(suppliedEvidenceIds, schemaEvidenceIds);
         assertEquals(
-                "3.6.10",
+                "3.6.13",
                 new LlmResponseParser(
                         objectMapper,
                         new ClaimEvidenceValidator(),
@@ -388,7 +388,7 @@ class PromptBuilderServiceTest {
                 .noneMatch(record -> record.purpose()
                         == com.jobseekercopilot.cvcoverletter.model.EvidencePurpose.COVER_LETTER));
         assertEquals(
-                "3.6.10",
+                "3.6.13",
                 parser(objectMapper).parserVersion(prompt.getOutputSchema()));
     }
 
@@ -426,7 +426,7 @@ class PromptBuilderServiceTest {
                 .noneMatch(record -> record.purpose()
                         == com.jobseekercopilot.cvcoverletter.model.EvidencePurpose.CV));
         assertEquals(
-                "3.6.10",
+                "3.6.13",
                 parser(objectMapper).parserVersion(prompt.getOutputSchema()));
     }
 

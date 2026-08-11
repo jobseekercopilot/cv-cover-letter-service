@@ -415,14 +415,16 @@ public class GeneratedDocumentQualityValidator {
                 if (selectedPaths.isEmpty()) {
                     require(!requireEveryGovernedSelection,
                             "$.claims",
-                            "selected evidence is absent from its governed section");
+                            "selected evidence is absent from its governed section; selection="
+                                    + entry.getKey().sourcePath());
                     continue;
                 }
                 require(selectedPaths.stream()
                                 .anyMatch(path ->
                                         path.startsWith(requiredPrefix)),
                         "$.claims",
-                        "selected evidence is not represented in its governed section");
+                        "selected evidence is not represented in its governed section; selection="
+                                + entry.getKey().sourcePath());
             }
         }
     }

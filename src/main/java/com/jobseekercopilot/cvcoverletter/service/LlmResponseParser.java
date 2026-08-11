@@ -33,7 +33,7 @@ import org.springframework.web.util.HtmlUtils;
 @Component
 public class LlmResponseParser {
 
-    static final String PARSER_VERSION = "3.6.10";
+    static final String PARSER_VERSION = "3.6.13";
     static final String DEDICATED_PERSONAL_SUMMARY_PARSER_VERSION = "3.5.2";
     static final String CORE_SKILL_PROJECTION_PARSER_VERSION = "3.4.0";
     static final String DEDICATED_CANONICAL_PARSER_VERSION = "3.3.0";
@@ -123,10 +123,6 @@ public class LlmResponseParser {
             Pattern.compile("(?i)\\bon[a-z]{3,20}\\s*=");
     private static final Pattern CONTROL =
             Pattern.compile("[\\p{Cc}&&[^\\r\\n\\t]]");
-    private static final Pattern UUID_CLAIM_ID = Pattern.compile(
-            "(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-"
-                    + "[89ab][0-9a-f]{3}-[0-9a-f]{12}$");
-
     private final ObjectMapper objectMapper;
     private final ClaimEvidenceValidator claimEvidenceValidator;
     private final GeneratedDocumentQualityValidator qualityValidator;
@@ -209,14 +205,28 @@ public class LlmResponseParser {
                             ? removeRedundantInlineNarrativeClaims(
                                     providerOutput)
                             : 0;
-            int uuidClaimIdsRemapped = usesInlineNarrativeEvidence
-                    ? remapUuidClaimIds(providerOutput)
+            int duplicateClaimReferencesRemoved =
+                    usesInlineNarrativeEvidence
+                            ? deduplicateClaimReferenceArrays(providerOutput)
+                            : 0;
+            int claimIdsNormalized = usesInlineNarrativeEvidence
+                    ? normalizeOrdinaryClaimIds(providerOutput)
                     : 0;
+            // Reject active content before any canonical replacement so a
+            // malicious value cannot be hidden by a safe evidence repair.
+            validatePlainText(providerOutput, "$");
+            int canonicalAtomicFieldsRepaired = evidenceCatalog == null
+                    ? 0
+                    : claimEvidenceValidator
+                            .canonicalizePreSchemaProjectAtomicContent(
+                                    providerOutput,
+                                    evidenceCatalog);
             validateSchema(providerOutput, schema, "$");
             validatePlainText(providerOutput, "$");
             int duplicateItemsRemoved =
                     parsedProviderJson.exactDuplicateFieldsRemoved()
-                            + redundantInlineNarrativeClaimsRemoved;
+                            + redundantInlineNarrativeClaimsRemoved
+                            + duplicateClaimReferencesRemoved;
             if (usesInlineNarrativeEvidence) {
                 duplicateItemsRemoved +=
                         deduplicateInlineNarrativeArrays(providerOutput);
@@ -279,12 +289,14 @@ public class LlmResponseParser {
             return new ParsedGeneration(
                     documents,
                     new StructuralRepairReport(
-                            usesInlineNarrativeEvidence,
+                            usesInlineNarrativeEvidence
+                                    || canonicalAtomicFieldsRepaired > 0,
                             duplicateItemsRemoved,
                             duplicateItemsRemoved > 0
                                     || missingReviewTextFieldsAdded > 0
                                     || inactiveDocumentNullsAdded > 0
-                                    || uuidClaimIdsRemapped > 0));
+                                    || claimIdsNormalized > 0
+                                    || canonicalAtomicFieldsRepaired > 0));
         } catch (JsonProcessingException exception) {
             // Parser exceptions can contain model-output fragments, so do not retain the cause.
             throw new InvalidLlmResponseException("LLM response was not valid JSON");
@@ -390,26 +402,34 @@ public class LlmResponseParser {
         return added;
     }
 
-    private int remapUuidClaimIds(JsonNode output) {
+    private int normalizeOrdinaryClaimIds(JsonNode output) {
         JsonNode claims = output.path("claims");
         if (!(claims instanceof ArrayNode array) || array.isEmpty()) {
             return 0;
         }
-        boolean allUuidIds = true;
+        Set<String> retainedIds = new HashSet<>();
+        List<ObjectNode> claimsToNormalize = new ArrayList<>();
         for (JsonNode claim : array) {
-            allUuidIds &= claim instanceof ObjectNode
-                    && UUID_CLAIM_ID.matcher(
-                            claim.path("claimId").asText("")).matches();
+            if (!(claim instanceof ObjectNode objectClaim)) {
+                continue;
+            }
+            String claimId = claim.path("claimId").asText("");
+            if (claimId.matches(ORDINARY_CLAIM_ID_PATTERN)
+                    && retainedIds.add(claimId)) {
+                continue;
+            }
+            claimsToNormalize.add(objectClaim);
         }
-        if (!allUuidIds) {
-            return 0;
+        int nextClaimNumber = 0;
+        for (ObjectNode claim : claimsToNormalize) {
+            String replacement;
+            do {
+                replacement = "CLAIM-%03d".formatted(nextClaimNumber++);
+            } while (retainedIds.contains(replacement));
+            claim.put("claimId", replacement);
+            retainedIds.add(replacement);
         }
-        for (int index = 0; index < array.size(); index++) {
-            ((ObjectNode) array.get(index)).put(
-                    "claimId",
-                    "CLAIM-%03d".formatted(index));
-        }
-        return array.size();
+        return claimsToNormalize.size();
     }
 
     private int removeRedundantInlineNarrativeClaims(JsonNode output) {
@@ -428,11 +448,15 @@ public class LlmResponseParser {
                 continue;
             }
             ArrayNode ordinaryPaths = objectMapper.createArrayNode();
+            Set<String> retainedPaths = new LinkedHashSet<>();
             for (JsonNode path : paths) {
-                if (isInlineNarrativePath(path.asText(""))) {
+                String pathValue = path.asText("");
+                if (isInlineNarrativePath(pathValue)) {
                     removedItems++;
-                } else {
+                } else if (retainedPaths.add(pathValue)) {
                     ordinaryPaths.add(path);
+                } else {
+                    removedItems++;
                 }
             }
             if (!ordinaryPaths.isEmpty()) {
@@ -451,11 +475,46 @@ public class LlmResponseParser {
                 || path.matches(
                         "^/cv/coreSkills/[0-9]+/(?:name|evidence)$")
                 || path.matches(
-                        "^/cv/workHistory/[0-9]+/(?:responsibilities/[0-9]+|highlights(?:/[0-9]+)?)$")
+                        "^/cv/workHistory/[0-9]+/(?:responsibilities/[0-9]+(?:/text)?|highlights(?:/[0-9]+(?:/text)?)?)$")
                 || path.matches(
-                        "^/cv/projects/[0-9]+/highlights/[0-9]+$")
+                        "^/cv/projects/[0-9]+/highlights/[0-9]+(?:/text)?$")
                 || path.matches(
                         "^/cv/qualifications/[0-9]+/description$");
+    }
+
+    private int deduplicateClaimReferenceArrays(JsonNode output) {
+        JsonNode claims = output.path("claims");
+        if (!(claims instanceof ArrayNode array)) {
+            return 0;
+        }
+        int removed = 0;
+        for (JsonNode claim : array) {
+            if (!(claim instanceof ObjectNode objectClaim)) {
+                continue;
+            }
+            removed += deduplicateTextArray(
+                    objectClaim.path("contentPaths"));
+            removed += deduplicateTextArray(
+                    objectClaim.path("evidenceIds"));
+        }
+        return removed;
+    }
+
+    private int deduplicateTextArray(JsonNode value) {
+        if (!(value instanceof ArrayNode array)) {
+            return 0;
+        }
+        int originalSize = array.size();
+        Set<String> retained = new LinkedHashSet<>();
+        ArrayNode deduplicated = objectMapper.createArrayNode();
+        for (JsonNode item : array) {
+            if (!item.isTextual() || retained.add(item.asText())) {
+                deduplicated.add(item);
+            }
+        }
+        array.removeAll();
+        array.addAll(deduplicated);
+        return originalSize - array.size();
     }
 
     String parserVersion(JsonNode schema) {

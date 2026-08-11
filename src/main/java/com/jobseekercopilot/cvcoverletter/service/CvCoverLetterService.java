@@ -638,9 +638,11 @@ public class CvCoverLetterService {
                         prepared.claimPolicyVersion(),
                         null);
                 log.warn(
-                        "retained selected CV reconciled with deterministic fallback operationId={} originalFailureCategory={}",
+                        "retained selected CV reconciled with deterministic fallback operationId={} originalFailureCategory={} originalFailurePath={} originalFailureReason={}",
                         operationId,
-                        diagnostic == null ? null : diagnostic.phase());
+                        diagnostic == null ? null : diagnostic.phase(),
+                        diagnostic == null ? null : diagnostic.path(),
+                        diagnostic == null ? null : diagnostic.reason());
                 return new RejectedSelectedGenerationReplayResponse(
                         operationId,
                         replayEvent.recordedAt(),

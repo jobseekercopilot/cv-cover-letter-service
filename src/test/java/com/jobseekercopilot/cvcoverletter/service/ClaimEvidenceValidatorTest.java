@@ -1407,6 +1407,90 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
+    void canonicalizesProjectContextWithinItsSelectedProject()
+            throws Exception {
+        useVersionedCatalog();
+        ObjectNode output = versionedOutput();
+        String firstContextFactId =
+                "81200000-0000-4000-8000-000000000001";
+        String secondTitleFactId =
+                "81200000-0000-4000-8000-000000000002";
+        String secondContextFactId =
+                "81200000-0000-4000-8000-000000000003";
+        String secondDescriptionFactId =
+                "81200000-0000-4000-8000-000000000004";
+        List<ApprovedEvidenceRecord> records =
+                new java.util.ArrayList<>(catalog.records());
+        records.add(new ApprovedEvidenceRecord(
+                firstContextFactId,
+                EvidenceSource.EVIDENCE_SNAPSHOT,
+                "/evidenceSnapshots/cv/selections/0/facts/3",
+                "Job Seeker Copilot",
+                "ORGANISATION_CONTEXT",
+                "PROJECT",
+                EvidencePurpose.CV));
+        records.add(new ApprovedEvidenceRecord(
+                secondTitleFactId,
+                EvidenceSource.EVIDENCE_SNAPSHOT,
+                "/evidenceSnapshots/cv/selections/1/facts/0",
+                "Evidence Library",
+                "HEADING",
+                "PROJECT",
+                EvidencePurpose.CV));
+        records.add(new ApprovedEvidenceRecord(
+                secondContextFactId,
+                EvidenceSource.EVIDENCE_SNAPSHOT,
+                "/evidenceSnapshots/cv/selections/1/facts/1",
+                "Internal platform",
+                "ORGANISATION_CONTEXT",
+                "PROJECT",
+                EvidencePurpose.CV));
+        records.add(new ApprovedEvidenceRecord(
+                secondDescriptionFactId,
+                EvidenceSource.EVIDENCE_SNAPSHOT,
+                "/evidenceSnapshots/cv/selections/1/facts/2",
+                "Built a versioned evidence library.",
+                "DESCRIPTION",
+                "PROJECT",
+                EvidencePurpose.CV));
+        catalog = new ClaimEvidenceCatalog(
+                catalog.catalogVersion(),
+                List.copyOf(records),
+                catalog.sectionOrder());
+
+        ObjectNode project = (ObjectNode) output.at("/cv/projects/0");
+        project.put("context", "Independent software product ".repeat(8));
+        ArrayNode claimEvidence =
+                (ArrayNode) output.at("/claims/1/evidenceIds");
+        claimEvidence.add(firstContextFactId);
+        ((ArrayNode) output.at("/claims/1/contentPaths"))
+                .add("/cv/projects/0/context");
+        removeContentPath(output, 1, "/cv/projects/0/title");
+
+        GeneratedApplicationDocuments corrected = parse(output);
+
+        assertEquals(
+                "Job Seeker Copilot",
+                corrected.getCv().getProjects().get(0).getContext());
+        assertEquals(2, corrected.getCv().getProjects().size());
+        assertEquals(
+                "Evidence Library",
+                corrected.getCv().getProjects().get(1).getTitle());
+        assertEquals(
+                "Internal platform",
+                corrected.getCv().getProjects().get(1).getContext());
+        GeneratedClaim contextClaim = corrected.getClaims().stream()
+                .filter(claim -> claim.getContentPaths().contains(
+                        "/cv/projects/0/context"))
+                .findFirst()
+                .orElseThrow();
+        assertTrue(contextClaim.getEvidenceIds().contains(
+                firstContextFactId));
+        assertFalse(contextClaim.getEvidenceIds().contains(
+                secondContextFactId));
+    }
+
+    @Test
     void reservesExactAtomicEvidenceWhenSubmittedReferencesFillTheLimit()
             throws Exception {
         ObjectNode output = validOutput();
@@ -1893,7 +1977,7 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
-    void rejectsSelectedProjectEvidenceThatIsNotInTheProjectSection()
+    void restoresSelectedProjectEvidenceThatIsMissingFromTheProjectSection()
             throws Exception {
         useVersionedCatalog();
         ObjectNode output = versionedOutput();
@@ -1909,9 +1993,12 @@ class ClaimEvidenceValidatorTest {
             }
         }
 
-        assertRejected(
-                output,
-                "selected evidence is not represented in its governed section");
+        GeneratedApplicationDocuments restored = parse(output);
+
+        assertEquals(1, restored.getCv().getProjects().size());
+        assertEquals(
+                "Job Seeker Copilot",
+                restored.getCv().getProjects().get(0).getTitle());
     }
 
     @Test

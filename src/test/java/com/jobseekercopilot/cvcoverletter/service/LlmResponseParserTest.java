@@ -113,7 +113,7 @@ class LlmResponseParserTest {
                         .equals(claim.getContentPaths()))
                 .count());
         assertEquals("3.5.2", parser.parserVersion(schema));
-        assertEquals("2.24.0", parser.claimPolicyVersion(schema));
+        assertEquals("2.25.0", parser.claimPolicyVersion(schema));
     }
 
     @Test
@@ -121,8 +121,8 @@ class LlmResponseParserTest {
         assertEquals(120, detailedSchema.at("/properties/claims/maxItems").asInt());
         assertTrue(LlmResponseParser.MAX_FALLBACK_ARRAY_ITEMS
                 >= detailedSchema.at("/properties/claims/maxItems").asInt() * 2);
-        assertEquals("3.6.10", parser.parserVersion(detailedSchema));
-        assertEquals("2.24.0", parser.claimPolicyVersion(detailedSchema));
+        assertEquals("3.6.13", parser.parserVersion(detailedSchema));
+        assertEquals("2.25.0", parser.claimPolicyVersion(detailedSchema));
     }
 
     @Test
@@ -144,8 +144,8 @@ class LlmResponseParserTest {
                 inlineNarrativeSchema);
         GeneratedApplicationDocuments result = parsed.documents();
 
-        assertEquals("3.6.10", parser.parserVersion(inlineNarrativeSchema));
-        assertEquals("2.24.0", parser.claimPolicyVersion(inlineNarrativeSchema));
+        assertEquals("3.6.13", parser.parserVersion(inlineNarrativeSchema));
+        assertEquals("2.25.0", parser.claimPolicyVersion(inlineNarrativeSchema));
         assertEquals(
                 List.of("Delivered a reliable service."),
                 result.getCv().getProjects().get(0).getHighlights());
@@ -953,7 +953,7 @@ class LlmResponseParserTest {
                 ((ObjectNode) missingEmptyReviewText.at("/claims/0"))
                         .deepCopy();
         redundantNarrativeClaim.putArray("contentPaths")
-                .add("/cv/workHistory/0/responsibilities/0");
+                .add("/cv/workHistory/0/responsibilities/0/text");
         ((ArrayNode) missingEmptyReviewText.path("claims"))
                 .add(redundantNarrativeClaim);
         ObjectNode redundantQualificationDescription =
@@ -965,6 +965,9 @@ class LlmResponseParserTest {
                 .add(redundantQualificationDescription);
         ((ArrayNode) missingEmptyReviewText.at("/claims/0/contentPaths"))
                 .add("/cv/workHistory/0/responsibilities/0");
+        ArrayNode firstClaimPaths = (ArrayNode) missingEmptyReviewText.at(
+                "/claims/0/contentPaths");
+        firstClaimPaths.add(firstClaimPaths.get(0).asText());
         missingEmptyReviewText.path("claims").forEach(claim ->
                 ((ObjectNode) claim).put(
                         "claimId",
@@ -975,7 +978,7 @@ class LlmResponseParserTest {
                                 missingEmptyReviewText),
                         prompt.getOutputSchema(),
                         prompt.getEvidenceCatalog());
-        assertEquals(3,
+        assertEquals(4,
                 reviewTextRepaired.repair().duplicateItemsRemoved());
         assertTrue(reviewTextRepaired.repair().succeeded());
         assertFalse(reviewTextRepaired.documents().getClaims().stream()
@@ -993,14 +996,20 @@ class LlmResponseParserTest {
         ((ObjectNode) mixedClaimIds.at("/claims/0")).put(
                 "claimId",
                 java.util.UUID.randomUUID().toString());
-        InvalidLlmResponseException mixedClaimIdRejection = assertThrows(
-                InvalidLlmResponseException.class,
-                () -> parser.parseDetailed(
+        String retainedSecondClaimId = mixedClaimIds.at("/claims/1/claimId")
+                .asText();
+        LlmResponseParser.ParsedGeneration mixedClaimIdRepaired =
+                parser.parseDetailed(
                         objectMapper.writeValueAsString(mixedClaimIds),
                         prompt.getOutputSchema(),
-                        prompt.getEvidenceCatalog()));
-        assertTrue(mixedClaimIdRejection.getMessage().contains(
-                "$.claims[0].claimId"));
+                        prompt.getEvidenceCatalog());
+        assertTrue(mixedClaimIdRepaired.repair().succeeded());
+        assertEquals("CLAIM-000",
+                mixedClaimIdRepaired.documents().getClaims().get(0)
+                        .getClaimId());
+        assertEquals(retainedSecondClaimId,
+                mixedClaimIdRepaired.documents().getClaims().get(1)
+                        .getClaimId());
 
         String exactDuplicate = fallback.substring(
                 0, fallback.lastIndexOf('}'))

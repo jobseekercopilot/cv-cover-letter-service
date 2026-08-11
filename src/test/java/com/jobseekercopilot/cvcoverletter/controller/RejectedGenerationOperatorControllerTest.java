@@ -159,7 +159,7 @@ class RejectedGenerationOperatorControllerTest {
                         "REJECTED",
                         0,
                         "3.6.3",
-                        "2.24.0",
+                        "2.25.0",
                         new RejectedGenerationDiagnostic(
                                 "CLAIM_EVIDENCE",
                                 "$.claims[0]",

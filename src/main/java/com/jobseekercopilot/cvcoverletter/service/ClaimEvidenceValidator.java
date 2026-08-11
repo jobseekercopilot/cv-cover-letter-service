@@ -29,7 +29,7 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class ClaimEvidenceValidator {
-    static final String POLICY_VERSION = "2.24.0";
+    static final String POLICY_VERSION = "2.25.0";
     static final String CORE_SKILL_PROJECTION_POLICY_VERSION = "2.11.0";
     static final String ROLLBACK_POLICY_VERSION = "2.10.0";
     private static final int MAX_CLAIMS = 200;
@@ -76,6 +76,167 @@ public class ClaimEvidenceValidator {
                     + "|enthusiastic|excited|motivated|keen)\\b)))");
     private static final Pattern PROJECT_CONTENT_PATH =
             Pattern.compile("^/cv/projects/(\\d+)/.+$");
+
+    int canonicalizePreSchemaProjectAtomicContent(
+            JsonNode output,
+            ClaimEvidenceCatalog catalog
+    ) {
+        if (output == null
+                || catalog == null
+                || catalog.records() == null) {
+            return 0;
+        }
+        Map<String, List<ApprovedEvidenceRecord>> evidenceById =
+                new HashMap<>();
+        for (ApprovedEvidenceRecord record : catalog.records()) {
+            if (record != null && StringUtils.hasText(record.evidenceId())) {
+                evidenceById.computeIfAbsent(
+                                record.evidenceId(),
+                                ignored -> new ArrayList<>())
+                        .add(record);
+            }
+        }
+        JsonNode projects = output.at("/cv/projects");
+        if (!projects.isArray()) {
+            return 0;
+        }
+        int repaired = 0;
+        for (int index = 0; index < projects.size(); index++) {
+            String contentPath = "/cv/projects/" + index + "/context";
+            JsonNode current = output.at(contentPath);
+            if (!current.isTextual()) {
+                continue;
+            }
+            ApprovedEvidenceRecord fact = uniqueSelectedProjectFact(
+                    output,
+                    List.of(),
+                    evidenceById,
+                    contentPath,
+                    atomicEvidenceFor(contentPath));
+            if (fact != null
+                    && !equalText(current.textValue(), fact.value())) {
+                replaceText(output, contentPath, fact.value());
+                repaired++;
+            }
+        }
+        Map<String, List<ApprovedEvidenceRecord>> selectedProjects =
+                new LinkedHashMap<>();
+        catalog.records().stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(record -> record.source()
+                        == EvidenceSource.EVIDENCE_SNAPSHOT)
+                .filter(record -> record.purpose()
+                        .supports(EvidencePurpose.CV))
+                .filter(record -> "PROJECT".equals(record.category()))
+                .filter(record -> StringUtils.hasText(
+                        evidenceSelection(record)))
+                .forEach(record -> selectedProjects.computeIfAbsent(
+                                evidenceSelection(record),
+                                ignored -> new ArrayList<>())
+                        .add(record));
+        for (List<ApprovedEvidenceRecord> selection :
+                selectedProjects.values()) {
+            String title = uniqueFactValue(selection, "HEADING");
+            if (!StringUtils.hasText(title)
+                    || containsProjectTitle(projects, title)
+                    || rawProjectClaimReferencesSelection(
+                            output,
+                            selection)) {
+                continue;
+            }
+            String description = uniqueFactValue(
+                    selection,
+                    "DESCRIPTION");
+            if (!StringUtils.hasText(description)) {
+                continue;
+            }
+            ObjectNode project = ((ArrayNode) projects).addObject();
+            project.put("title", title);
+            project.put("role", uniqueFactValue(
+                    selection,
+                    "PROJECT_ROLE",
+                    "ROLE_TITLE"));
+            project.put("context", uniqueFactValue(
+                    selection,
+                    "ORGANISATION_CONTEXT"));
+            project.put("startDate", uniqueFactValue(
+                    selection,
+                    "START_DATE"));
+            project.put("endDate", uniqueFactValue(
+                    selection,
+                    "END_DATE"));
+            project.put("description", description);
+            project.putArray("highlights");
+            repaired++;
+        }
+        return repaired;
+    }
+
+    private boolean rawProjectClaimReferencesSelection(
+            JsonNode output,
+            List<ApprovedEvidenceRecord> selection
+    ) {
+        Set<String> evidenceIds = selection.stream()
+                .map(ApprovedEvidenceRecord::evidenceId)
+                .filter(StringUtils::hasText)
+                .collect(java.util.stream.Collectors.toSet());
+        JsonNode claims = output.path("claims");
+        if (!claims.isArray()) {
+            return false;
+        }
+        for (JsonNode claim : claims) {
+            boolean selectedEvidence = false;
+            for (JsonNode evidenceId : claim.path("evidenceIds")) {
+                if (evidenceId.isTextual()
+                        && evidenceIds.contains(evidenceId.textValue())) {
+                    selectedEvidence = true;
+                    break;
+                }
+            }
+            if (!selectedEvidence) {
+                continue;
+            }
+            for (JsonNode contentPath : claim.path("contentPaths")) {
+                if (contentPath.isTextual()
+                        && contentPath.textValue().startsWith(
+                                "/cv/projects/")) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean containsProjectTitle(
+            JsonNode projects,
+            String title
+    ) {
+        for (JsonNode project : projects) {
+            if (project.path("title").isTextual()
+                    && equalText(project.path("title").textValue(), title)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String uniqueFactValue(
+            List<ApprovedEvidenceRecord> records,
+            String... factTypes
+    ) {
+        Set<String> allowed = Set.of(factTypes);
+        Map<String, String> unique = new LinkedHashMap<>();
+        records.stream()
+                .filter(record -> allowed.contains(record.factType()))
+                .map(ApprovedEvidenceRecord::value)
+                .filter(StringUtils::hasText)
+                .forEach(value -> unique.putIfAbsent(
+                        normalise(value),
+                        value));
+        return unique.size() == 1
+                ? unique.values().iterator().next()
+                : "";
+    }
 
     public void validate(
             JsonNode output,
@@ -1469,6 +1630,20 @@ public class ClaimEvidenceValidator {
                                 record.value()))) {
                     continue;
                 }
+                ApprovedEvidenceRecord selectedProjectFact =
+                        uniqueSelectedProjectFact(
+                                output,
+                                claims,
+                                evidenceById,
+                                contentPath,
+                                atomicEvidence);
+                if (selectedProjectFact != null) {
+                    replaceText(
+                            output,
+                            contentPath,
+                            selectedProjectFact.value());
+                    continue;
+                }
                 if (uniqueFacts.size() != 1
                         && mayBeEmptyWhenUnsupported(contentPath)) {
                     replaceText(output, contentPath, "");
@@ -1485,6 +1660,44 @@ public class ClaimEvidenceValidator {
                 }
             }
         }
+    }
+
+    private ApprovedEvidenceRecord uniqueSelectedProjectFact(
+            JsonNode output,
+            List<GeneratedClaim> claims,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            String contentPath,
+            Predicate<ApprovedEvidenceRecord> atomicEvidence
+    ) {
+        Integer index = projectIndex(contentPath);
+        if (index == null || atomicEvidence == null) {
+            return null;
+        }
+        String selection = uniqueProjectSelection(
+                output,
+                claims,
+                evidenceById,
+                index);
+        if (!StringUtils.hasText(selection)) {
+            return null;
+        }
+        Map<String, ApprovedEvidenceRecord> uniqueFacts =
+                new LinkedHashMap<>();
+        evidenceById.values().stream()
+                .flatMap(List::stream)
+                .filter(record -> record.source()
+                        == EvidenceSource.EVIDENCE_SNAPSHOT)
+                .filter(record -> record.purpose()
+                        .supports(EvidencePurpose.CV))
+                .filter(record -> selection.equals(
+                        evidenceSelection(record)))
+                .filter(atomicEvidence)
+                .forEach(record -> uniqueFacts.putIfAbsent(
+                        normalise(record.value()),
+                        record));
+        return uniqueFacts.size() == 1
+                ? uniqueFacts.values().iterator().next()
+                : null;
     }
 
     private boolean mayBeEmptyWhenUnsupported(String contentPath) {
@@ -2036,8 +2249,25 @@ public class ClaimEvidenceValidator {
                 .map(this::evidenceSelection)
                 .filter(StringUtils::hasText)
                 .collect(java.util.stream.Collectors.toSet());
-        return titleSelections.size() == 1
-                ? titleSelections.iterator().next()
+        if (titleSelections.size() == 1) {
+            return titleSelections.iterator().next();
+        }
+        Set<String> exactTitleSelections = evidenceById.values().stream()
+                .flatMap(List::stream)
+                .filter(record -> record.source()
+                        == EvidenceSource.EVIDENCE_SNAPSHOT)
+                .filter(record -> record.purpose()
+                        .supports(EvidencePurpose.CV))
+                .filter(record -> "PROJECT".equals(record.category()))
+                .filter(record -> "HEADING".equals(record.factType()))
+                .filter(record -> equalText(
+                        title.textValue(),
+                        record.value()))
+                .map(this::evidenceSelection)
+                .filter(StringUtils::hasText)
+                .collect(java.util.stream.Collectors.toSet());
+        return exactTitleSelections.size() == 1
+                ? exactTitleSelections.iterator().next()
                 : "";
     }
 
