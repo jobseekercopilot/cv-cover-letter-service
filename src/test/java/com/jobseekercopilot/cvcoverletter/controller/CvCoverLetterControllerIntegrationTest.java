@@ -124,7 +124,16 @@ class CvCoverLetterControllerIntegrationTest {
                         .content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.outputType").value("CV"))
-                .andExpect(jsonPath("$.title").value("Java Developer CV"));
+                .andExpect(jsonPath("$.title").value("Java Developer CV"))
+                .andExpect(jsonPath("$.recovery.finalSource")
+                        .value("LLM"))
+                .andExpect(jsonPath("$.recovery.providerAttemptCount")
+                        .value(1))
+                .andExpect(jsonPath("$.recovery.automaticRetryCount")
+                        .value(0))
+                .andExpect(jsonPath("$.recovery.retried").value(false))
+                .andExpect(jsonPath("$.recovery.retryReason")
+                        .doesNotExist());
 
         verify(cvCoverLetterService).generateSelectedDraft(
                 eq("owner-123"),

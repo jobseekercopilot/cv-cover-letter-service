@@ -181,6 +181,10 @@ class CvCoverLetterServiceTest {
                 successfulResponse(outputType == DraftOutputType.CV
                                 ? selectedCvJson()
                                 : selectedCoverLetterJson())
+                        .audit(generationAudit()
+                                .providerAttemptCount(2)
+                                .automaticRetryCount(1)
+                                .retryReason("RATE_LIMITED"))
                         .schemaId(selectedPrompt.getGenerationMetadata().schemaId())
                         .schemaVersion(selectedPrompt.getGenerationMetadata().schemaVersion()));
         UUID operationId = UUID.randomUUID();
@@ -200,6 +204,11 @@ class CvCoverLetterServiceTest {
                         ? "Java Developer CV"
                         : "Java Developer Cover Letter",
                 result.title());
+        assertEquals("LLM", result.recovery().finalSource());
+        assertEquals(2, result.recovery().providerAttemptCount());
+        assertEquals(1, result.recovery().automaticRetryCount());
+        assertTrue(result.recovery().retried());
+        assertEquals("RATE_LIMITED", result.recovery().retryReason());
         ArgumentCaptor<GenerationRequest> requestCaptor =
                 ArgumentCaptor.forClass(GenerationRequest.class);
         verify(llmGatewayApi).generateV2(requestCaptor.capture());
@@ -312,6 +321,10 @@ class CvCoverLetterServiceTest {
                 "MODEL_OUTPUT_REJECTED_CLAIM_EVIDENCE",
                 result.recovery().fallbackReason());
         assertEquals(0L, result.billableTokens());
+        assertEquals(1, result.recovery().providerAttemptCount());
+        assertEquals(0, result.recovery().automaticRetryCount());
+        assertFalse(result.recovery().retried());
+        assertNull(result.recovery().retryReason());
         verify(llmGatewayApi, times(1)).generateV2(any());
     }
 
@@ -383,6 +396,8 @@ class CvCoverLetterServiceTest {
         assertEquals(0L, result.billableTokens());
         assertTrue(result.recovery().fallbackUsed());
         assertEquals("PROVIDER_FAILURE", result.recovery().fallbackReason());
+        assertEquals(0, result.recovery().providerAttemptCount());
+        assertFalse(result.recovery().retried());
         assertTrue(result.content().contains("Fictional Employer 1"));
         assertTrue(result.content().contains("Evidence Skill 1"));
         assertTrue(result.content().contains("Fictional Employer 12"));
@@ -1044,7 +1059,14 @@ class CvCoverLetterServiceTest {
                 generationAudit().pricingVersion(" "),
                 generationAudit().estimatedInputTokensAtAdmission(-1L),
                 generationAudit().estimatedCostMicroUsd(-1L),
-                generationAudit().currency("EUR"));
+                generationAudit().currency("EUR"),
+                generationAudit().providerAttemptCount(0),
+                generationAudit().providerAttemptCount(3),
+                generationAudit().automaticRetryCount(2),
+                generationAudit().providerAttemptCount(2)
+                        .automaticRetryCount(0),
+                generationAudit().retryReason(
+                        "private-provider-error-sentinel"));
     }
 
     private static GenerationAudit generationAudit() {
@@ -1055,7 +1077,9 @@ class CvCoverLetterServiceTest {
                 .pricingVersion("openai-standard-2026-07-25")
                 .estimatedInputTokensAtAdmission(5_372L)
                 .estimatedCostMicroUsd(41_400L)
-                .currency("USD");
+                .currency("USD")
+                .providerAttemptCount(1)
+                .automaticRetryCount(0);
     }
 
     private PromptGenerationMetadata promptMetadata() {

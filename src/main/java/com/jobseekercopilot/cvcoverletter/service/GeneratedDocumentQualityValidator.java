@@ -8,6 +8,7 @@ import com.jobseekercopilot.cvcoverletter.dto.GeneratedCoverLetter;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedCv;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedQualification;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidLlmResponseException;
+import com.jobseekercopilot.cvcoverletter.model.ApplicationQualityPlan;
 import com.jobseekercopilot.cvcoverletter.model.ApprovedEvidenceRecord;
 import com.jobseekercopilot.cvcoverletter.model.ClaimEvidenceCatalog;
 import com.jobseekercopilot.cvcoverletter.model.EvidencePurpose;
@@ -28,8 +29,11 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class GeneratedDocumentQualityValidator {
-    static final String POLICY_VERSION = "1.7.0";
+    static final String POLICY_VERSION = "1.8.0";
     private static final int MAX_SKILLS = 12;
+    private static final int MAX_CV_BULLET_WORDS = 55;
+    private static final int MAX_PROJECT_DESCRIPTION_WORDS = 110;
+    private static final int MAX_TAILORED_DESCRIPTION_WORDS = 80;
     private static final Pattern COVER_LETTER_SKILL_LIST = Pattern.compile(
             "(?i)^\\s*(?:key skills|technical skills|skills\\s*&\\s*expertise)"
                     + "\\s*(?::|[-\u2013\u2014]|\\R|$)");
@@ -115,8 +119,206 @@ public class GeneratedDocumentQualityValidator {
                 catalog,
                 enforceTailoredSummary);
         if (documents.getCv() != null) {
+            if (enforceApplicationQuality) {
+                validateCvComposition(documents, catalog);
+                validateRoleRelevantEvidence(documents, catalog);
+            }
             validateStructuredProjects(documents, catalog);
         }
+    }
+
+    private void validateCvComposition(
+            GeneratedApplicationDocuments documents,
+            ClaimEvidenceCatalog catalog
+    ) {
+        GeneratedCv cv = documents.getCv();
+        List<TextUnit> detailUnits = new ArrayList<>();
+        int totalWords = ApplicationQualityPlanner.wordCount(
+                cv.getPersonalSummary());
+
+        List<GeneratedCv.CoreSkill> skills = safe(cv.getCoreSkills());
+        for (int index = 0; index < skills.size(); index++) {
+            String value = skills.get(index) == null
+                    ? null : skills.get(index).getName();
+            if (StringUtils.hasText(value)) {
+                detailUnits.add(new TextUnit(
+                        "$.cv.coreSkills[" + index + "].name", value));
+                totalWords += ApplicationQualityPlanner.wordCount(value);
+            }
+        }
+
+        for (int workIndex = 0;
+                workIndex < safe(cv.getWorkHistory()).size();
+                workIndex++) {
+            var work = cv.getWorkHistory().get(workIndex);
+            if (work == null) {
+                continue;
+            }
+            if (StringUtils.hasText(work.getTailoredDescription())) {
+                TextUnit unit = new TextUnit(
+                        "$.cv.workHistory[" + workIndex
+                                + "].tailoredDescription",
+                        work.getTailoredDescription());
+                requireUnitWords(unit, 3, MAX_TAILORED_DESCRIPTION_WORDS);
+                detailUnits.add(unit);
+                totalWords += ApplicationQualityPlanner.wordCount(unit.text());
+            }
+            List<String> responsibilities = safe(work.getResponsibilities());
+            for (int itemIndex = 0;
+                    itemIndex < responsibilities.size();
+                    itemIndex++) {
+                TextUnit unit = new TextUnit(
+                        "$.cv.workHistory[" + workIndex
+                                + "].responsibilities[" + itemIndex + "]",
+                        responsibilities.get(itemIndex));
+                requireUnitWords(unit, 3, MAX_CV_BULLET_WORDS);
+                detailUnits.add(unit);
+                totalWords += ApplicationQualityPlanner.wordCount(unit.text());
+            }
+        }
+
+        for (int projectIndex = 0;
+                projectIndex < safe(cv.getProjects()).size();
+                projectIndex++) {
+            var project = cv.getProjects().get(projectIndex);
+            if (project == null) {
+                continue;
+            }
+            TextUnit description = new TextUnit(
+                    "$.cv.projects[" + projectIndex + "].description",
+                    project.getDescription());
+            requireUnitWords(description, 3, MAX_PROJECT_DESCRIPTION_WORDS);
+            detailUnits.add(description);
+            totalWords += ApplicationQualityPlanner.wordCount(
+                    description.text());
+            List<String> highlights = safe(project.getHighlights());
+            for (int highlightIndex = 0;
+                    highlightIndex < highlights.size();
+                    highlightIndex++) {
+                TextUnit unit = new TextUnit(
+                        "$.cv.projects[" + projectIndex + "].highlights["
+                                + highlightIndex + "]",
+                        highlights.get(highlightIndex));
+                requireUnitWords(unit, 3, MAX_CV_BULLET_WORDS);
+                detailUnits.add(unit);
+                totalWords += ApplicationQualityPlanner.wordCount(unit.text());
+            }
+        }
+
+        List<GeneratedQualification> qualifications =
+                safe(cv.getQualifications());
+        totalWords += qualifications.stream()
+                .filter(java.util.Objects::nonNull)
+                .mapToInt(qualification ->
+                        ApplicationQualityPlanner.wordCount(
+                                qualification.getQualificationName())
+                                + ApplicationQualityPlanner.wordCount(
+                                        qualification.getIssuingBody()))
+                .sum();
+
+        long substantiveSelections = catalog.records().stream()
+                .filter(this::substantiveCvEvidence)
+                .map(record -> selectionPath(record.sourcePath()))
+                .distinct()
+                .count();
+        int requiredDetailUnits = substantiveSelections >= 4
+                ? 4 : substantiveSelections >= 2 ? 2
+                        : substantiveSelections == 1 ? 1 : 0;
+        int requiredWords = substantiveSelections >= 4
+                ? 100 : substantiveSelections >= 2 ? 30
+                        : substantiveSelections == 1 ? 25 : 0;
+        require(detailUnits.size() + qualifications.size()
+                        >= requiredDetailUnits,
+                "$.cv",
+                "CV is too sparse for the available approved evidence "
+                        + "(detailUnits="
+                        + (detailUnits.size() + qualifications.size())
+                        + ", required=" + requiredDetailUnits + ")");
+        require(totalWords >= requiredWords,
+                "$.cv",
+                "CV is too sparse for the available approved evidence "
+                        + "(words=" + totalWords
+                        + ", required=" + requiredWords + ")");
+
+        if (detailUnits.size() >= 4) {
+            int detailWords = detailUnits.stream()
+                    .mapToInt(unit -> ApplicationQualityPlanner.wordCount(
+                            unit.text()))
+                    .sum();
+            int largestUnit = detailUnits.stream()
+                    .mapToInt(unit -> ApplicationQualityPlanner.wordCount(
+                            unit.text()))
+                    .max()
+                    .orElse(0);
+            require(largestUnit * 100 <= Math.max(1, detailWords) * 55,
+                    "$.cv",
+                    "CV detail is imbalanced around one narrative item");
+        }
+    }
+
+    private void requireUnitWords(
+            TextUnit unit,
+            int minimum,
+            int maximum
+    ) {
+        int words = ApplicationQualityPlanner.wordCount(unit.text());
+        require(words >= minimum && words <= maximum,
+                unit.path(),
+                "CV narrative item must contain " + minimum + " to "
+                        + maximum + " words");
+    }
+
+    private boolean substantiveCvEvidence(ApprovedEvidenceRecord record) {
+        if (record == null
+                || record.source() != EvidenceSource.EVIDENCE_SNAPSHOT
+                || record.purpose() == null
+                || !record.purpose().supports(EvidencePurpose.CV)
+                || !StringUtils.hasText(record.value())) {
+            return false;
+        }
+        return Set.of(
+                        "DESCRIPTION",
+                        "RESPONSIBILITY",
+                        "RESPONSIBILITIES",
+                        "ACHIEVEMENT",
+                        "ACHIEVEMENTS",
+                        "DEMONSTRATED_SKILL",
+                        "SKILL",
+                        "QUALIFICATION_TITLE")
+                .contains(record.factType());
+    }
+
+    private void validateRoleRelevantEvidence(
+            GeneratedApplicationDocuments documents,
+            ClaimEvidenceCatalog catalog
+    ) {
+        Set<String> cvEvidenceIds = catalog.records().stream()
+                .filter(record -> record.purpose() != null
+                        && record.purpose().supports(EvidencePurpose.CV))
+                .map(ApprovedEvidenceRecord::evidenceId)
+                .collect(java.util.stream.Collectors.toSet());
+        List<ApplicationQualityPlan.RankedEvidence> strongest =
+                new ApplicationQualityPlanner().plan(catalog)
+                        .rankedEvidence().stream()
+                        .filter(ranked -> cvEvidenceIds.contains(
+                                ranked.evidenceId()))
+                        .filter(ranked -> ranked.score() > 0)
+                        .limit(3)
+                        .toList();
+        if (strongest.isEmpty()) {
+            return;
+        }
+        Set<String> cited = safe(documents.getClaims()).stream()
+                .filter(this::isFinal)
+                .filter(claim -> safe(claim.getContentPaths()).stream()
+                        .allMatch(path -> path != null
+                                && path.startsWith("/cv/")))
+                .flatMap(claim -> safe(claim.getEvidenceIds()).stream())
+                .collect(java.util.stream.Collectors.toSet());
+        require(strongest.stream().anyMatch(ranked ->
+                        cited.contains(ranked.evidenceId())),
+                "$.claims",
+                "CV omits the strongest role-relevant approved evidence");
     }
 
     private void validateProfessionalSummary(

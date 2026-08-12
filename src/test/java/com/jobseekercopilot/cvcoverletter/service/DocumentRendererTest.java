@@ -47,10 +47,19 @@ class DocumentRendererTest {
     @Test
     void cvRendererOutputsAllRequiredSections() {
         String result = new CvDocumentRenderer().render(documents.getCv(),
-                new ContactDetails("Alex Candidate", "alex@example.com", "London, SW1A 1AA"));
+                new ContactDetails(
+                        "Alex Candidate",
+                        "alex@example.com",
+                        "London, SW1A 1AA",
+                        "+44 20 7946 0958",
+                        java.util.List.of(new ContactDetails.ProfessionalLink(
+                                "GitHub",
+                                "https://github.com/example"))));
 
         assertTrue(result.contains("Tailored Developer CV"));
         assertTrue(result.contains("Alex Candidate\nalex@example.com\nLondon, SW1A 1AA"));
+        assertTrue(result.contains(
+                "+44 20 7946 0958\nGitHub: https://github.com/example"));
         assertTrue(result.contains("Professional Profile\nA capable developer."));
         assertTrue(result.contains(
                 "Selected Projects\nJob Seeker Copilot - Developer\nMay 2026 – Present\nBuilt a useful service."));

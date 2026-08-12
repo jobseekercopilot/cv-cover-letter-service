@@ -25,6 +25,7 @@ jq -e '
         "DraftGenerationEstimateResponse",
         "DraftGenerationResponse",
         "DraftGenerationUsage",
+        "DraftRecoveryMetadata",
         "EmploymentInput",
         "EvidenceSnapshotFactInput",
         "EvidenceSnapshotInput",
@@ -34,6 +35,8 @@ jq -e '
         "JobInputSnapshot",
         "PromptGenerationMetadata",
         "ProfileInputSnapshot",
+        "ProfessionalContactInputSnapshot",
+        "ProfessionalLinkInput",
         "QualificationInput",
         "SelectedDraftGenerationRequest",
         "SelectedDraftGenerationResponse",
@@ -42,7 +45,7 @@ jq -e '
         "ValidatedClaimLedger"
     ] as $closed |
     (.openapi | type == "string" and startswith("3.")) and
-    (.info.version == "4.1.0") and
+    (.info.version == "4.2.0") and
     (.paths["/api/v1/cv-cover-letter/drafts/{outputType}/estimate"].post.operationId
         == "estimateSelectedDraft") and
     (.paths["/api/v1/cv-cover-letter/drafts/{outputType}"].post.operationId
@@ -149,6 +152,21 @@ jq -e '
     ($schemas.ProfileInputSnapshot.properties.targetRoles.maxItems == 20) and
     ($schemas.ProfileInputSnapshot.properties.qualifications.maxItems == 30) and
     ($schemas.ProfileInputSnapshot.properties.employmentHistory.maxItems == 30) and
+    ($schemas.ProfileInputSnapshot.properties.professionalContact["$ref"]
+        == "#/components/schemas/ProfessionalContactInputSnapshot") and
+    ($schemas.ProfessionalContactInputSnapshot.properties.phone.maxLength == 40) and
+    ($schemas.ProfessionalContactInputSnapshot.properties.links.maxItems == 8) and
+    ($schemas.ProfessionalLinkInput.required
+        | index("label") != null and index("url") != null) and
+    ($schemas.ProfessionalLinkInput.properties.label.maxLength == 40) and
+    ($schemas.ProfessionalLinkInput.properties.url.maxLength == 512) and
+    ($schemas.DraftRecoveryMetadata.properties
+        | has("providerAttemptCount") and has("automaticRetryCount") and
+          has("retried") and has("retryReason")) and
+    ($schemas.DraftRecoveryMetadata.properties.retryReason.enum
+        == ["RATE_LIMITED"]) and
+    ($schemas.DraftRecoveryMetadata.properties | has("prompt") | not) and
+    ($schemas.DraftRecoveryMetadata.properties | has("providerError") | not) and
     ($schemas.ContactInputSnapshot.required | index("provenance") != null) and
     ($schemas.ContactInputSnapshot.properties.fullName.maxLength == 120) and
     ($schemas.ContactInputSnapshot.properties.email.maxLength == 254) and

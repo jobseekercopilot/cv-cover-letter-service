@@ -16,6 +16,8 @@ import com.jobseekercopilot.cvcoverletter.dto.InputWarning;
 import com.jobseekercopilot.cvcoverletter.dto.JobInputSnapshot;
 import com.jobseekercopilot.cvcoverletter.dto.JobDescriptionCompleteness;
 import com.jobseekercopilot.cvcoverletter.dto.ProfileInputSnapshot;
+import com.jobseekercopilot.cvcoverletter.dto.ProfessionalContactInputSnapshot;
+import com.jobseekercopilot.cvcoverletter.dto.ProfessionalLinkInput;
 import com.jobseekercopilot.cvcoverletter.dto.QualificationInput;
 import com.jobseekercopilot.cvcoverletter.dto.QualificationStatus;
 import com.jobseekercopilot.cvcoverletter.dto.RoleStatus;
@@ -39,6 +41,8 @@ import java.time.LocalDate;
 import java.time.Year;
 import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -72,6 +76,8 @@ public class GenerationInputNormalizer {
     private static final Pattern SHA256 = Pattern.compile("[a-f0-9]{64}");
     private static final Pattern FACT_TYPE =
             Pattern.compile("[A-Z][A-Z0-9_]{0,79}");
+    private static final Pattern PHONE_CHARACTERS =
+            Pattern.compile("[0-9+() .-]+");
 
     private final Clock clock;
 
@@ -424,9 +430,76 @@ public class GenerationInputNormalizer {
                 ? null
                 : normalizeText(contact.getEmail(), "profile.contact.email", warnings, false);
         String location = normalizeText(profile.getLocation(), "profile.location", warnings, false);
+        ProfessionalContactInputSnapshot professional =
+                profile.getProfessionalContact();
+        String phone = professional == null
+                ? null
+                : normalizeText(
+                        professional.getPhone(),
+                        "profile.professionalContact.phone",
+                        warnings,
+                        false);
+        if (phone != null) {
+            long digits = phone.chars().filter(Character::isDigit).count();
+            if (!PHONE_CHARACTERS.matcher(phone).matches()
+                    || digits < 7
+                    || digits > 15) {
+                throw invalid(
+                        "profile.professionalContact.phone",
+                        "must contain 7 to 15 digits and only phone punctuation");
+            }
+        }
+        List<ContactDetails.ProfessionalLink> links = normalizeProfessionalLinks(
+                professional == null ? null : professional.getLinks(), warnings);
         warnMissing(fullName, "CONTACT_NAME_MISSING", "profile.contact.fullName", warnings);
         warnMissing(email, "CONTACT_EMAIL_MISSING", "profile.contact.email", warnings);
-        return new ContactDetails(fullName, email, location);
+        return new ContactDetails(fullName, email, location, phone, links);
+    }
+
+    private List<ContactDetails.ProfessionalLink> normalizeProfessionalLinks(
+            List<ProfessionalLinkInput> source,
+            List<InputWarning> warnings) {
+        if (source == null) {
+            return List.of();
+        }
+        List<ContactDetails.ProfessionalLink> result = new ArrayList<>();
+        Set<String> labels = new LinkedHashSet<>();
+        Set<String> urls = new LinkedHashSet<>();
+        for (int index = 0; index < source.size(); index++) {
+            ProfessionalLinkInput link = require(
+                    source.get(index),
+                    "profile.professionalContact.links[" + index + "]");
+            String path = "profile.professionalContact.links[" + index + "]";
+            String label = normalizeText(
+                    link.getLabel(), path + ".label", warnings, true);
+            String url = normalizeText(
+                    link.getUrl(), path + ".url", warnings, true);
+            validateProfessionalUrl(url, path + ".url");
+            if (!labels.add(label.toLowerCase(Locale.ROOT))) {
+                throw invalid(path + ".label", "duplicates another link label");
+            }
+            if (!urls.add(url)) {
+                throw invalid(path + ".url", "duplicates another link URL");
+            }
+            result.add(new ContactDetails.ProfessionalLink(label, url));
+        }
+        return List.copyOf(result);
+    }
+
+    private void validateProfessionalUrl(String value, String path) {
+        if (!value.startsWith("https://")) {
+            throw invalid(path, "must be an absolute lower-case HTTPS URL");
+        }
+        try {
+            URI uri = new URI(value);
+            if (!"https".equals(uri.getScheme())
+                    || uri.getHost() == null
+                    || uri.getRawUserInfo() != null) {
+                throw invalid(path, "must be an absolute HTTPS URL without user info");
+            }
+        } catch (URISyntaxException exception) {
+            throw invalid(path, "must be a valid absolute HTTPS URL");
+        }
     }
 
     private PromptProfile normalizeProfile(

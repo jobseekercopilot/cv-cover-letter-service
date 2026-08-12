@@ -15,6 +15,8 @@ import com.jobseekercopilot.cvcoverletter.dto.EvidenceSnapshotPurpose;
 import com.jobseekercopilot.cvcoverletter.dto.InputSourceOwner;
 import com.jobseekercopilot.cvcoverletter.dto.InputWarning;
 import com.jobseekercopilot.cvcoverletter.dto.JobDescriptionCompleteness;
+import com.jobseekercopilot.cvcoverletter.dto.ProfessionalContactInputSnapshot;
+import com.jobseekercopilot.cvcoverletter.dto.ProfessionalLinkInput;
 import com.jobseekercopilot.cvcoverletter.dto.RoleStatus;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidGenerationInputException;
 import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput;
@@ -147,6 +149,66 @@ class GenerationInputNormalizerTest {
                         "PROFILE_QUALIFICATIONS_MISSING",
                         "PROFILE_EMPLOYMENT_HISTORY_MISSING"),
                 codes(first));
+    }
+
+    @Test
+    void preservesOnlyValidatedRevisionedProfessionalContactForRendering() {
+        var request = validVersionedRequest();
+        request.getProfile().setProfessionalContact(
+                new ProfessionalContactInputSnapshot(
+                        "+44 20 7946 0958",
+                        List.of(new ProfessionalLinkInput(
+                                "GitHub",
+                                "https://github.com/example"))));
+
+        NormalizedGenerationInput actual =
+                normalizer.normalize("owner-123", request);
+
+        assertEquals("+44 20 7946 0958", actual.contact().phone());
+        assertEquals(
+                List.of(new com.jobseekercopilot.cvcoverletter.dto
+                        .ContactDetails.ProfessionalLink(
+                                "GitHub",
+                                "https://github.com/example")),
+                actual.contact().links());
+        assertFalse(actual.profile().toString().contains("7946"));
+        assertFalse(actual.profile().toString().contains("github.com"));
+    }
+
+    @Test
+    void rejectsInvalidOrDuplicateProfessionalContactRatherThanGuessing() {
+        var invalidPhone = validVersionedRequest();
+        invalidPhone.getProfile().setProfessionalContact(
+                new ProfessionalContactInputSnapshot("call me", List.of()));
+        assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize("owner-123", invalidPhone));
+
+        var duplicateLabels = validVersionedRequest();
+        duplicateLabels.getProfile().setProfessionalContact(
+                new ProfessionalContactInputSnapshot(
+                        null,
+                        List.of(
+                                new ProfessionalLinkInput(
+                                        "GitHub",
+                                        "https://github.com/first"),
+                                new ProfessionalLinkInput(
+                                        "github",
+                                        "https://github.com/second"))));
+        assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize("owner-123", duplicateLabels));
+
+        var nonLowercaseHttps = validVersionedRequest();
+        nonLowercaseHttps.getProfile().setProfessionalContact(
+                new ProfessionalContactInputSnapshot(
+                        null,
+                        List.of(new ProfessionalLinkInput(
+                                "Portfolio",
+                                "HTTPS://example.com"))));
+        assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize("owner-123", nonLowercaseHttps));
     }
 
     @Test
