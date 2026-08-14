@@ -1,6 +1,6 @@
 # Document-generation input contract
 
-OpenAPI `4.1.0` retains input snapshot schema `1.0` on the paired draft contract
+OpenAPI `4.2.0` retains input snapshot schema `1.0` on the paired draft contract
 and accepts schema `2.0` on selected-output draft operations. The Document
 Generation Gateway is the only caller. It authenticates the user, places the stable
 subject in `X-Document-Owner`, and assembles the request from authoritative

@@ -53,7 +53,7 @@ class OpenApiExportTest {
         JsonNode selectedEstimate = contract.path("paths")
                 .path("/api/v1/cv-cover-letter/drafts/{outputType}/estimate")
                 .path("post");
-        assertEquals("4.1.0", contract.path("info").path("version").asText());
+        assertEquals("4.2.0", contract.path("info").path("version").asText());
         assertEquals(
                 "X-Service-Token",
                 contract.path("components")
@@ -89,6 +89,7 @@ class OpenApiExportTest {
         JsonNode schemas = contract.path("components").path("schemas");
         for (String name : List.of(
                 "ContactInputSnapshot",
+                "DraftRecoveryMetadata",
                 "EmploymentInput",
                 "EvidenceSnapshotFactInput",
                 "EvidenceSnapshotInput",
@@ -98,6 +99,8 @@ class OpenApiExportTest {
                 "JobInputSnapshot",
                 "PromptGenerationMetadata",
                 "ProfileInputSnapshot",
+                "ProfessionalContactInputSnapshot",
+                "ProfessionalLinkInput",
                 "QualificationInput",
                 "SelectedDraftGenerationRequest",
                 "SelectedDraftGenerationResponse",
@@ -138,6 +141,39 @@ class OpenApiExportTest {
         assertFalse(schemas.path("SelectedDraftGenerationRequest")
                 .path("properties")
                 .has("evidenceSnapshots"));
+        JsonNode recovery = schemas.path("DraftRecoveryMetadata");
+        assertTrue(recovery.path("properties").has("providerAttemptCount"));
+        assertTrue(recovery.path("properties").has("automaticRetryCount"));
+        assertTrue(recovery.path("properties").has("retried"));
+        assertEquals(
+                "[\"RATE_LIMITED\"]",
+                recovery.path("properties")
+                        .path("retryReason")
+                        .path("enum")
+                        .toString());
+        assertFalse(recovery.path("properties").has("providerError"));
+        assertFalse(recovery.path("properties").has("prompt"));
+        assertEquals(
+                "#/components/schemas/ProfessionalContactInputSnapshot",
+                schemas.path("ProfileInputSnapshot")
+                        .path("properties")
+                        .path("professionalContact")
+                        .path("$ref")
+                        .asText());
+        assertEquals(
+                8,
+                schemas.path("ProfessionalContactInputSnapshot")
+                        .path("properties")
+                        .path("links")
+                        .path("maxItems")
+                        .asInt());
+        assertEquals(
+                512,
+                schemas.path("ProfessionalLinkInput")
+                        .path("properties")
+                        .path("url")
+                        .path("maxLength")
+                        .asInt());
         assertEquals(
                 50,
                 schemas.path("EvidenceSnapshotInput")

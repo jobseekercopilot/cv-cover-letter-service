@@ -430,7 +430,11 @@ public class CvCoverLetterService {
                         retainedResponseReplay,
                         false,
                         null,
-                        "none"));
+                        "none",
+                        providerAttemptCount(audit, true),
+                        automaticRetryCount(audit),
+                        automaticRetryCount(audit) > 0,
+                        safeRetryReason(audit)));
     }
 
     private SelectedDraftGenerationResponse deterministicFallback(
@@ -515,7 +519,11 @@ public class CvCoverLetterService {
                         retainedResponseReplay,
                         true,
                         reason,
-                        DeterministicCvFallbackService.FALLBACK_VERSION));
+                        DeterministicCvFallbackService.FALLBACK_VERSION,
+                        providerAttemptCount(audit, false),
+                        automaticRetryCount(audit),
+                        automaticRetryCount(audit) > 0,
+                        safeRetryReason(audit)));
     }
 
     public RejectedGenerationReplayResponse replayRejectedDraft(
@@ -1104,10 +1112,70 @@ public class CvCoverLetterService {
                 || audit.getEstimatedInputTokensAtAdmission() < 0
                 || audit.getEstimatedCostMicroUsd() == null
                 || audit.getEstimatedCostMicroUsd() < 0
-                || !"USD".equals(audit.getCurrency())) {
+                || !"USD".equals(audit.getCurrency())
+                || invalidAttemptEvidence(audit)) {
             throw new InvalidLlmResponseException(
                     "LLM gateway returned invalid generation audit metadata");
         }
+    }
+
+    private boolean invalidAttemptEvidence(GenerationAudit audit) {
+        Integer attempts = audit.getProviderAttemptCount();
+        Integer retries = audit.getAutomaticRetryCount();
+        String retryReason = audit.getRetryReason();
+        if ((attempts == null) != (retries == null)) {
+            return true;
+        }
+        if (attempts != null && (attempts < 1 || attempts > 2)) {
+            return true;
+        }
+        if (retries != null && (retries < 0 || retries > 1)) {
+            return true;
+        }
+        if (attempts != null && retries != null
+                && attempts != retries + 1) {
+            return true;
+        }
+        if (retries != null && retries == 0
+                && StringUtils.hasText(retryReason)) {
+            return true;
+        }
+        if (retries != null && retries > 0
+                && !"RATE_LIMITED".equals(retryReason)) {
+            return true;
+        }
+        return StringUtils.hasText(retryReason)
+                && !"RATE_LIMITED".equals(retryReason);
+    }
+
+    private int providerAttemptCount(
+            GenerationAudit audit,
+            boolean providerResponseAccepted) {
+        if (audit != null
+                && audit.getProviderAttemptCount() != null
+                && audit.getProviderAttemptCount() >= 1
+                && audit.getProviderAttemptCount() <= 2) {
+            return audit.getProviderAttemptCount();
+        }
+        return providerResponseAccepted ? 1 : 0;
+    }
+
+    private int automaticRetryCount(GenerationAudit audit) {
+        if (audit == null
+                || audit.getAutomaticRetryCount() == null
+                || audit.getAutomaticRetryCount() < 0
+                || audit.getAutomaticRetryCount() > 1) {
+            return 0;
+        }
+        return audit.getAutomaticRetryCount();
+    }
+
+    private String safeRetryReason(GenerationAudit audit) {
+        return audit != null
+                        && automaticRetryCount(audit) > 0
+                        && "RATE_LIMITED".equals(audit.getRetryReason())
+                ? "RATE_LIMITED"
+                : null;
     }
 
     private boolean validPolicyVersion(String value) {

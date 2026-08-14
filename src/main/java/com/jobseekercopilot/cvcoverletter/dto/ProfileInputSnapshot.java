@@ -39,4 +39,26 @@ public class ProfileInputSnapshot extends StrictInput {
     @Valid
     @Size(max = 30)
     private List<EmploymentInput> employmentHistory = new ArrayList<>();
+
+    @Valid
+    private ProfessionalContactInputSnapshot professionalContact;
+
+    public ProfileInputSnapshot(
+            SnapshotProvenance provenance,
+            ContactInputSnapshot contact,
+            String location,
+            List<String> skills,
+            List<String> targetRoles,
+            List<QualificationInput> qualifications,
+            List<EmploymentInput> employmentHistory) {
+        this(
+                provenance,
+                contact,
+                location,
+                skills,
+                targetRoles,
+                qualifications,
+                employmentHistory,
+                null);
+    }
 }

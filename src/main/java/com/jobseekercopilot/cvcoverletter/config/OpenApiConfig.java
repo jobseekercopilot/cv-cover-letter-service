@@ -18,6 +18,7 @@ public class OpenApiConfig {
             "DraftGenerationEstimateResponse",
             "DraftGenerationResponse",
             "DraftGenerationUsage",
+            "DraftRecoveryMetadata",
             "EmploymentInput",
             "EvidenceSnapshotFactInput",
             "EvidenceSnapshotInput",
@@ -27,6 +28,8 @@ public class OpenApiConfig {
             "JobInputSnapshot",
             "PromptGenerationMetadata",
             "ProfileInputSnapshot",
+            "ProfessionalContactInputSnapshot",
+            "ProfessionalLinkInput",
             "QualificationInput",
             "SelectedDraftGenerationRequest",
             "SelectedDraftGenerationResponse",
@@ -45,7 +48,7 @@ public class OpenApiConfig {
                                 .name("X-Service-Token")))
                 .info(new Info()
                         .title("Jobseeker Copilot - CV Cover Letter Service API")
-                        .version("4.1.0")
+                        .version("4.2.0")
                         .description("""
                                 Produces bounded CV and cover-letter drafts from
                                 purpose-specific immutable confirmed evidence

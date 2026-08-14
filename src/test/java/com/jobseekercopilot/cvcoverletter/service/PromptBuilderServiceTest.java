@@ -12,6 +12,8 @@ import com.jobseekercopilot.cvcoverletter.config.LlmProperties;
 import com.jobseekercopilot.cvcoverletter.config.PromptBundleProperties;
 import com.jobseekercopilot.cvcoverletter.dto.EvidenceSnapshotFactInput;
 import com.jobseekercopilot.cvcoverletter.dto.DraftOutputType;
+import com.jobseekercopilot.cvcoverletter.dto.ProfessionalContactInputSnapshot;
+import com.jobseekercopilot.cvcoverletter.dto.ProfessionalLinkInput;
 import com.jobseekercopilot.cvcoverletter.model.CvCoverLetterPrompt;
 import com.jobseekercopilot.cvcoverletter.model.EvidenceSource;
 import java.nio.charset.StandardCharsets;
@@ -182,8 +184,15 @@ class PromptBuilderServiceTest {
         GenerationInputNormalizer normalizer = new GenerationInputNormalizer(
                 Clock.fixed(Instant.parse("2026-07-24T13:00:00Z"), ZoneOffset.UTC));
 
+        var request = validRequest();
+        request.getProfile().setProfessionalContact(
+                new ProfessionalContactInputSnapshot(
+                        "+44 7517 777951",
+                        List.of(new ProfessionalLinkInput(
+                                "GitHub",
+                                "https://github.com/jobseekercopilot"))));
         CvCoverLetterPrompt result = service.buildPrompt(
-                normalizer.normalize("owner-secret-123", validRequest()));
+                normalizer.normalize("owner-secret-123", request));
 
         assertTrue(result.getTrustedInstructions().contains("TRUTHFULNESS RULES"));
         assertTrue(result.getTrustedInstructions().contains("UK English"));
@@ -351,6 +360,13 @@ class PromptBuilderServiceTest {
         assertFalse(result.getUntrustedInput().contains("job-v12"));
         assertFalse(result.getUntrustedInput().contains("Alex Candidate"));
         assertFalse(result.getUntrustedInput().contains("alex@example.com"));
+        assertFalse(result.getUntrustedInput().contains("+44 7517 777951"));
+        assertFalse(result.getUntrustedInput().contains(
+                "https://github.com/jobseekercopilot"));
+        assertFalse(result.getUntrustedInput().contains("GitHub"));
+        assertFalse(request.toString().contains("+44 7517 777951"));
+        assertFalse(request.toString().contains(
+                "https://github.com/jobseekercopilot"));
         assertFalse(result.toString().contains("Build useful and reliable services."));
         assertFalse(result.toString().contains("TRUTHFULNESS RULES"));
     }

@@ -1,6 +1,6 @@
 # Draft generation boundary
 
-OpenAPI `4.1.0` separates model-domain work from workflow ownership and adds
+OpenAPI `4.2.0` separates model-domain work from workflow ownership and adds
 backward-compatible selected-output operations.
 
 ## Operations

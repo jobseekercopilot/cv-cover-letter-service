@@ -15,6 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 RELEASE_PATH = ROOT / "api" / "client-release.json"
 POM_PATH = ROOT / "api" / "client" / "pom.xml"
+SMOKE_POM_PATH = ROOT / "api" / "client-smoke" / "pom.xml"
 NAMESPACE = {"m": "http://maven.apache.org/POM/4.0.0"}
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -129,6 +130,17 @@ def verify() -> dict:
         element = properties.find(f"m:{name}", NAMESPACE)
         if element is None or not element.text or element.text.strip() != expected:
             fail(f"POM property does not match release metadata: {name}")
+
+    smoke_pom = ET.parse(SMOKE_POM_PATH).getroot()
+    smoke_dependency = smoke_pom.find("m:dependencies/m:dependency", NAMESPACE)
+    if smoke_dependency is None:
+        fail("client smoke POM dependency is missing")
+    if pom_text(smoke_dependency, "m:groupId") != package["groupId"]:
+        fail("client smoke POM groupId does not match release metadata")
+    if pom_text(smoke_dependency, "m:artifactId") != package["artifactId"]:
+        fail("client smoke POM artifactId does not match release metadata")
+    if pom_text(smoke_dependency, "m:version") != package["version"]:
+        fail("client smoke POM version does not match release metadata")
 
     tracked_output = subprocess.run(
         ["git", "ls-files", "api/client/target", "api/client-smoke/target"],

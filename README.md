@@ -59,7 +59,7 @@ the conservative reservation size without calling a provider.
 evidence. See
 [`docs/DRAFT_GENERATION_BOUNDARY.md`](docs/DRAFT_GENERATION_BOUNDARY.md).
 
-OpenAPI `4.1.0` also exposes additive, schema-`2.0` selected-output operations
+OpenAPI `4.2.0` also exposes additive, schema-`2.0` selected-output operations
 at `POST /api/v1/cv-cover-letter/drafts/{outputType}` and
 `POST /api/v1/cv-cover-letter/drafts/{outputType}/estimate`, where
 `outputType` is exactly `CV` or `COVER_LETTER`. Each request carries the one
@@ -67,6 +67,17 @@ matching purpose-bound evidence snapshot, builds a strict schema containing
 only that document, and reports usage for only that provider call. The original
 paired draft and transitional generate operations remain unchanged for rolling
 compatibility.
+
+Each selected-output response also includes content-free `recovery` evidence:
+the final source, structural-repair result, removed exact-duplicate count,
+bounded provider-attempt and safe-retry counts, the allowlisted retry category,
+retained-response replay, and deterministic-fallback outcome. It never contains
+prompt text, profile/job evidence, provider error text or hidden reasoning.
+The current CV quality gate additionally rejects sparse or severely imbalanced
+content, overlong bullets, exact duplicate narrative and omission of all
+highest-ranked CV-purpose evidence before a draft can be returned. Existing
+claim validation continues to reject unsupported facts, and a rejected selected
+CV still follows the evidence-only deterministic fallback path.
 
 When the optional rejected-generation quarantine is enabled, an otherwise
 complete typed model response that fails deterministic validation is encrypted
