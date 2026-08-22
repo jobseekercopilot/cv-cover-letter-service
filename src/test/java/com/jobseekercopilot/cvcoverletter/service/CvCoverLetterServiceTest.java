@@ -663,7 +663,7 @@ class CvCoverLetterServiceTest {
 
         org.junit.jupiter.api.Assertions.assertTrue(
                 actual.cvContent().contains(
-                        "Technical Skills\nSpring, Java"));
+                        "Key Skills\nSpring, Java"));
         assertEquals(
                 java.util.Set.of(
                         "/cv/coreSkills/0/name",

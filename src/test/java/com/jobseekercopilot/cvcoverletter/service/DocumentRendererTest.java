@@ -62,8 +62,8 @@ class DocumentRendererTest {
                 "+44 20 7946 0958\nGitHub: https://github.com/example"));
         assertTrue(result.contains("Professional Profile\nA capable developer."));
         assertTrue(result.contains(
-                "Selected Projects\nJob Seeker Copilot - Developer\nMay 2026 – Present\nBuilt a useful service."));
-        assertTrue(result.contains("Technical Skills\nJava"));
+                "Selected Experience\nJob Seeker Copilot - Developer\nMay 2026 – Present\nBuilt a useful service."));
+        assertTrue(result.contains("Key Skills\nJava"));
         assertFalse(result.contains("Java: Built services"));
         assertTrue(result.contains("Professional Experience\nEngineer - Acme\nMarch 2022 – Present"));
         assertTrue(result.contains(
@@ -123,9 +123,9 @@ class DocumentRendererTest {
 
         String result = new CvDocumentRenderer().render(documents.getCv());
 
-        int profile = result.indexOf("Technical Profile");
-        int skills = result.indexOf("Technical Skills");
-        int projects = result.indexOf("Selected Projects");
+        int profile = result.indexOf("Professional Profile");
+        int skills = result.indexOf("Key Skills");
+        int projects = result.indexOf("Selected Experience");
         int education = result.indexOf("Education and Qualifications");
         assertTrue(profile >= 0);
         assertTrue(profile < skills);
@@ -143,7 +143,7 @@ class DocumentRendererTest {
 
         String result = new CvDocumentRenderer().render(documents.getCv());
 
-        assertFalse(result.contains("Technical Skills"));
+        assertFalse(result.contains("Key Skills"));
         assertFalse(result.contains("Projects"));
         assertFalse(result.contains("Professional Experience"));
         assertFalse(result.contains("Education and Qualifications"));
