@@ -2,15 +2,20 @@ FROM maven:3.9-eclipse-temurin-17 AS build
 
 WORKDIR /app
 COPY pom.xml .
-COPY libs ./libs
 COPY src ./src
-RUN mvn clean package -DskipTests
+RUN mvn -B --no-transfer-progress clean verify
 
 FROM eclipse-temurin:17-jre-alpine
 
 WORKDIR /app
 COPY --from=build /app/target/cv-cover-letter-service-1.0.0.jar app.jar
-RUN apk add --no-cache curl
+RUN apk add --no-cache curl \
+    && addgroup -S cvservice \
+    && adduser -S -G cvservice cvservice \
+    && mkdir -p /var/lib/cv-cover-letter/rejected-generations \
+    && chown -R cvservice:cvservice /app /var/lib/cv-cover-letter
+
+USER cvservice
 
 EXPOSE 8091
 ENTRYPOINT ["java", "-jar", "app.jar"]

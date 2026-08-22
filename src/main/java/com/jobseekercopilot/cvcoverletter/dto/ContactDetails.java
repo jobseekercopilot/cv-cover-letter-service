@@ -1,45 +1,43 @@
 package com.jobseekercopilot.cvcoverletter.dto;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 
-public record ContactDetails(String fullName, String email, String location) {
+public record ContactDetails(
+        String fullName,
+        String email,
+        String location,
+        String phone,
+        List<ProfessionalLink> links) {
 
-    public static ContactDetails from(UserProfile profile) {
-        if (profile == null) {
-            return new ContactDetails(null, null, null);
-        }
-        return new ContactDetails(
-                blankToNull(profile.getFullName()),
-                blankToNull(profile.getEmail()),
-                location(profile.getWorkPreferences()));
+    public record ProfessionalLink(String label, String url) {
+    }
+
+    public ContactDetails(String fullName, String email, String location) {
+        this(fullName, email, location, null, List.of());
+    }
+
+    public ContactDetails {
+        links = links == null ? List.of() : List.copyOf(links);
     }
 
     public List<String> lines() {
-        return Stream.of(fullName, email, location)
-                .filter(ContactDetails::hasText)
-                .toList();
+        List<String> lines = new ArrayList<>(Stream.of(
+                        fullName, email, location, phone)
+                .filter(ContactDetails::hasText).toList());
+        links.stream()
+                .map(link -> link.label() + ": " + link.url())
+                .forEach(lines::add);
+        return List.copyOf(lines);
     }
 
     public boolean hasAny() {
-        return hasText(fullName) || hasText(email) || hasText(location);
-    }
-
-    private static String location(WorkPreferences workPreferences) {
-        if (workPreferences == null || workPreferences.getLocation() == null) {
-            return null;
-        }
-        PostcodeLocation location = workPreferences.getLocation();
-        String joined = Stream.of(location.getAdminDistrict(), location.getRegion(), location.getPostcode())
-                .filter(ContactDetails::hasText)
-                .distinct()
-                .reduce((left, right) -> left + ", " + right)
-                .orElse(null);
-        return blankToNull(joined);
-    }
-
-    private static String blankToNull(String value) {
-        return hasText(value) ? value.trim() : null;
+        return hasText(fullName)
+                || hasText(email)
+                || hasText(location)
+                || hasText(phone)
+                || !links.isEmpty();
     }
 
     private static boolean hasText(String value) {

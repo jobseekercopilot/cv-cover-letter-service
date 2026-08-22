@@ -2,25 +2,43 @@ package com.jobseekercopilot.cvcoverletter.service;
 
 import com.jobseekercopilot.cvcoverletter.config.LlmProperties;
 import com.jobseekercopilot.cvcoverletter.dto.ContactDetails;
+import com.jobseekercopilot.cvcoverletter.dto.DraftGenerationEstimateResponse;
+import com.jobseekercopilot.cvcoverletter.dto.DraftGenerationResponse;
+import com.jobseekercopilot.cvcoverletter.dto.DraftOutputType;
+import com.jobseekercopilot.cvcoverletter.dto.DraftRecoveryMetadata;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateRequest;
 import com.jobseekercopilot.cvcoverletter.dto.GenerateCvCoverLetterResponse;
 import com.jobseekercopilot.cvcoverletter.dto.GeneratedApplicationDocuments;
+import com.jobseekercopilot.cvcoverletter.dto.RejectedGenerationReplayResponse;
+import com.jobseekercopilot.cvcoverletter.dto.RejectedSelectedGenerationReplayResponse;
+import com.jobseekercopilot.cvcoverletter.dto.SelectedDraftGenerationRequest;
+import com.jobseekercopilot.cvcoverletter.dto.SelectedDraftGenerationResponse;
 import com.jobseekercopilot.cvcoverletter.exception.DownstreamServiceException;
 import com.jobseekercopilot.cvcoverletter.exception.InvalidLlmResponseException;
 import com.jobseekercopilot.cvcoverletter.model.CvCoverLetterPrompt;
+import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput;
+import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationCaptureContext;
+import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationDiagnostic;
+import com.jobseekercopilot.cvcoverletter.quarantine.RejectedGenerationQuarantineService;
 import com.jobseekercopilot.generated.applicationtrackerservice.api.ApplicationRecordsApi;
 import com.jobseekercopilot.generated.applicationtrackerservice.model.ApplicationRecordResponse;
 import com.jobseekercopilot.generated.applicationtrackerservice.model.CreateApplicationRequest;
 import com.jobseekercopilot.generated.documentstoreservice.api.GeneratedDocumentsApi;
 import com.jobseekercopilot.generated.documentstoreservice.model.CreateDocumentRequest.DocumentTypeEnum;
 import com.jobseekercopilot.generated.documentstoreservice.model.GeneratedDocumentResponse;
-import com.jobseekercopilot.generated.llmgateway.api.LlmGenerationApi;
-import com.jobseekercopilot.generated.llmgateway.model.GenerateResponse;
-import com.jobseekercopilot.generated.llmgateway.model.LlmUsage;
+import com.jobseekercopilot.generated.llmgateway.api.ModelGenerationApi;
+import com.jobseekercopilot.generated.llmgateway.model.GenerationAudit;
+import com.jobseekercopilot.generated.llmgateway.model.GenerationLimits;
+import com.jobseekercopilot.generated.llmgateway.model.GenerationOutputContract;
+import com.jobseekercopilot.generated.llmgateway.model.GenerationRequest;
+import com.jobseekercopilot.generated.llmgateway.model.GenerationResponse;
+import com.jobseekercopilot.generated.llmgateway.model.GenerationUsage;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClientException;
 
 @Service
@@ -30,53 +48,880 @@ public class CvCoverLetterService {
     private static final String GENERATION_FEATURE = "CV_AND_COVER_LETTER_GENERATION";
     private static final String REFERENCE_TYPE = "JOB_APPLICATION";
     private static final long MINIMUM_GENERATION_RESERVATION_TOKENS = 5_000L;
+    private static final Pattern POLICY_VERSION =
+            Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{2,127}");
 
     private final PromptBuilderService promptBuilderService;
-    private final LlmGenerationApi llmGatewayApi;
+    private final GenerationInputNormalizer inputNormalizer;
+    private final ModelGenerationApi llmGatewayApi;
     private final PaymentBillingClient paymentBillingClient;
     private final LlmProperties llmProperties;
     private final LlmResponseParser responseParser;
     private final CvDocumentRenderer cvRenderer;
     private final CoverLetterDocumentRenderer coverLetterRenderer;
+    private final ValidatedClaimLedgerFactory claimLedgerFactory;
     private final GeneratedDocumentsApi documentStoreApi;
     private final ApplicationRecordsApi applicationTrackerApi;
+    private final RejectedGenerationQuarantineService quarantineService;
+    private final DeterministicCvFallbackService deterministicCvFallback;
+    private final ApplicationQualityEvaluator applicationQualityEvaluator =
+            new ApplicationQualityEvaluator();
 
-    public GenerateCvCoverLetterResponse generate(GenerateRequest request) {
+    public DraftGenerationEstimateResponse estimateDraft(
+            String ownerId, GenerateRequest request) {
+        PreparedGeneration prepared = prepareGeneration(ownerId, request);
+        return new DraftGenerationEstimateResponse(
+                estimateTokens(prepared.prompt()));
+    }
+
+    public DraftGenerationEstimateResponse estimateSelectedDraft(
+            String ownerId,
+            DraftOutputType outputType,
+            SelectedDraftGenerationRequest request) {
+        PreparedGeneration prepared = prepareSelectedGeneration(
+                ownerId, outputType, request);
+        return new DraftGenerationEstimateResponse(
+                estimateTokens(prepared.prompt()));
+    }
+
+    public DraftGenerationResponse generateDraft(
+            String ownerId,
+            UUID operationId,
+            GenerateRequest request) {
+        if (operationId == null) {
+            throw new IllegalArgumentException(
+                    "Generation operation ID is required.");
+        }
+        long startedAt = System.nanoTime();
+        PreparedGeneration prepared = prepareGeneration(ownerId, request);
+        GenerationResponse llmResponse;
+        try {
+            llmResponse = invokeModel(prepared, operationId);
+        } catch (RestClientException exception) {
+            log.warn(
+                    "Draft model request failed operationId={} jobId={} error={}",
+                    operationId,
+                    prepared.jobId(),
+                    exception.getClass().getSimpleName(),
+                    exception);
+            throw new DownstreamServiceException(
+                    "LLM gateway is unavailable", exception);
+        }
+        if (llmResponse == null) {
+            throw new InvalidLlmResponseException(
+                    "LLM gateway returned no response");
+        }
+
+        DraftGenerationResponse response;
+        try {
+            DraftContent draft = materializeDraft(prepared, llmResponse);
+            response = draftResponse(operationId, prepared, llmResponse, draft);
+        } catch (InvalidLlmResponseException rejection) {
+            captureRejectedResponse(
+                    ownerId,
+                    operationId,
+                    prepared,
+                    llmResponse,
+                    rejection);
+            throw rejection;
+        }
+        log.info(
+                "Bounded draft generation completed operationId={} jobId={} durationMs={}",
+                operationId,
+                prepared.jobId(),
+                (System.nanoTime() - startedAt) / 1_000_000);
+        return response;
+    }
+
+    public SelectedDraftGenerationResponse generateSelectedDraft(
+            String ownerId,
+            UUID operationId,
+            DraftOutputType outputType,
+            SelectedDraftGenerationRequest request) {
+        if (operationId == null) {
+            throw new IllegalArgumentException(
+                    "Generation operation ID is required.");
+        }
+        if (outputType == null) {
+            throw new IllegalArgumentException(
+                    "Selected draft output is required.");
+        }
+        long startedAt = System.nanoTime();
+        PreparedGeneration prepared = prepareSelectedGeneration(
+                ownerId, outputType, request);
+        GenerationResponse llmResponse;
+        try {
+            llmResponse = invokeModel(prepared, operationId);
+        } catch (RestClientException exception) {
+            log.warn(
+                    "Selected draft model request failed operationId={} outputType={} jobId={} error={}",
+                    operationId,
+                    outputType,
+                    prepared.jobId(),
+                    exception.getClass().getSimpleName(),
+                    exception);
+            if (outputType == DraftOutputType.CV) {
+                return deterministicFallback(
+                        operationId,
+                        prepared,
+                        null,
+                        "PROVIDER_FAILURE",
+                        false);
+            }
+            throw new DownstreamServiceException(
+                    "LLM gateway is unavailable", exception);
+        }
+        if (llmResponse == null) {
+            if (outputType == DraftOutputType.CV) {
+                return deterministicFallback(
+                        operationId,
+                        prepared,
+                        null,
+                        "EMPTY_PROVIDER_RESPONSE",
+                        false);
+            }
+            throw new InvalidLlmResponseException(
+                    "LLM gateway returned no response");
+        }
+        try {
+            SelectedDraftGenerationResponse response = materializeSelectedDraft(
+                    operationId,
+                    outputType,
+                    prepared,
+                    llmResponse,
+                    false);
+            log.info(
+                    "Selected draft generation completed operationId={} outputType={} jobId={} durationMs={}",
+                    operationId,
+                    outputType,
+                    prepared.jobId(),
+                    (System.nanoTime() - startedAt) / 1_000_000);
+            return response;
+        } catch (InvalidLlmResponseException rejection) {
+            captureRejectedResponse(
+                    ownerId,
+                    operationId,
+                    prepared,
+                    llmResponse,
+                    rejection);
+            if (outputType == DraftOutputType.CV) {
+                return deterministicFallback(
+                        operationId,
+                        prepared,
+                        llmResponse,
+                        rejectionFallbackReason(
+                                "MODEL_OUTPUT_REJECTED", rejection),
+                        false);
+            }
+            throw rejection;
+        }
+    }
+
+    private PreparedGeneration prepareGeneration(
+            String ownerId, GenerateRequest request) {
+        return prepareGeneration(ownerId, request, null);
+    }
+
+    private PreparedGeneration prepareGeneration(
+            String ownerId,
+            GenerateRequest request,
+            String approvedReleaseId) {
+        NormalizedGenerationInput input =
+                inputNormalizer.normalize(ownerId, request);
+        String jobId = input.jobProvenance().getResourceId();
+        long startedAt = System.nanoTime();
+        CvCoverLetterPrompt prompt = approvedReleaseId == null
+                ? promptBuilderService.buildPrompt(input)
+                : promptBuilderService.buildPrompt(input, approvedReleaseId);
+        String parserVersion = responseParser.parserVersion(
+                prompt.getOutputSchema());
+        String claimPolicyVersion = responseParser.claimPolicyVersion(
+                prompt.getOutputSchema());
+        log.info(
+                "Bounded prompt prepared jobId={} promptRelease={} bundleVersion={} schemaId={} schemaVersion={} estimatedTokens={} durationMs={}",
+                jobId,
+                prompt.getGenerationMetadata().releaseId(),
+                prompt.getGenerationMetadata().bundleVersion(),
+                prompt.getGenerationMetadata().schemaId(),
+                prompt.getGenerationMetadata().schemaVersion(),
+                estimateTokens(prompt),
+                (System.nanoTime() - startedAt) / 1_000_000);
+        GenerationRequest llmRequest = new GenerationRequest()
+                .contractVersion(GenerationRequest.ContractVersionEnum._2_0)
+                .task(prompt.getTaskType())
+                .trustedInstructions(prompt.getTrustedInstructions())
+                .untrustedInput(prompt.getUntrustedInput())
+                .output(new GenerationOutputContract()
+                        .format(GenerationOutputContract.FormatEnum.JSON_SCHEMA)
+                        .schemaId(prompt.getGenerationMetadata().schemaId())
+                        .schemaVersion(
+                                prompt.getGenerationMetadata().schemaVersion())
+                        .jsonSchema(prompt.getOutputSchema()))
+                .limits(new GenerationLimits()
+                        .temperature(llmProperties.getTemperature())
+                        .maxOutputTokens(llmProperties.getMaxTokens()));
+        return new PreparedGeneration(
+                input,
+                prompt,
+                llmRequest,
+                jobId,
+                claimPolicyVersion,
+                parserVersion);
+    }
+
+    private PreparedGeneration prepareSelectedGeneration(
+            String ownerId,
+            DraftOutputType outputType,
+            SelectedDraftGenerationRequest request) {
+        return prepareSelectedGeneration(
+                ownerId, outputType, request, null);
+    }
+
+    private PreparedGeneration prepareSelectedGeneration(
+            String ownerId,
+            DraftOutputType outputType,
+            SelectedDraftGenerationRequest request,
+            String approvedReleaseId) {
+        NormalizedGenerationInput input = inputNormalizer.normalizeSelected(
+                ownerId, outputType, request);
+        String jobId = input.jobProvenance().getResourceId();
+        long startedAt = System.nanoTime();
+        CvCoverLetterPrompt prompt = approvedReleaseId == null
+                ? promptBuilderService.buildPrompt(input, outputType)
+                : promptBuilderService.buildPrompt(
+                        input, approvedReleaseId, outputType);
+        String parserVersion = responseParser.parserVersion(
+                prompt.getOutputSchema());
+        String claimPolicyVersion = responseParser.claimPolicyVersion(
+                prompt.getOutputSchema());
+        log.info(
+                "Selected prompt prepared outputType={} jobId={} promptRelease={} bundleVersion={} schemaId={} schemaVersion={} estimatedTokens={} durationMs={}",
+                outputType,
+                jobId,
+                prompt.getGenerationMetadata().releaseId(),
+                prompt.getGenerationMetadata().bundleVersion(),
+                prompt.getGenerationMetadata().schemaId(),
+                prompt.getGenerationMetadata().schemaVersion(),
+                estimateTokens(prompt),
+                (System.nanoTime() - startedAt) / 1_000_000);
+        GenerationRequest llmRequest = new GenerationRequest()
+                .contractVersion(GenerationRequest.ContractVersionEnum._2_0)
+                .task(prompt.getTaskType())
+                .trustedInstructions(prompt.getTrustedInstructions())
+                .untrustedInput(prompt.getUntrustedInput())
+                .output(new GenerationOutputContract()
+                        .format(GenerationOutputContract.FormatEnum.JSON_SCHEMA)
+                        .schemaId(prompt.getGenerationMetadata().schemaId())
+                        .schemaVersion(
+                                prompt.getGenerationMetadata().schemaVersion())
+                        .jsonSchema(prompt.getOutputSchema()))
+                .limits(new GenerationLimits()
+                        .temperature(llmProperties.getTemperature())
+                        .maxOutputTokens(llmProperties.getMaxTokens()));
+        return new PreparedGeneration(
+                input,
+                prompt,
+                llmRequest,
+                jobId,
+                claimPolicyVersion,
+                parserVersion);
+    }
+
+    private SelectedDraftGenerationResponse materializeSelectedDraft(
+            UUID operationId,
+            DraftOutputType outputType,
+            PreparedGeneration prepared,
+            GenerationResponse llmResponse,
+            boolean retainedResponseReplay) {
+        validateGenerationResponse(llmResponse, prepared.prompt());
+        LlmResponseParser.ParsedGeneration parsed =
+                responseParser.parseDetailed(
+                llmResponse.getOutput(),
+                prepared.prompt().getOutputSchema(),
+                prepared.prompt().getEvidenceCatalog());
+        GeneratedApplicationDocuments documents = parsed.documents();
+        logApplicationQuality(
+                operationId, documents, prepared.prompt().getEvidenceCatalog());
+        String title;
+        String content;
+        if (outputType == DraftOutputType.CV) {
+            if (documents.getCv() == null
+                    || documents.getCoverLetter() != null) {
+                throw new InvalidLlmResponseException(
+                        "Selected CV response contained the wrong document set");
+            }
+            title = documents.getCv().getTitle();
+            content = cvRenderer.render(
+                    documents.getCv(), prepared.input().contact());
+        } else {
+            if (documents.getCoverLetter() == null
+                    || documents.getCv() != null) {
+                throw new InvalidLlmResponseException(
+                        "Selected cover-letter response contained the wrong document set");
+            }
+            title = documents.getCoverLetter().getTitle();
+            content = coverLetterRenderer.render(
+                    documents.getCoverLetter(),
+                    prepared.input().contact());
+        }
+        return selectedDraftResponse(
+                operationId,
+                outputType,
+                prepared,
+                llmResponse,
+                documents,
+                title,
+                content,
+                parsed.repair(),
+                retainedResponseReplay);
+    }
+
+    private SelectedDraftGenerationResponse selectedDraftResponse(
+            UUID operationId,
+            DraftOutputType outputType,
+            PreparedGeneration prepared,
+            GenerationResponse llmResponse,
+            GeneratedApplicationDocuments documents,
+            String title,
+            String content,
+            LlmResponseParser.StructuralRepairReport repair,
+            boolean retainedResponseReplay) {
+        GenerationUsage usage = llmResponse.getUsage();
+        GenerationAudit audit = llmResponse.getAudit();
+        return new SelectedDraftGenerationResponse(
+                operationId,
+                outputType,
+                title,
+                content,
+                documents.getGenerationNotes(),
+                prepared.prompt().getGenerationMetadata(),
+                prepared.input().inputSchemaVersion(),
+                prepared.input().warnings(),
+                claimLedgerFactory.create(
+                        operationId,
+                        documents.getClaims(),
+                        prepared.claimPolicyVersion(),
+                        prepared.parserVersion()),
+                new DraftGenerationResponse.DraftGenerationUsage(
+                        usage == null ? null : usage.getInputTokens(),
+                        usage == null ? null : usage.getOutputTokens(),
+                        usage == null ? null : usage.getTotalTokens()),
+                new DraftGenerationResponse.DraftGenerationAudit(
+                        audit.getModelId(),
+                        audit.getModelDeploymentVersion(),
+                        audit.getAdmissionPolicyVersion(),
+                        audit.getPricingVersion(),
+                        audit.getEstimatedInputTokensAtAdmission(),
+                        audit.getEstimatedCostMicroUsd(),
+                        audit.getCurrency(),
+                        audit.getProviderAttemptCount() == null
+                                ? 0 : audit.getProviderAttemptCount(),
+                        audit.getAutomaticRetryCount() == null
+                                ? 0 : audit.getAutomaticRetryCount(),
+                        audit.getRetryReason()),
+                usage == null || usage.getTotalTokens() == null
+                        ? 0
+                        : usage.getTotalTokens(),
+                new DraftRecoveryMetadata(
+                        "LLM",
+                        repair.attempted(),
+                        repair.succeeded(),
+                        repair.duplicateItemsRemoved(),
+                        retainedResponseReplay,
+                        false,
+                        null,
+                        "none",
+                        providerAttemptCount(audit, true),
+                        automaticRetryCount(audit),
+                        automaticRetryCount(audit) > 0,
+                        safeRetryReason(audit)));
+    }
+
+    private SelectedDraftGenerationResponse deterministicFallback(
+            UUID operationId,
+            PreparedGeneration prepared,
+            GenerationResponse rejectedResponse,
+            String reason,
+            boolean retainedResponseReplay) {
+        String fallbackJson = deterministicCvFallback.build(
+                prepared.input(),
+                prepared.prompt().getEvidenceCatalog());
+        LlmResponseParser.ParsedGeneration parsed =
+                responseParser.parseDetailed(
+                        fallbackJson,
+                        prepared.prompt().getOutputSchema(),
+                        prepared.prompt().getEvidenceCatalog());
+        GeneratedApplicationDocuments documents = parsed.documents();
+        if (documents.getCv() == null
+                || documents.getCoverLetter() != null) {
+            throw new IllegalStateException(
+                    "Deterministic CV fallback produced the wrong document set.");
+        }
+        String content = cvRenderer.render(
+                documents.getCv(), prepared.input().contact());
+        logApplicationQuality(
+                operationId, documents, prepared.prompt().getEvidenceCatalog());
+        GenerationUsage usage = rejectedResponse == null
+                ? null
+                : rejectedResponse.getUsage();
+        GenerationAudit audit = rejectedResponse == null
+                ? null
+                : rejectedResponse.getAudit();
+        log.warn(
+                "selected CV completed with deterministic fallback operationId={} jobId={} fallbackReason={} retainedResponseReplay={} providerInputTokens={} providerOutputTokens={} walletBillableTokens=0",
+                operationId,
+                prepared.jobId(),
+                reason,
+                retainedResponseReplay,
+                usage == null ? null : usage.getInputTokens(),
+                usage == null ? null : usage.getOutputTokens());
+        return new SelectedDraftGenerationResponse(
+                operationId,
+                DraftOutputType.CV,
+                documents.getCv().getTitle(),
+                content,
+                documents.getGenerationNotes(),
+                prepared.prompt().getGenerationMetadata(),
+                prepared.input().inputSchemaVersion(),
+                prepared.input().warnings(),
+                claimLedgerFactory.create(
+                        operationId,
+                        documents.getClaims(),
+                        prepared.claimPolicyVersion(),
+                        prepared.parserVersion()),
+                new DraftGenerationResponse.DraftGenerationUsage(
+                        usage == null ? null : usage.getInputTokens(),
+                        usage == null ? null : usage.getOutputTokens(),
+                        usage == null ? null : usage.getTotalTokens()),
+                new DraftGenerationResponse.DraftGenerationAudit(
+                        audit == null
+                                ? DeterministicCvFallbackService.FALLBACK_VERSION
+                                : audit.getModelId(),
+                        audit == null
+                                ? DeterministicCvFallbackService.FALLBACK_VERSION
+                                : audit.getModelDeploymentVersion(),
+                        audit == null ? "not-applicable" : audit.getAdmissionPolicyVersion(),
+                        audit == null ? "not-applicable" : audit.getPricingVersion(),
+                        audit == null ? null : audit.getEstimatedInputTokensAtAdmission(),
+                        audit == null ? null : audit.getEstimatedCostMicroUsd(),
+                        audit == null ? null : audit.getCurrency(),
+                        audit == null || audit.getProviderAttemptCount() == null
+                                ? 0 : audit.getProviderAttemptCount(),
+                        audit == null || audit.getAutomaticRetryCount() == null
+                                ? 0 : audit.getAutomaticRetryCount(),
+                        audit == null ? null : audit.getRetryReason()),
+                0,
+                new DraftRecoveryMetadata(
+                        "DETERMINISTIC_FALLBACK",
+                        parsed.repair().attempted(),
+                        parsed.repair().succeeded(),
+                        parsed.repair().duplicateItemsRemoved(),
+                        retainedResponseReplay,
+                        true,
+                        reason,
+                        DeterministicCvFallbackService.FALLBACK_VERSION,
+                        providerAttemptCount(audit, false),
+                        automaticRetryCount(audit),
+                        automaticRetryCount(audit) > 0,
+                        safeRetryReason(audit)));
+    }
+
+    public RejectedGenerationReplayResponse replayRejectedDraft(
+            String ownerId,
+            UUID operationId,
+            GenerateRequest request) {
+        var loaded = quarantineService.load(ownerId, operationId);
+        PreparedGeneration prepared = prepareGeneration(
+                ownerId,
+                request,
+                loaded.artifact().promptReleaseId());
+        quarantineService.requireMatchingReplayContext(
+                loaded.artifact(),
+                prepared.llmRequest(),
+                prepared.prompt().getGenerationMetadata());
+        try {
+            DraftContent draft = materializeDraft(prepared, loaded.response());
+            var replayEvent = quarantineService.recordReplay(
+                    ownerId,
+                    operationId,
+                    "ACCEPTED",
+                    prepared.prompt().getGenerationMetadata(),
+                    prepared.parserVersion(),
+                    prepared.claimPolicyVersion(),
+                    null);
+            return new RejectedGenerationReplayResponse(
+                    operationId,
+                    replayEvent.recordedAt(),
+                    "ACCEPTED",
+                    0,
+                    prepared.parserVersion(),
+                    prepared.claimPolicyVersion(),
+                    null,
+                    draftResponse(
+                            operationId,
+                            prepared,
+                            loaded.response(),
+                            draft));
+        } catch (InvalidLlmResponseException rejection) {
+            RejectedGenerationDiagnostic diagnostic =
+                    quarantineService.diagnostic(rejection);
+            var replayEvent = quarantineService.recordReplay(
+                    ownerId,
+                    operationId,
+                    "REJECTED",
+                    prepared.prompt().getGenerationMetadata(),
+                    prepared.parserVersion(),
+                    prepared.claimPolicyVersion(),
+                    diagnostic);
+            return new RejectedGenerationReplayResponse(
+                    operationId,
+                    replayEvent.recordedAt(),
+                    "REJECTED",
+                    0,
+                    prepared.parserVersion(),
+                    prepared.claimPolicyVersion(),
+                    diagnostic,
+                    null);
+        }
+    }
+
+    public RejectedSelectedGenerationReplayResponse replayRejectedSelectedDraft(
+            String ownerId,
+            UUID operationId,
+            DraftOutputType outputType,
+            SelectedDraftGenerationRequest request) {
+        var loaded = quarantineService.load(ownerId, operationId);
+        PreparedGeneration prepared = prepareSelectedGeneration(
+                ownerId,
+                outputType,
+                request,
+                loaded.artifact().promptReleaseId());
+        quarantineService.requireMatchingReplayContext(
+                loaded.artifact(),
+                prepared.llmRequest(),
+                prepared.prompt().getGenerationMetadata());
+        try {
+            SelectedDraftGenerationResponse draft = materializeSelectedDraft(
+                    operationId,
+                    outputType,
+                    prepared,
+                    loaded.response(),
+                    true);
+            var replayEvent = quarantineService.recordReplay(
+                    ownerId,
+                    operationId,
+                    "ACCEPTED",
+                    prepared.prompt().getGenerationMetadata(),
+                    prepared.parserVersion(),
+                    prepared.claimPolicyVersion(),
+                    null);
+            return new RejectedSelectedGenerationReplayResponse(
+                    operationId,
+                    replayEvent.recordedAt(),
+                    "ACCEPTED",
+                    0,
+                    prepared.parserVersion(),
+                    prepared.claimPolicyVersion(),
+                    null,
+                    draft);
+        } catch (InvalidLlmResponseException rejection) {
+            RejectedGenerationDiagnostic diagnostic =
+                    quarantineService.diagnostic(rejection);
+            if (outputType == DraftOutputType.CV) {
+                SelectedDraftGenerationResponse fallback =
+                        deterministicFallback(
+                                operationId,
+                                prepared,
+                                loaded.response(),
+                                rejectionFallbackReason(
+                                        "RETAINED_MODEL_OUTPUT_REJECTED",
+                                        rejection),
+                                true);
+                var replayEvent = quarantineService.recordReplay(
+                        ownerId,
+                        operationId,
+                        "ACCEPTED",
+                        prepared.prompt().getGenerationMetadata(),
+                        prepared.parserVersion(),
+                        prepared.claimPolicyVersion(),
+                        null);
+                log.warn(
+                        "retained selected CV reconciled with deterministic fallback operationId={} originalFailureCategory={} originalFailurePath={} originalFailureReason={}",
+                        operationId,
+                        diagnostic == null ? null : diagnostic.phase(),
+                        diagnostic == null ? null : diagnostic.path(),
+                        diagnostic == null ? null : diagnostic.reason());
+                return new RejectedSelectedGenerationReplayResponse(
+                        operationId,
+                        replayEvent.recordedAt(),
+                        "ACCEPTED",
+                        0,
+                        prepared.parserVersion(),
+                        prepared.claimPolicyVersion(),
+                        null,
+                        fallback);
+            }
+            var replayEvent = quarantineService.recordReplay(
+                    ownerId,
+                    operationId,
+                    "REJECTED",
+                    prepared.prompt().getGenerationMetadata(),
+                    prepared.parserVersion(),
+                    prepared.claimPolicyVersion(),
+                    diagnostic);
+            return new RejectedSelectedGenerationReplayResponse(
+                    operationId,
+                    replayEvent.recordedAt(),
+                    "REJECTED",
+                    0,
+                    prepared.parserVersion(),
+                    prepared.claimPolicyVersion(),
+                    diagnostic,
+                    null);
+        }
+    }
+
+    /**
+     * Produces the conservative evidence-only CV without invoking the provider.
+     * This endpoint is deliberately operator-authenticated and CV-only: it is
+     * used after an ambiguous provider outcome has been reconciled for a
+     * bounded period and no retained response is available.
+     */
+    public SelectedDraftGenerationResponse generateDeterministicSelectedFallback(
+            String ownerId,
+            UUID operationId,
+            DraftOutputType outputType,
+            SelectedDraftGenerationRequest request) {
+        if (outputType != DraftOutputType.CV) {
+            throw new IllegalArgumentException(
+                    "A deterministic fallback is supported only for CV generation.");
+        }
+        PreparedGeneration prepared = prepareSelectedGeneration(
+                ownerId, outputType, request, null);
+        return deterministicFallback(
+                operationId,
+                prepared,
+                null,
+                "RECONCILIATION_EXHAUSTED",
+                false);
+    }
+
+    private void captureRejectedResponse(
+            String ownerId,
+            UUID operationId,
+            PreparedGeneration prepared,
+            GenerationResponse llmResponse,
+            InvalidLlmResponseException rejection) {
+        if (!quarantineService.isEnabled()) {
+            return;
+        }
+        try {
+            quarantineService.capture(new RejectedGenerationCaptureContext(
+                    operationId,
+                    ownerId,
+                    prepared.prompt().getGenerationMetadata(),
+                    prepared.parserVersion(),
+                    prepared.claimPolicyVersion(),
+                    prepared.llmRequest(),
+                    llmResponse,
+                    rejection));
+        } catch (RuntimeException captureFailure) {
+            rejection.addSuppressed(captureFailure);
+            log.error(
+                    "Rejected generation response quarantine failed operationId={} failureType={}",
+                    operationId,
+                    captureFailure.getClass().getSimpleName());
+        }
+    }
+
+    private String rejectionFallbackReason(
+            String prefix,
+            InvalidLlmResponseException rejection) {
+        RejectedGenerationDiagnostic diagnostic =
+                quarantineService.diagnostic(rejection);
+        if (diagnostic == null || !StringUtils.hasText(diagnostic.phase())) {
+            return prefix + "_UNKNOWN";
+        }
+        return prefix + "_" + diagnostic.phase();
+    }
+
+    private DraftGenerationResponse draftResponse(
+            UUID operationId,
+            PreparedGeneration prepared,
+            GenerationResponse llmResponse,
+            DraftContent draft) {
+        GenerationUsage usage = llmResponse.getUsage();
+        GenerationAudit audit = llmResponse.getAudit();
+        return new DraftGenerationResponse(
+                operationId,
+                draft.documents().getCv().getTitle(),
+                draft.documents().getCoverLetter().getTitle(),
+                draft.cvContent(),
+                draft.coverLetterContent(),
+                draft.documents().getGenerationNotes(),
+                prepared.prompt().getGenerationMetadata(),
+                prepared.input().inputSchemaVersion(),
+                prepared.input().warnings(),
+                claimLedgerFactory.create(
+                        operationId,
+                        draft.documents().getClaims(),
+                        prepared.claimPolicyVersion(),
+                        prepared.parserVersion()),
+                new DraftGenerationResponse.DraftGenerationUsage(
+                        usage == null ? null : usage.getInputTokens(),
+                        usage == null ? null : usage.getOutputTokens(),
+                        usage == null ? null : usage.getTotalTokens()),
+                new DraftGenerationResponse.DraftGenerationAudit(
+                        audit.getModelId(),
+                        audit.getModelDeploymentVersion(),
+                        audit.getAdmissionPolicyVersion(),
+                        audit.getPricingVersion(),
+                        audit.getEstimatedInputTokensAtAdmission(),
+                        audit.getEstimatedCostMicroUsd(),
+                        audit.getCurrency(),
+                        audit.getProviderAttemptCount() == null
+                                ? 0 : audit.getProviderAttemptCount(),
+                        audit.getAutomaticRetryCount() == null
+                                ? 0 : audit.getAutomaticRetryCount(),
+                        audit.getRetryReason()));
+    }
+
+    private GenerationResponse invokeModel(
+            PreparedGeneration prepared, UUID operationId) {
+        long startedAt = System.nanoTime();
+        log.info(
+                "Bounded model request started operationId={} jobId={} taskType={}",
+                operationId,
+                prepared.jobId(),
+                prepared.prompt().getTaskType());
+        GenerationResponse response =
+                llmGatewayApi.generateV2(prepared.llmRequest());
+        GenerationUsage usage = response == null ? null : response.getUsage();
+        log.info(
+                "Bounded model response received operationId={} jobId={} finishReason={} inputTokens={} outputTokens={} totalTokens={} durationMs={}",
+                operationId,
+                prepared.jobId(),
+                response == null ? null : response.getFinishReason(),
+                usage == null ? null : usage.getInputTokens(),
+                usage == null ? null : usage.getOutputTokens(),
+                usage == null ? null : usage.getTotalTokens(),
+                (System.nanoTime() - startedAt) / 1_000_000);
+        return response;
+    }
+
+    private DraftContent materializeDraft(
+            PreparedGeneration prepared, GenerationResponse llmResponse) {
+        validateGenerationResponse(llmResponse, prepared.prompt());
+        GeneratedApplicationDocuments documents = responseParser.parse(
+                llmResponse.getOutput(),
+                prepared.prompt().getOutputSchema(),
+                prepared.prompt().getEvidenceCatalog());
+        logApplicationQuality(
+                null, documents, prepared.prompt().getEvidenceCatalog());
+        String cvContent = cvRenderer.render(
+                documents.getCv(), prepared.input().contact());
+        String coverLetterContent = coverLetterRenderer.render(
+                documents.getCoverLetter(), prepared.input().contact());
+        return new DraftContent(
+                documents, cvContent, coverLetterContent);
+    }
+
+    private void logApplicationQuality(
+            UUID operationId,
+            GeneratedApplicationDocuments documents,
+            com.jobseekercopilot.cvcoverletter.model.ClaimEvidenceCatalog catalog
+    ) {
+        var report = applicationQualityEvaluator.evaluate(documents, catalog);
+        var metrics = report.metrics();
+        log.info(
+                "Application quality evaluated operationId={} evaluatorVersion={} groundingPass={} jdRelevance={} evidenceCoverage={} strongEvidenceUtilisation={} weakEvidenceOveruse={} complementarity={} summarySpecificity={} bulletSpecificity={} readability={} concision={} seniorityFit={} overallPersuasiveness={}",
+                operationId,
+                report.version(),
+                report.groundingPass(),
+                metrics.jdRelevance(),
+                metrics.evidenceCoverage(),
+                metrics.strongEvidenceUtilisation(),
+                metrics.weakEvidenceOveruse(),
+                metrics.cvCoverLetterComplementarity(),
+                metrics.summarySpecificity(),
+                metrics.bulletSpecificity(),
+                metrics.readability(),
+                metrics.concision(),
+                metrics.roleSeniorityFit(),
+                metrics.overallInterviewPersuasiveness());
+    }
+
+    private record PreparedGeneration(
+            NormalizedGenerationInput input,
+            CvCoverLetterPrompt prompt,
+            GenerationRequest llmRequest,
+            String jobId,
+            String claimPolicyVersion,
+            String parserVersion) {
+    }
+
+    private record DraftContent(
+            GeneratedApplicationDocuments documents,
+            String cvContent,
+            String coverLetterContent) {
+    }
+
+    public GenerateCvCoverLetterResponse generate(String ownerId, GenerateRequest request) {
         long generationStartedAt = System.nanoTime();
-        String userId = request.getUserProfile().getUserId();
-        String jobId = request.getJob().getId();
+        NormalizedGenerationInput input = inputNormalizer.normalize(ownerId, request);
+        String userId = input.ownerId();
+        String jobId = input.jobProvenance().getResourceId();
         log.info("CV/cover letter generation request received userId={} jobId={}", userId, jobId);
         long promptStartedAt = System.nanoTime();
         log.info("Prompt build started userId={} jobId={}", userId, jobId);
-        CvCoverLetterPrompt prompt = promptBuilderService.buildPrompt(
-                request.getUserProfile(),
-                request.getJob()
-        );
-        log.info("Prompt build completed userId={} jobId={} estimatedTokens={} durationMs={}",
+        CvCoverLetterPrompt prompt = promptBuilderService.buildPrompt(input);
+        String parserVersion = responseParser.parserVersion(
+                prompt.getOutputSchema());
+        String claimPolicyVersion = responseParser.claimPolicyVersion(
+                prompt.getOutputSchema());
+        log.info("Prompt build completed userId={} jobId={} llmContractVersion=2.0 promptRelease={} bundleVersion={} templateVersion={} rulesVersion={} schemaId={} schemaVersion={} evaluationPolicyVersion={} bundleSha256={} trustedInstructionCharacters={} untrustedInputCharacters={} estimatedTokens={} durationMs={}",
                 userId,
                 jobId,
-                estimateTokens(prompt.getFinalPrompt()),
+                prompt.getGenerationMetadata().releaseId(),
+                prompt.getGenerationMetadata().bundleVersion(),
+                prompt.getGenerationMetadata().templateVersion(),
+                prompt.getGenerationMetadata().rulesVersion(),
+                prompt.getGenerationMetadata().schemaId(),
+                prompt.getGenerationMetadata().schemaVersion(),
+                prompt.getGenerationMetadata().evaluationPolicyVersion(),
+                prompt.getGenerationMetadata().bundleSha256(),
+                prompt.getTrustedInstructions().length(),
+                prompt.getUntrustedInput().length(),
+                estimateTokens(prompt),
                 (System.nanoTime() - promptStartedAt) / 1_000_000);
 
-        com.jobseekercopilot.generated.llmgateway.model.GenerateRequest llmRequest =
-                new com.jobseekercopilot.generated.llmgateway.model.GenerateRequest()
-                .taskType(llmProperties.getTaskType())
-                .prompt(prompt.getFinalPrompt())
-                .temperature(llmProperties.getTemperature())
-                .maxTokens(llmProperties.getMaxTokens());
+        GenerationRequest llmRequest = new GenerationRequest()
+                .contractVersion(GenerationRequest.ContractVersionEnum._2_0)
+                .task(prompt.getTaskType())
+                .trustedInstructions(prompt.getTrustedInstructions())
+                .untrustedInput(prompt.getUntrustedInput())
+                .output(new GenerationOutputContract()
+                        .format(GenerationOutputContract.FormatEnum.JSON_SCHEMA)
+                        .schemaId(prompt.getGenerationMetadata().schemaId())
+                        .schemaVersion(prompt.getGenerationMetadata().schemaVersion())
+                        .jsonSchema(prompt.getOutputSchema()))
+                .limits(new GenerationLimits()
+                        .temperature(llmProperties.getTemperature())
+                        .maxOutputTokens(llmProperties.getMaxTokens()));
 
         long reservationStartedAt = System.nanoTime();
         log.info("Billing reservation started userId={} jobId={} estimatedTokens={}",
                 userId,
                 jobId,
-                estimateTokens(prompt.getFinalPrompt()));
+                estimateTokens(prompt));
         PaymentBillingClient.ReservationResponse reservation = paymentBillingClient.reserve(
                 userId,
                 PaymentBillingClient.ReservationRequest.builder()
                         .feature(GENERATION_FEATURE)
-                        .estimatedTokens(estimateTokens(prompt.getFinalPrompt()))
+                        .estimatedTokens(estimateTokens(prompt))
+                        .operationKey("cv-generation:" + UUID.randomUUID())
                         .referenceType(REFERENCE_TYPE)
-                        .referenceId(request.getJob().getId())
+                        .referenceId(jobId)
                         .build());
         if (reservation == null || reservation.reservationId() == null) {
             log.error("Billing reservation failed userId={} jobId={} error=MissingReservationId", userId, jobId);
@@ -88,7 +933,7 @@ public class CvCoverLetterService {
                 reservation.reservedTokens(),
                 (System.nanoTime() - reservationStartedAt) / 1_000_000);
 
-        GenerateResponse llmResponse;
+        GenerationResponse llmResponse;
         try {
             long llmStartedAt = System.nanoTime();
             log.info("LLM request started userId={} jobId={} taskType={} maxTokens={} temperature={}",
@@ -97,11 +942,16 @@ public class CvCoverLetterService {
                     llmProperties.getTaskType(),
                     llmProperties.getMaxTokens(),
                     llmProperties.getTemperature());
-            llmResponse = llmGatewayApi.generate(llmRequest);
-            LlmUsage usage = llmResponse == null ? null : llmResponse.getUsage();
-            log.info("LLM request completed userId={} jobId={} inputTokens={} outputTokens={} totalTokens={} durationMs={}",
+            llmResponse = llmGatewayApi.generateV2(llmRequest);
+            GenerationUsage usage = llmResponse == null ? null : llmResponse.getUsage();
+            log.info("LLM response received userId={} jobId={} llmContractVersion={} finishReason={} schemaId={} schemaVersion={} parserVersion={} inputTokens={} outputTokens={} totalTokens={} durationMs={}",
                     userId,
                     jobId,
+                    llmResponse == null ? null : llmResponse.getContractVersion(),
+                    llmResponse == null ? null : llmResponse.getFinishReason(),
+                    llmResponse == null ? null : llmResponse.getSchemaId(),
+                    llmResponse == null ? null : llmResponse.getSchemaVersion(),
+                    parserVersion,
                     usage == null ? null : usage.getInputTokens(),
                     usage == null ? null : usage.getOutputTokens(),
                     usage == null ? null : usage.getTotalTokens(),
@@ -112,35 +962,84 @@ public class CvCoverLetterService {
                     jobId,
                     exception.getClass().getSimpleName(),
                     exception);
-            releaseReservationAfterFailure(userId, reservation.reservationId(), "LLM generation failed");
-            throw new DownstreamServiceException("LLM gateway is unavailable", exception);
+            DownstreamServiceException generationFailure =
+                    new DownstreamServiceException("LLM gateway is unavailable", exception);
+            releaseReservationAfterFailure(
+                    userId,
+                    reservation.reservationId(),
+                    "LLM generation failed",
+                    generationFailure);
+            throw generationFailure;
         }
         if (llmResponse == null) {
             log.warn("LLM gateway returned no response userId={} jobId={}", userId, jobId);
-            releaseReservationAfterFailure(userId, reservation.reservationId(), "LLM gateway returned no response");
-            throw new InvalidLlmResponseException("LLM gateway returned no response");
+            InvalidLlmResponseException generationFailure =
+                    new InvalidLlmResponseException("LLM gateway returned no response");
+            releaseReservationAfterFailure(
+                    userId,
+                    reservation.reservationId(),
+                    "LLM gateway returned no response",
+                    generationFailure);
+            throw generationFailure;
         }
 
         try {
-            GeneratedApplicationDocuments documents = responseParser.parse(llmResponse.getResponse());
-            ContactDetails contactDetails = ContactDetails.from(request.getUserProfile());
-            String cvContent = cvRenderer.render(documents.getCv(), contactDetails);
-            String coverLetterContent = coverLetterRenderer.render(documents.getCoverLetter(), contactDetails);
+            validateGenerationResponse(llmResponse, prompt);
+            GenerationAudit generationAudit = llmResponse.getAudit();
+            log.info("LLM generation provenance accepted userId={} jobId={} llmContractVersion={} modelId={} modelDeploymentVersion={} admissionPolicyVersion={} pricingVersion={} estimatedInputTokensAtAdmission={} estimatedCostMicroUsd={} currency={} promptRelease={} bundleVersion={} templateVersion={} rulesVersion={} schemaId={} schemaVersion={} evaluationPolicyVersion={} parserVersion={}",
+                    userId,
+                    jobId,
+                    llmResponse.getContractVersion(),
+                    generationAudit.getModelId(),
+                    generationAudit.getModelDeploymentVersion(),
+                    generationAudit.getAdmissionPolicyVersion(),
+                    generationAudit.getPricingVersion(),
+                    generationAudit.getEstimatedInputTokensAtAdmission(),
+                    generationAudit.getEstimatedCostMicroUsd(),
+                    generationAudit.getCurrency(),
+                    prompt.getGenerationMetadata().releaseId(),
+                    prompt.getGenerationMetadata().bundleVersion(),
+                    prompt.getGenerationMetadata().templateVersion(),
+                    prompt.getGenerationMetadata().rulesVersion(),
+                    prompt.getGenerationMetadata().schemaId(),
+                    prompt.getGenerationMetadata().schemaVersion(),
+                    prompt.getGenerationMetadata().evaluationPolicyVersion(),
+                    parserVersion);
+            GeneratedApplicationDocuments documents =
+                    responseParser.parse(
+                            llmResponse.getOutput(),
+                            prompt.getOutputSchema(),
+                            prompt.getEvidenceCatalog());
+            if (documents.getClaims() != null) {
+                log.info(
+                        "LLM claim evidence accepted userId={} jobId={} policyVersion={} evidenceRecords={} claims={}",
+                        userId,
+                        jobId,
+                        claimPolicyVersion,
+                        prompt.getEvidenceCatalog().records().size(),
+                        documents.getClaims().size());
+            }
+            String cvContent = cvRenderer.render(documents.getCv(), input.contact());
+            String coverLetterContent = coverLetterRenderer.render(documents.getCoverLetter(), input.contact());
 
-            GeneratedDocumentResponse savedCv = saveDocument(request, DocumentTypeEnum.CV,
+            GeneratedDocumentResponse savedCv = saveDocument(input, DocumentTypeEnum.CV,
                     documents.getCv().getTitle(), cvContent);
-            GeneratedDocumentResponse savedCoverLetter = saveDocument(request, DocumentTypeEnum.COVER_LETTER,
+            GeneratedDocumentResponse savedCoverLetter = saveDocument(input, DocumentTypeEnum.COVER_LETTER,
                     documents.getCoverLetter().getTitle(), coverLetterContent);
             requireDocumentId(savedCv, "CV");
             requireDocumentId(savedCoverLetter, "cover letter");
 
             ApplicationRecordResponse application = createApplication(
-                    request, savedCv.getId().toString(), savedCoverLetter.getId().toString());
+                    input, savedCv.getId().toString(), savedCoverLetter.getId().toString());
             if (application == null || application.getId() == null) {
                 throw new DownstreamServiceException("Application tracker returned no application ID", null);
             }
 
-            commitReservation(userId, reservation.reservationId(), llmResponse.getUsage());
+            commitReservation(
+                    userId,
+                    reservation.reservationId(),
+                    llmResponse.getUsage(),
+                    generationAudit);
             log.info("CV/cover letter generation succeeded userId={} jobId={} applicationId={} cvDocumentId={} coverLetterDocumentId={} durationMs={}",
                     userId,
                     jobId,
@@ -158,20 +1057,137 @@ public class CvCoverLetterService {
                     .cvContent(cvContent)
                     .coverLetterContent(coverLetterContent)
                     .generationNotes(documents.getGenerationNotes())
+                    .generationMetadata(prompt.getGenerationMetadata())
+                    .inputSchemaVersion(input.inputSchemaVersion())
+                    .inputWarnings(input.warnings())
                     .build();
         } catch (RuntimeException exception) {
-            releaseReservationAfterFailure(userId, reservation.reservationId(), "Document generation failed");
+            releaseReservationAfterFailure(
+                    userId,
+                    reservation.reservationId(),
+                    "Document generation failed",
+                    exception);
             throw exception;
         }
     }
 
-    private long estimateTokens(String prompt) {
-        long estimatedInputTokens = Math.max(1, (long) Math.ceil(prompt.length() / 4.0));
+    private long estimateTokens(CvCoverLetterPrompt prompt) {
+        long requestCharacters = (long) prompt.getTrustedInstructions().length()
+                + prompt.getUntrustedInput().length()
+                + prompt.getOutputSchema().toString().length();
+        long estimatedInputTokens = Math.max(1, (long) Math.ceil(requestCharacters / 4.0));
         long estimatedOutputTokens = Math.max(0, llmProperties.getMaxTokens());
         return Math.max(MINIMUM_GENERATION_RESERVATION_TOKENS, estimatedInputTokens + estimatedOutputTokens);
     }
 
-    private void commitReservation(String userId, UUID reservationId, LlmUsage usage) {
+    private void validateGenerationResponse(
+            GenerationResponse response,
+            CvCoverLetterPrompt prompt
+    ) {
+        if (!"2.0".equals(response.getContractVersion())) {
+            throw new InvalidLlmResponseException("LLM gateway returned an unexpected contract version");
+        }
+        if (response.getFinishReason() != GenerationResponse.FinishReasonEnum.COMPLETED) {
+            throw new InvalidLlmResponseException("LLM generation did not complete safely");
+        }
+        if (!prompt.getGenerationMetadata().schemaId().equals(response.getSchemaId())
+                || !prompt.getGenerationMetadata().schemaVersion().equals(response.getSchemaVersion())) {
+            throw new InvalidLlmResponseException("LLM gateway returned unexpected output schema metadata");
+        }
+        if (response.getOutput() == null || response.getOutput().isBlank()) {
+            throw new InvalidLlmResponseException("LLM gateway returned no generated output");
+        }
+        validateGenerationAudit(response.getAudit());
+    }
+
+    private void validateGenerationAudit(GenerationAudit audit) {
+        if (audit == null
+                || !StringUtils.hasText(audit.getModelId())
+                || audit.getModelId().length() > 128
+                || audit.getModelId().chars().anyMatch(Character::isWhitespace)
+                || !validPolicyVersion(audit.getModelDeploymentVersion())
+                || !validPolicyVersion(audit.getAdmissionPolicyVersion())
+                || !validPolicyVersion(audit.getPricingVersion())
+                || audit.getEstimatedInputTokensAtAdmission() == null
+                || audit.getEstimatedInputTokensAtAdmission() < 0
+                || audit.getEstimatedCostMicroUsd() == null
+                || audit.getEstimatedCostMicroUsd() < 0
+                || !"USD".equals(audit.getCurrency())
+                || invalidAttemptEvidence(audit)) {
+            throw new InvalidLlmResponseException(
+                    "LLM gateway returned invalid generation audit metadata");
+        }
+    }
+
+    private boolean invalidAttemptEvidence(GenerationAudit audit) {
+        Integer attempts = audit.getProviderAttemptCount();
+        Integer retries = audit.getAutomaticRetryCount();
+        String retryReason = audit.getRetryReason();
+        if ((attempts == null) != (retries == null)) {
+            return true;
+        }
+        if (attempts != null && (attempts < 1 || attempts > 2)) {
+            return true;
+        }
+        if (retries != null && (retries < 0 || retries > 1)) {
+            return true;
+        }
+        if (attempts != null && retries != null
+                && attempts != retries + 1) {
+            return true;
+        }
+        if (retries != null && retries == 0
+                && StringUtils.hasText(retryReason)) {
+            return true;
+        }
+        if (retries != null && retries > 0
+                && !"RATE_LIMITED".equals(retryReason)) {
+            return true;
+        }
+        return StringUtils.hasText(retryReason)
+                && !"RATE_LIMITED".equals(retryReason);
+    }
+
+    private int providerAttemptCount(
+            GenerationAudit audit,
+            boolean providerResponseAccepted) {
+        if (audit != null
+                && audit.getProviderAttemptCount() != null
+                && audit.getProviderAttemptCount() >= 1
+                && audit.getProviderAttemptCount() <= 2) {
+            return audit.getProviderAttemptCount();
+        }
+        return providerResponseAccepted ? 1 : 0;
+    }
+
+    private int automaticRetryCount(GenerationAudit audit) {
+        if (audit == null
+                || audit.getAutomaticRetryCount() == null
+                || audit.getAutomaticRetryCount() < 0
+                || audit.getAutomaticRetryCount() > 1) {
+            return 0;
+        }
+        return audit.getAutomaticRetryCount();
+    }
+
+    private String safeRetryReason(GenerationAudit audit) {
+        return audit != null
+                        && automaticRetryCount(audit) > 0
+                        && "RATE_LIMITED".equals(audit.getRetryReason())
+                ? "RATE_LIMITED"
+                : null;
+    }
+
+    private boolean validPolicyVersion(String value) {
+        return StringUtils.hasText(value) && POLICY_VERSION.matcher(value).matches();
+    }
+
+    private void commitReservation(
+            String userId,
+            UUID reservationId,
+            GenerationUsage usage,
+            GenerationAudit audit
+    ) {
         long actualTokens = usage == null || usage.getTotalTokens() == null
                 ? 0
                 : Math.max(0, usage.getTotalTokens());
@@ -186,8 +1202,7 @@ public class CvCoverLetterService {
                 usage == null ? null : usage.getOutputTokens());
         paymentBillingClient.commit(userId, reservationId, PaymentBillingClient.CommitReservationRequest.builder()
                 .actualTokens(actualTokens)
-                .provider(usage == null ? null : usage.getProvider())
-                .model(usage == null ? null : usage.getModel())
+                .model(audit.getModelId())
                 .inputTokens(usage == null ? null : usage.getInputTokens())
                 .outputTokens(usage == null ? null : usage.getOutputTokens())
                 .description("CV and cover letter generation")
@@ -195,46 +1210,59 @@ public class CvCoverLetterService {
         log.info("Billing commit succeeded userId={} reservationId={}", userId, reservationId);
     }
 
-    private void releaseReservationAfterFailure(String userId, UUID reservationId, String reason) {
+    private void releaseReservationAfterFailure(
+            String userId,
+            UUID reservationId,
+            String reason,
+            RuntimeException generationFailure) {
         try {
             log.info("Billing release started userId={} reservationId={} reason={}", userId, reservationId, reason);
             paymentBillingClient.release(userId, reservationId, reason);
             log.info("Billing release succeeded userId={} reservationId={}", userId, reservationId);
         } catch (DownstreamServiceException exception) {
-            log.error("Failed to release AI token reservation {} after generation failure", reservationId, exception);
+            log.error(
+                    "Billing compensation unresolved after generation failure reservationId={}",
+                    reservationId,
+                    exception);
+            DownstreamServiceException unresolved = new DownstreamServiceException(
+                    "Document generation failed and billing compensation is unresolved",
+                    exception);
+            unresolved.addSuppressed(generationFailure);
+            throw unresolved;
         }
     }
 
-    private GeneratedDocumentResponse saveDocument(GenerateRequest request, DocumentTypeEnum type,
+    private GeneratedDocumentResponse saveDocument(NormalizedGenerationInput input, DocumentTypeEnum type,
                                                     String title, String content) {
         com.jobseekercopilot.generated.documentstoreservice.model.CreateDocumentRequest documentRequest =
                 new com.jobseekercopilot.generated.documentstoreservice.model.CreateDocumentRequest()
-                        .userId(request.getUserProfile().getUserId())
-                        .jobId(request.getJob().getId())
+                        .userId(input.ownerId())
+                        .jobId(input.jobProvenance().getResourceId())
                         .documentType(type)
                         .title(title)
                         .content(content);
         try {
             long startedAt = System.nanoTime();
             log.info("Document save started userId={} jobId={} documentType={}",
-                    request.getUserProfile().getUserId(),
-                    request.getJob().getId(),
+                    input.ownerId(),
+                    input.jobProvenance().getResourceId(),
                     type);
-            GeneratedDocumentResponse response = documentStoreApi.createDocument(documentRequest);
+            GeneratedDocumentResponse response =
+                    documentStoreApi.createDocument(documentRequest, input.ownerId());
             if (response == null) {
                 throw new DownstreamServiceException("Document store failed to save " + type, null);
             }
             log.info("Document save succeeded userId={} jobId={} documentType={} documentId={} durationMs={}",
-                    request.getUserProfile().getUserId(),
-                    request.getJob().getId(),
+                    input.ownerId(),
+                    input.jobProvenance().getResourceId(),
                     type,
                     response.getId(),
                     (System.nanoTime() - startedAt) / 1_000_000);
             return response;
         } catch (RestClientException exception) {
             log.warn("Document save failed userId={} jobId={} documentType={} error={}",
-                    request.getUserProfile().getUserId(),
-                    request.getJob().getId(),
+                    input.ownerId(),
+                    input.jobProvenance().getResourceId(),
                     type,
                     exception.getClass().getSimpleName(),
                     exception);
@@ -248,32 +1276,35 @@ public class CvCoverLetterService {
         }
     }
 
-    private ApplicationRecordResponse createApplication(GenerateRequest request, String cvId, String coverLetterId) {
+    private ApplicationRecordResponse createApplication(
+            NormalizedGenerationInput input, String cvId, String coverLetterId) {
         CreateApplicationRequest applicationRequest = new CreateApplicationRequest()
-                .userId(request.getUserProfile().getUserId())
-                .jobId(request.getJob().getId())
-                .jobTitle(request.getJob().getTitle())
-                .companyName(request.getJob().getCompany())
+                .userId(input.ownerId())
+                .jobId(input.jobProvenance().getResourceId())
+                .canonicalJobId(input.jobProvenance().getResourceId())
+                .jobTitle(input.job().title())
+                .companyName(input.job().company())
+                .location(input.job().location())
                 .cvDocumentId(cvId)
                 .coverLetterDocumentId(coverLetterId);
         try {
             long startedAt = System.nanoTime();
             log.info("Application tracker create started userId={} jobId={} cvDocumentId={} coverLetterDocumentId={}",
-                    request.getUserProfile().getUserId(),
-                    request.getJob().getId(),
+                    input.ownerId(),
+                    input.jobProvenance().getResourceId(),
                     cvId,
                     coverLetterId);
             ApplicationRecordResponse response = applicationTrackerApi.createApplication(applicationRequest);
             log.info("Application tracker create succeeded userId={} jobId={} applicationId={} durationMs={}",
-                    request.getUserProfile().getUserId(),
-                    request.getJob().getId(),
+                    input.ownerId(),
+                    input.jobProvenance().getResourceId(),
                     response == null ? null : response.getId(),
                     (System.nanoTime() - startedAt) / 1_000_000);
             return response;
         } catch (RestClientException exception) {
             log.warn("Application tracker create failed userId={} jobId={} error={}",
-                    request.getUserProfile().getUserId(),
-                    request.getJob().getId(),
+                    input.ownerId(),
+                    input.jobProvenance().getResourceId(),
                     exception.getClass().getSimpleName(),
                     exception);
             throw new DownstreamServiceException("Application tracker is unavailable", exception);

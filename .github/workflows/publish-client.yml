@@ -1,0 +1,111 @@
+name: Publish CV and Cover Letter Java client
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          server-id: github
+          server-username: GITHUB_ACTOR
+          server-password: GITHUB_TOKEN
+      - name: Verify producer contract policy
+        run: |
+          ./scripts/test-api-contract-policy.sh
+          ./scripts/verify-api-contract.sh
+      - name: Verify release provenance
+        run: python3 scripts/verify_client_release.py
+      - name: Test breaking-change policy
+        run: python3 scripts/test_openapi_breaking.py
+      - name: Check compatibility with previous release
+        run: |
+          python3 - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          release = json.loads(Path("api/client-release.json").read_text())
+          contract = release["contract"]
+          if contract["initialRelease"]:
+              print("Compatibility gate: explicitly recorded initial release")
+          else:
+              base = subprocess.run(
+                  [
+                      "git",
+                      "show",
+                      f"{contract['compatibilityBaseRevision']}:{contract['path']}",
+                  ],
+                  check=True,
+                  capture_output=True,
+              ).stdout
+              Path("${{ runner.temp }}/base-openapi.json").write_bytes(base)
+          PY
+          if [ -f "${{ runner.temp }}/base-openapi.json" ]; then
+            python3 scripts/openapi_breaking.py \
+              "${{ runner.temp }}/base-openapi.json" contracts/openapi.json
+          fi
+      - name: Prove deterministic generation
+        run: ./scripts/test-client-generation.sh
+      - name: Build client package
+        run: >-
+          mvn -B --no-transfer-progress
+          -Dmaven.repo.local=${{ runner.temp }}/producer-m2
+          -f api/client/pom.xml clean verify
+      - name: Reject an existing immutable coordinate
+        run: |
+          package_url="$(
+            python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          package = json.loads(
+              Path("api/client-release.json").read_text(encoding="utf-8")
+          )["javaPackage"]
+          group_path = package["groupId"].replace(".", "/")
+          artifact = package["artifactId"]
+          version = package["version"]
+          print(
+              f'{package["registry"].rstrip("/")}/{group_path}/'
+              f'{artifact}/{version}/{artifact}-{version}.pom'
+          )
+          PY
+          )"
+          response_file="${{ runner.temp }}/package-response"
+          status="$(
+            curl --silent --show-error \
+              --output "$response_file" \
+              --write-out '%{http_code}' \
+              --user "${GITHUB_ACTOR}:${GITHUB_TOKEN}" \
+              "$package_url"
+          )"
+          case "$status" in
+            404) echo "Immutable coordinate is available" ;;
+            200) echo "Immutable coordinate already exists; refusing overwrite" >&2; exit 1 ;;
+            *) echo "Registry preflight failed with HTTP $status" >&2; exit 1 ;;
+          esac
+      - name: Publish immutable package
+        run: >-
+          mvn -B --no-transfer-progress
+          -Dmaven.repo.local=${{ runner.temp }}/producer-m2
+          -f api/client/pom.xml deploy
+      - name: Prove fresh authenticated consumer resolution
+        run: >-
+          mvn -B --no-transfer-progress
+          -Dmaven.repo.local=${{ runner.temp }}/consumer-m2
+          -f api/client-smoke/pom.xml clean verify

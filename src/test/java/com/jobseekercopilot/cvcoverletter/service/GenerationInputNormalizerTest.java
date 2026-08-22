@@ -1,0 +1,364 @@
+package com.jobseekercopilot.cvcoverletter.service;
+
+import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validRequest;
+import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validSelectedRequest;
+import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validVersionedRequest;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.jobseekercopilot.cvcoverletter.dto.AdvertiserType;
+import com.jobseekercopilot.cvcoverletter.dto.EmploymentInput;
+import com.jobseekercopilot.cvcoverletter.dto.DraftOutputType;
+import com.jobseekercopilot.cvcoverletter.dto.EvidenceSnapshotPurpose;
+import com.jobseekercopilot.cvcoverletter.dto.InputSourceOwner;
+import com.jobseekercopilot.cvcoverletter.dto.InputWarning;
+import com.jobseekercopilot.cvcoverletter.dto.JobDescriptionCompleteness;
+import com.jobseekercopilot.cvcoverletter.dto.ProfessionalContactInputSnapshot;
+import com.jobseekercopilot.cvcoverletter.dto.ProfessionalLinkInput;
+import com.jobseekercopilot.cvcoverletter.dto.RoleStatus;
+import com.jobseekercopilot.cvcoverletter.exception.InvalidGenerationInputException;
+import com.jobseekercopilot.cvcoverletter.model.NormalizedGenerationInput;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+class GenerationInputNormalizerTest {
+
+    private final GenerationInputNormalizer normalizer = new GenerationInputNormalizer(
+            Clock.fixed(Instant.parse("2026-07-24T13:00:00Z"), ZoneOffset.UTC));
+
+    @Test
+    void normalizesMarkupDuplicatesAndConflictsWithoutInventingHistory() {
+        var request = validRequest();
+        request.getProfile().setSkills(new ArrayList<>(List.of(
+                "<b>Java</b>",
+                " java ",
+                "&lt;script&gt;discard()&lt;/script&gt;Spring",
+                "&lt;style&gt;discard the remainder")));
+        EmploymentInput first = request.getProfile().getEmploymentHistory().get(0);
+        request.getProfile().getEmploymentHistory().add(new EmploymentInput(
+                first.getJobTitle(),
+                first.getEmployer(),
+                RoleStatus.CURRENT,
+                first.getStartDate(),
+                "2025-01",
+                "Conflicting replacement"));
+
+        NormalizedGenerationInput actual = normalizer.normalize(" owner-123 ", request);
+
+        assertEquals("owner-123", actual.ownerId());
+        assertEquals(List.of("Java", "Spring"), actual.profile().skills());
+        assertEquals(1, actual.profile().employmentHistory().size());
+        assertEquals(
+                "Built and maintained Java services.",
+                actual.profile().employmentHistory().get(0).responsibilities());
+        assertTrue(codes(actual).contains("INPUT_TEXT_NORMALIZED"));
+        assertTrue(codes(actual).contains("PROFILE_SKILL_DUPLICATE_REMOVED"));
+        assertTrue(codes(actual).contains("PROFILE_EMPLOYMENT_DATE_CONFLICT"));
+        assertTrue(codes(actual).contains("PROFILE_EMPLOYMENT_CONFLICT"));
+        assertFalse(actual.profile().toString().toLowerCase().contains("script"));
+    }
+
+    @Test
+    void rejectsInvalidAndReversedEmploymentDates() {
+        var invalid = validRequest();
+        invalid.getProfile().getEmploymentHistory().get(0).setStartDate("March 2022");
+        assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize("owner-123", invalid));
+
+        var reversed = validRequest();
+        EmploymentInput employment = reversed.getProfile().getEmploymentHistory().get(0);
+        employment.setStatus(RoleStatus.PREVIOUS_ROLE);
+        employment.setStartDate("2024-04");
+        employment.setEndDate("2023-12");
+        assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize("owner-123", reversed));
+    }
+
+    @Test
+    void rejectsAnUnconfirmedProviderPreviewBeforePromptConstruction() {
+        var request = validRequest();
+        request.getJob().setDescription("Short provider preview...");
+        request.getJob().setDescriptionCompleteness(
+                JobDescriptionCompleteness.PREVIEW);
+
+        InvalidGenerationInputException failure = assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize("owner-123", request));
+
+        assertTrue(failure.getMessage().contains("full or explicitly user-confirmed"));
+    }
+
+    @Test
+    void acceptsACompleteLegacyGatewayAdvertDuringRollingDeployment() {
+        var request = validRequest();
+        request.getJob().setAdvertiserType(null);
+        request.getJob().setDescriptionCompleteness(null);
+        request.getJob().setDescription(
+                "A complete role description covering responsibilities, requirements, delivery and collaboration. "
+                        .repeat(8));
+
+        NormalizedGenerationInput actual =
+                normalizer.normalize("owner-123", request);
+
+        assertEquals(AdvertiserType.UNKNOWN, actual.job().advertiserType());
+        assertEquals("FULL", actual.job().descriptionCompleteness());
+    }
+
+    @Test
+    void rejectsALegacyGatewayPreviewDuringRollingDeployment() {
+        var request = validRequest();
+        request.getJob().setAdvertiserType(null);
+        request.getJob().setDescriptionCompleteness(null);
+        request.getJob().setDescription("Short provider preview...");
+
+        InvalidGenerationInputException failure = assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize("owner-123", request));
+
+        assertTrue(failure.getMessage().contains(
+                "full or explicitly user-confirmed"));
+    }
+
+    @Test
+    void reportsMissingEvidenceInDeterministicFieldOrder() {
+        var request = validRequest();
+        request.getProfile().setContact(null);
+        request.getProfile().setSkills(List.of());
+        request.getProfile().setTargetRoles(List.of());
+        request.getProfile().setQualifications(List.of());
+        request.getProfile().setEmploymentHistory(List.of());
+
+        NormalizedGenerationInput first = normalizer.normalize("owner-123", request);
+        NormalizedGenerationInput second = normalizer.normalize("owner-123", request);
+
+        assertEquals(first.warnings(), second.warnings());
+        assertEquals(
+                List.of(
+                        "CONTACT_NAME_MISSING",
+                        "CONTACT_EMAIL_MISSING",
+                        "PROFILE_SKILLS_MISSING",
+                        "PROFILE_TARGET_ROLES_MISSING",
+                        "PROFILE_QUALIFICATIONS_MISSING",
+                        "PROFILE_EMPLOYMENT_HISTORY_MISSING"),
+                codes(first));
+    }
+
+    @Test
+    void preservesOnlyValidatedRevisionedProfessionalContactForRendering() {
+        var request = validVersionedRequest();
+        request.getProfile().setProfessionalContact(
+                new ProfessionalContactInputSnapshot(
+                        "+44 20 7946 0958",
+                        List.of(new ProfessionalLinkInput(
+                                "GitHub",
+                                "https://github.com/example"))));
+
+        NormalizedGenerationInput actual =
+                normalizer.normalize("owner-123", request);
+
+        assertEquals("+44 20 7946 0958", actual.contact().phone());
+        assertEquals(
+                List.of(new com.jobseekercopilot.cvcoverletter.dto
+                        .ContactDetails.ProfessionalLink(
+                                "GitHub",
+                                "https://github.com/example")),
+                actual.contact().links());
+        assertFalse(actual.profile().toString().contains("7946"));
+        assertFalse(actual.profile().toString().contains("github.com"));
+    }
+
+    @Test
+    void rejectsInvalidOrDuplicateProfessionalContactRatherThanGuessing() {
+        var invalidPhone = validVersionedRequest();
+        invalidPhone.getProfile().setProfessionalContact(
+                new ProfessionalContactInputSnapshot("call me", List.of()));
+        assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize("owner-123", invalidPhone));
+
+        var duplicateLabels = validVersionedRequest();
+        duplicateLabels.getProfile().setProfessionalContact(
+                new ProfessionalContactInputSnapshot(
+                        null,
+                        List.of(
+                                new ProfessionalLinkInput(
+                                        "GitHub",
+                                        "https://github.com/first"),
+                                new ProfessionalLinkInput(
+                                        "github",
+                                        "https://github.com/second"))));
+        assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize("owner-123", duplicateLabels));
+
+        var nonLowercaseHttps = validVersionedRequest();
+        nonLowercaseHttps.getProfile().setProfessionalContact(
+                new ProfessionalContactInputSnapshot(
+                        null,
+                        List.of(new ProfessionalLinkInput(
+                                "Portfolio",
+                                "HTTPS://example.com"))));
+        assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize("owner-123", nonLowercaseHttps));
+    }
+
+    @Test
+    void rejectsWrongProvenanceOwnerAndFutureSnapshot() {
+        var wrongOwner = validRequest();
+        wrongOwner.getJob().getProvenance().setOwner(InputSourceOwner.USER_PROFILE_SERVICE);
+        assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize("owner-123", wrongOwner));
+
+        var future = validRequest();
+        future.getProfile().getProvenance().setCapturedAt(
+                Instant.parse("2026-07-24T13:06:00Z"));
+        assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize("owner-123", future));
+    }
+
+    @Test
+    void rejectsInputAboveAggregatePromptLimit() {
+        var request = validRequest();
+        List<EmploymentInput> employment = new ArrayList<>();
+        for (int index = 0; index < 11; index++) {
+            employment.add(new EmploymentInput(
+                    "Role " + index,
+                    "Employer " + index,
+                    RoleStatus.PREVIOUS_ROLE,
+                    "2020",
+                    "2021",
+                    "x".repeat(4000)));
+        }
+        request.getProfile().setEmploymentHistory(employment);
+
+        InvalidGenerationInputException exception = assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize("owner-123", request));
+        assertTrue(exception.getMessage().contains("40000"));
+    }
+
+    @Test
+    void acceptsExactPurposeBoundSnapshotsAndPreservesClaimantOrder() {
+        var request = validVersionedRequest();
+
+        NormalizedGenerationInput actual =
+                normalizer.normalize("owner-123", request);
+
+        assertEquals("2.0", actual.inputSchemaVersion());
+        assertEquals(
+                List.of(
+                        com.jobseekercopilot.cvcoverletter.dto
+                                .EvidenceCategory.PROJECT),
+                actual.evidenceSnapshots().cv().sectionOrder());
+        assertEquals(
+                "HEADING",
+                actual.evidenceSnapshots().cv()
+                        .selections().get(0)
+                        .facts().get(0).factType());
+        assertEquals(
+                "DEMONSTRATED_SKILL",
+                actual.evidenceSnapshots().cv()
+                        .selections().get(0)
+                        .facts().get(1).factType());
+        assertTrue(actual.profile().skills().isEmpty());
+        assertTrue(actual.profile().employmentHistory().isEmpty());
+    }
+
+    @Test
+    void versionedFlowAcceptsRevisionBoundSkillsButRejectsLegacyRawFacts() {
+        var revisionSkills = validVersionedRequest();
+        revisionSkills.getProfile().setSkills(List.of(
+                "Java",
+                " java ",
+                " Spring "));
+        NormalizedGenerationInput normalized =
+                normalizer.normalize("owner-123", revisionSkills);
+        assertEquals(List.of("Java", "Spring"), normalized.profile().skills());
+
+        var rawFacts = validVersionedRequest();
+        rawFacts.getProfile().setEmploymentHistory(
+                validRequest().getProfile().getEmploymentHistory());
+        assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize("owner-123", rawFacts));
+
+        var rawQualifications = validVersionedRequest();
+        rawQualifications.getProfile().setQualifications(
+                validRequest().getProfile().getQualifications());
+        assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize(
+                        "owner-123", rawQualifications));
+    }
+
+    @Test
+    void versionedFlowRejectsMismatchedProfileAndWrongPurpose() {
+
+        var mismatchedProfile = validVersionedRequest();
+        mismatchedProfile.getEvidenceSnapshots().getCv()
+                .setProfileContentDigest("0".repeat(64));
+        assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize(
+                        "owner-123", mismatchedProfile));
+
+        var wrongPurpose = validVersionedRequest();
+        wrongPurpose.getEvidenceSnapshots().getCoverLetter()
+                .setPurpose(com.jobseekercopilot.cvcoverletter.dto
+                        .EvidenceSnapshotPurpose.CV);
+        assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalize(
+                        "owner-123", wrongPurpose));
+    }
+
+    @Test
+    void selectedFlowRetainsOnlyTheRequestedPurposeSnapshot() {
+        NormalizedGenerationInput cv = normalizer.normalizeSelected(
+                "owner-123",
+                DraftOutputType.CV,
+                validSelectedRequest(DraftOutputType.CV));
+        NormalizedGenerationInput coverLetter = normalizer.normalizeSelected(
+                "owner-123",
+                DraftOutputType.COVER_LETTER,
+                validSelectedRequest(DraftOutputType.COVER_LETTER));
+
+        assertTrue(cv.evidenceSnapshots().cv() != null);
+        assertTrue(cv.evidenceSnapshots().coverLetter() == null);
+        assertTrue(coverLetter.evidenceSnapshots().cv() == null);
+        assertTrue(coverLetter.evidenceSnapshots().coverLetter() != null);
+    }
+
+    @Test
+    void selectedFlowRejectsSchemaOneAndWrongPurposeBeforePrompting() {
+        var wrongSchema = validSelectedRequest(DraftOutputType.CV);
+        wrongSchema.setInputSchemaVersion("1.0");
+        assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalizeSelected(
+                        "owner-123", DraftOutputType.CV, wrongSchema));
+
+        var wrongPurpose = validSelectedRequest(DraftOutputType.CV);
+        wrongPurpose.getEvidenceSnapshot().setPurpose(
+                EvidenceSnapshotPurpose.COVER_LETTER);
+        assertThrows(
+                InvalidGenerationInputException.class,
+                () -> normalizer.normalizeSelected(
+                        "owner-123", DraftOutputType.CV, wrongPurpose));
+    }
+
+    private List<String> codes(NormalizedGenerationInput input) {
+        return input.warnings().stream().map(InputWarning::code).toList();
+    }
+}

@@ -12,13 +12,44 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # A cold runner must download and reproducibly generate the producer-owned
+    # client twice before the full service and container gates run.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Test fail-closed history scanning
+        run: ./scripts/test-secret-history.sh
+      - name: Scan complete Git history
+        run: ./scripts/verify-secret-history.sh
+      - name: Test prompt bundle policy
+        run: ./scripts/test-prompt-bundle-policy.sh
+      - name: Verify reviewed prompt bundles
+        run: ./scripts/verify-prompt-bundles.sh
+      - name: Test producer API contract policy
+        run: ./scripts/test-api-contract-policy.sh
+      - name: Verify producer API contract
+        run: ./scripts/verify-api-contract.sh
+      - name: Test pinned contract policy
+        run: ./scripts/test-contract-policy.sh
+      - name: Verify pinned producer contracts
+        run: ./scripts/verify-contracts.sh
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
           cache: maven
-      - name: Verify
-        run: mvn -B clean verify
+      - name: Reject forbidden repository artefacts
+        run: |
+          test -z "$(find . -path './.git' -prune -o \( -name target -o -name libs -o -name '*.jar' -o -name '*.class' \) -print)"
+      - name: Verify producer-owned Java client
+        run: |
+          python3 scripts/verify_client_release.py
+          python3 scripts/test_openapi_breaking.py
+          ./scripts/test-client-generation.sh
+          mvn -B --no-transfer-progress -f api/client/pom.xml clean verify
+      - name: Build and test
+        run: mvn -B --no-transfer-progress clean verify
+      - name: Build source-only container
+        run: docker build --tag local/cv-cover-letter-service:ci .

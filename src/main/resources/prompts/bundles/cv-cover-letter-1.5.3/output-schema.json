@@ -1,0 +1,224 @@
+{
+  "type": "object",
+  "properties": {
+    "cv": {
+      "type": "object",
+      "properties": {
+        "title": {"type": "string", "pattern": "^[\\s\\S]{1,200}$"},
+        "targetRole": {"type": "string", "pattern": "^[\\s\\S]{1,160}$"},
+        "personalSummary": {"type": "string", "pattern": "^[\\s\\S]{1,2000}$"},
+        "coreSkills": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {"type": "string", "pattern": "^[\\s\\S]{1,100}$"},
+              "evidence": {"type": "string", "pattern": "^[\\s\\S]{0,1000}$"}
+            },
+            "required": ["name", "evidence"],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 12
+        },
+        "projects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {"type": "string", "pattern": "^[\\s\\S]{1,160}$"},
+              "role": {"type": "string", "pattern": "^[\\s\\S]{0,160}$"},
+              "context": {"type": "string", "pattern": "^[\\s\\S]{0,160}$"},
+              "startDate": {"type": "string", "pattern": "^[\\s\\S]{0,20}$"},
+              "endDate": {"type": "string", "pattern": "^[\\s\\S]{0,20}$"},
+              "description": {"type": "string", "pattern": "^[\\s\\S]{1,2000}$"},
+              "highlights": {
+                "type": "array",
+                "items": {"type": "string", "pattern": "^[\\s\\S]{1,1000}$"},
+                "minItems": 0,
+                "maxItems": 8
+              }
+            },
+            "required": [
+              "title",
+              "role",
+              "context",
+              "startDate",
+              "endDate",
+              "description",
+              "highlights"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 10
+        },
+        "qualifications": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "qualificationName": {"type": "string", "pattern": "^[\\s\\S]{1,160}$"},
+              "issuingBody": {"type": "string", "pattern": "^[\\s\\S]{0,160}$"},
+              "status": {"type": "string", "pattern": "^[\\s\\S]{0,80}$"},
+              "grade": {"type": "string", "pattern": "^[\\s\\S]{0,80}$"},
+              "dateAchieved": {"type": "string", "pattern": "^[\\s\\S]{0,20}$"},
+              "expectedCompletion": {"type": "string", "pattern": "^[\\s\\S]{0,20}$"}
+            },
+            "required": [
+              "qualificationName",
+              "issuingBody",
+              "status",
+              "grade",
+              "dateAchieved",
+              "expectedCompletion"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 20
+        },
+        "workHistory": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "jobTitle": {"type": "string", "pattern": "^[\\s\\S]{1,160}$"},
+              "employer": {"type": "string", "pattern": "^[\\s\\S]{1,160}$"},
+              "startDate": {"type": "string", "pattern": "^[\\s\\S]{1,20}$"},
+              "endDate": {"type": "string", "pattern": "^[\\s\\S]{0,20}$"},
+              "responsibilities": {
+                "type": "array",
+                "items": {"type": "string", "pattern": "^[\\s\\S]{1,1000}$"},
+                "minItems": 0,
+                "maxItems": 12
+              },
+              "tailoredDescription": {"type": "string", "pattern": "^[\\s\\S]{0,2000}$"}
+            },
+            "required": [
+              "jobTitle",
+              "employer",
+              "startDate",
+              "endDate",
+              "responsibilities",
+              "tailoredDescription"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 20
+        }
+      },
+      "required": [
+        "title",
+        "targetRole",
+        "personalSummary",
+        "coreSkills",
+        "projects",
+        "qualifications",
+        "workHistory"
+      ],
+      "additionalProperties": false
+    },
+    "coverLetter": {
+      "type": "object",
+      "properties": {
+        "title": {"type": "string", "pattern": "^[\\s\\S]{1,200}$"},
+        "jobTitle": {"type": "string", "pattern": "^[\\s\\S]{1,160}$"},
+        "companyName": {"type": "string", "pattern": "^[\\s\\S]{1,160}$"},
+        "greeting": {"type": "string", "pattern": "^Dear Hiring Manager$"},
+        "openingParagraph": {
+          "type": "string",
+          "pattern": "^Please consider my application for this role\\.$",
+          "enum": ["Please consider my application for this role."]
+        },
+        "bodyParagraphs": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^[\\s\\S]{1,3000}$"},
+          "minItems": 3,
+          "maxItems": 5
+        },
+        "closingParagraph": {
+          "type": "string",
+          "pattern": "^Thank you for considering my application\\.$",
+          "enum": ["Thank you for considering my application."]
+        },
+        "signOff": {"type": "string", "pattern": "^Yours faithfully$"}
+      },
+      "required": [
+        "title",
+        "jobTitle",
+        "companyName",
+        "greeting",
+        "openingParagraph",
+        "bodyParagraphs",
+        "closingParagraph",
+        "signOff"
+      ],
+      "additionalProperties": false
+    },
+    "generationNotes": {
+      "type": "object",
+      "properties": {
+        "assumptionsMade": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^[\\s\\S]{1,500}$"},
+          "minItems": 0,
+          "maxItems": 20
+        },
+        "missingInformation": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^[\\s\\S]{1,500}$"},
+          "minItems": 0,
+          "maxItems": 20
+        },
+        "tailoringSummary": {"type": "string", "pattern": "^[\\s\\S]{1,2000}$"}
+      },
+      "required": ["assumptionsMade", "missingInformation", "tailoringSummary"],
+      "additionalProperties": false
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "claimId": {"type": "string", "pattern": "^CLAIM-[0-9]{3,4}$"},
+          "disposition": {
+            "type": "string",
+            "pattern": "^(SUPPORTED|REWORDED)$",
+            "enum": ["SUPPORTED", "REWORDED"]
+          },
+          "evidenceIds": {
+            "type": "array",
+            "items": {"type": "string", "pattern": "^[A-Za-z0-9._-]{3,160}$"},
+            "minItems": 1,
+            "maxItems": 30
+          },
+          "contentPaths": {
+            "type": "array",
+            "items": {"type": "string", "pattern": "^/(cv|coverLetter)(/[A-Za-z0-9_-]+)+$"},
+            "minItems": 1,
+            "maxItems": 30
+          },
+          "reviewText": {
+            "type": "string",
+            "pattern": "^[\\s\\S]{0}$",
+            "enum": [""]
+          }
+        },
+        "required": [
+          "claimId",
+          "disposition",
+          "evidenceIds",
+          "contentPaths",
+          "reviewText"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "maxItems": 40
+    }
+  },
+  "required": ["cv", "coverLetter", "generationNotes", "claims"],
+  "additionalProperties": false
+}

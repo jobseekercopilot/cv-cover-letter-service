@@ -10,6 +10,7 @@ public class GeneratedCv {
     private String targetRole;
     private String personalSummary;
     private List<CoreSkill> coreSkills;
+    private List<GeneratedProject> projects;
     private List<GeneratedQualification> qualifications;
     private List<GeneratedWorkHistory> workHistory;
 

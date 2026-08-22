@@ -1,0 +1,4 @@
+repository=jobseekercopilot/llm-gateway
+revision=9da2ceb95510cd5a6f2e32046775854dc094c2a8
+path=contracts/openapi.json
+sha256=774dac8dd6439233f6b4b32190e43b361354b41d3887455be1900b99a1642329
