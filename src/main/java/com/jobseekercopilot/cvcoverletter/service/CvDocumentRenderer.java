@@ -33,11 +33,7 @@ public class CvDocumentRenderer {
         }
 
         if (hasText(cv.getPersonalSummary())) {
-            String profileHeading = safe(cv.getProjects()).isEmpty()
-                    || !safe(cv.getWorkHistory()).isEmpty()
-                    ? "Professional Profile"
-                    : "Technical Profile";
-            sections.add(profileHeading + "\n" + cv.getPersonalSummary());
+            sections.add("Professional Profile\n" + cv.getPersonalSummary());
         }
 
         LinkedHashSet<String> skillNames = new LinkedHashSet<>();
@@ -48,7 +44,7 @@ public class CvDocumentRenderer {
                 .limit(12)
                 .forEach(skillNames::add);
         if (!skillNames.isEmpty()) {
-            sections.add("Technical Skills\n" + String.join(", ", skillNames));
+            sections.add("Key Skills\n" + String.join(", ", skillNames));
         }
 
         if (!safe(cv.getWorkHistory()).isEmpty()) {
@@ -73,7 +69,7 @@ public class CvDocumentRenderer {
         }
 
         if (!safe(cv.getProjects()).isEmpty()) {
-            StringBuilder projects = new StringBuilder("Selected Projects");
+            StringBuilder projects = new StringBuilder("Selected Experience");
             for (GeneratedProject project : cv.getProjects()) {
                 String heading = joinNonRedundant(
                         " - ", project.getTitle(), project.getRole());

@@ -2353,7 +2353,7 @@ class ClaimEvidenceValidatorTest {
                 accepted.getCv().getCoreSkills().stream()
                         .map(generatedSkill -> generatedSkill.getName())
                         .toList());
-        assertTrue(renderedCv.contains("Technical Skills\nSpring"));
+        assertTrue(renderedCv.contains("Key Skills\nSpring"));
         assertFalse(renderedCoverLetter.contains("Technical Skills"));
         assertFalse(renderedCoverLetter.contains("Key Skills"));
     }
@@ -2557,14 +2557,14 @@ class ClaimEvidenceValidatorTest {
         String coverLetter = new CoverLetterDocumentRenderer().render(
                 accepted.getCoverLetter());
 
-        assertTrue(cv.contains("Technical Profile"));
-        assertTrue(cv.contains("Selected Projects\nJob Seeker Copilot"));
-        assertTrue(cv.contains("Technical Skills\nJava"));
+        assertTrue(cv.contains("Professional Profile"));
+        assertTrue(cv.contains("Selected Experience\nJob Seeker Copilot"));
+        assertTrue(cv.contains("Key Skills\nJava"));
         assertFalse(cv.contains("Professional Experience"));
-        assertTrue(cv.indexOf("Technical Profile")
-                < cv.indexOf("Technical Skills"));
-        assertTrue(cv.indexOf("Technical Skills")
-                < cv.indexOf("Selected Projects"));
+        assertTrue(cv.indexOf("Professional Profile")
+                < cv.indexOf("Key Skills"));
+        assertTrue(cv.indexOf("Key Skills")
+                < cv.indexOf("Selected Experience"));
         assertTrue(coverLetter.contains(
                 "Application for Java Developer at Example Ltd"));
         assertTrue(coverLetter.endsWith("Yours faithfully,"));
