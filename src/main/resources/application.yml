@@ -17,9 +17,11 @@ llm:
   language: ${LLM_LANGUAGE:UK English}
   temperature: ${LLM_TEMPERATURE:0.0}
   max-tokens: ${LLM_MAX_TOKENS:16384}
+  max-validation-retries: ${LLM_MAX_VALIDATION_RETRIES:2}
+  retry-temperature: ${LLM_RETRY_TEMPERATURE:0.4}
 
 prompt:
-  selected-release-id: ${PROMPT_BUNDLE_RELEASE:cv-cover-letter-1.7.0}
+  selected-release-id: ${PROMPT_BUNDLE_RELEASE:cv-cover-letter-1.7.1}
 
 rejected-generation-quarantine:
   enabled: ${REJECTED_GENERATION_QUARANTINE_ENABLED:false}

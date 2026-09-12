@@ -91,6 +91,10 @@ class CvCoverLetterServiceTest {
         properties.setTaskType("CV_COVER_LETTER_GENERATION");
         properties.setTemperature(0.25);
         properties.setMaxTokens(2500);
+        // Existing cases assert single-attempt semantics; retry behaviour is
+        // exercised explicitly in the dedicated validation-retry tests, which
+        // build their own service instance with retries enabled.
+        properties.setMaxValidationRetries(0);
         service = new CvCoverLetterService(promptBuilderService, inputNormalizer, llmGatewayApi, paymentBillingClient, properties,
                 new LlmResponseParser(
                         new ObjectMapper(),
@@ -275,6 +279,153 @@ class CvCoverLetterServiceTest {
                         .findFirst()
                         .orElseThrow()
                         .evidenceIds());
+    }
+
+    @Test
+    void selectedCoverLetterRecoversWhenARetryPassesValidation()
+            throws Exception {
+        DraftOutputType outputType = DraftOutputType.COVER_LETTER;
+        CvCoverLetterService retryingService = serviceWithValidationRetries(1);
+        var selectedRequest = validSelectedRequest(outputType);
+        var selectedInput = new GenerationInputNormalizer()
+                .normalizeSelected("user-123", outputType, selectedRequest);
+        CvCoverLetterPrompt selectedPrompt = selectedPrompt(
+                selectedInput, outputType);
+        when(inputNormalizer.normalizeSelected(
+                "user-123", outputType, selectedRequest))
+                .thenReturn(selectedInput);
+        when(promptBuilderService.buildPrompt(selectedInput, outputType))
+                .thenReturn(selectedPrompt);
+        String rejected = selectedCoverLetterJson().replace(
+                "\"/coverLetter/title\"", "\"/coverLetter/personalSummary\"");
+        when(llmGatewayApi.generateV2(any()))
+                .thenReturn(selectedResponse(rejected, selectedPrompt))
+                .thenReturn(selectedResponse(
+                        selectedCoverLetterJson(), selectedPrompt));
+
+        SelectedDraftGenerationResponse result =
+                retryingService.generateSelectedDraft(
+                        "user-123",
+                        UUID.randomUUID(),
+                        outputType,
+                        selectedRequest);
+
+        assertEquals("Java Developer Cover Letter", result.title());
+        assertFalse(result.recovery().fallbackUsed());
+        // First attempt rejected, second attempt accepted.
+        verify(llmGatewayApi, times(2)).generateV2(any());
+    }
+
+    @Test
+    void selectedCoverLetterRetryUsesPerturbedTemperatureAndRespectsTheCap()
+            throws Exception {
+        DraftOutputType outputType = DraftOutputType.COVER_LETTER;
+        CvCoverLetterService retryingService = serviceWithValidationRetries(1);
+        var selectedRequest = validSelectedRequest(outputType);
+        var selectedInput = new GenerationInputNormalizer()
+                .normalizeSelected("user-123", outputType, selectedRequest);
+        CvCoverLetterPrompt selectedPrompt = selectedPrompt(
+                selectedInput, outputType);
+        when(inputNormalizer.normalizeSelected(
+                "user-123", outputType, selectedRequest))
+                .thenReturn(selectedInput);
+        when(promptBuilderService.buildPrompt(selectedInput, outputType))
+                .thenReturn(selectedPrompt);
+        String rejected = selectedCoverLetterJson().replace(
+                "\"/coverLetter/title\"", "\"/coverLetter/personalSummary\"");
+        when(llmGatewayApi.generateV2(any()))
+                .thenReturn(selectedResponse(rejected, selectedPrompt));
+
+        InvalidLlmResponseException failure = assertThrows(
+                InvalidLlmResponseException.class,
+                () -> retryingService.generateSelectedDraft(
+                        "user-123",
+                        UUID.randomUUID(),
+                        outputType,
+                        selectedRequest));
+
+        assertTrue(failure.getMessage().contains("bounded text policy"));
+        // One initial attempt + exactly one retry (cap = 1).
+        ArgumentCaptor<GenerationRequest> requestCaptor =
+                ArgumentCaptor.forClass(GenerationRequest.class);
+        verify(llmGatewayApi, times(2)).generateV2(requestCaptor.capture());
+        assertEquals(
+                0.0,
+                requestCaptor.getAllValues().get(0).getLimits().getTemperature());
+        assertEquals(
+                0.4,
+                requestCaptor.getAllValues().get(1).getLimits().getTemperature());
+    }
+
+    @Test
+    void selectedCvFallsBackAfterAllValidationRetriesAreExhausted()
+            throws Exception {
+        DraftOutputType outputType = DraftOutputType.CV;
+        CvCoverLetterService retryingService = serviceWithValidationRetries(2);
+        var selectedRequest = validSelectedRequest(outputType);
+        selectedRequest.getEvidenceSnapshot().setSectionOrder(
+                List.of(EvidenceCategory.OTHER));
+        selectedRequest.getEvidenceSnapshot().getSelections().get(0)
+                .setCategory(EvidenceCategory.OTHER);
+        var selectedInput = new GenerationInputNormalizer()
+                .normalizeSelected("user-123", outputType, selectedRequest);
+        CvCoverLetterPrompt selectedPrompt = selectedPrompt(
+                selectedInput, outputType);
+        when(inputNormalizer.normalizeSelected(
+                "user-123", outputType, selectedRequest))
+                .thenReturn(selectedInput);
+        when(promptBuilderService.buildPrompt(selectedInput, outputType))
+                .thenReturn(selectedPrompt);
+        String unsupported = selectedCvJson().replace(
+                "80000000-0000-4000-8000-000000000002",
+                "90000000-0000-4000-8000-000000000099");
+        when(llmGatewayApi.generateV2(any()))
+                .thenReturn(selectedResponse(unsupported, selectedPrompt));
+
+        SelectedDraftGenerationResponse result =
+                retryingService.generateSelectedDraft(
+                        "user-123",
+                        UUID.randomUUID(),
+                        outputType,
+                        selectedRequest);
+
+        assertTrue(result.recovery().fallbackUsed());
+        // Initial attempt + two retries all rejected before the fallback.
+        verify(llmGatewayApi, times(3)).generateV2(any());
+    }
+
+    private CvCoverLetterService serviceWithValidationRetries(int retries) {
+        LlmProperties properties = new LlmProperties();
+        properties.setTaskType("CV_COVER_LETTER_GENERATION");
+        properties.setTemperature(0.0);
+        properties.setMaxTokens(2500);
+        properties.setMaxValidationRetries(retries);
+        properties.setRetryTemperature(0.4);
+        return new CvCoverLetterService(
+                promptBuilderService,
+                inputNormalizer,
+                llmGatewayApi,
+                paymentBillingClient,
+                properties,
+                new LlmResponseParser(
+                        new ObjectMapper(),
+                        new ClaimEvidenceValidator(),
+                        new GeneratedDocumentQualityValidator()),
+                new CvDocumentRenderer(),
+                new CoverLetterDocumentRenderer(),
+                new ValidatedClaimLedgerFactory(),
+                documentStoreApi,
+                applicationTrackerApi,
+                quarantineService,
+                new DeterministicCvFallbackService(new ObjectMapper()));
+    }
+
+    private GenerationResponse selectedResponse(
+            String output, CvCoverLetterPrompt selectedPrompt) {
+        return successfulResponse(output)
+                .schemaId(selectedPrompt.getGenerationMetadata().schemaId())
+                .schemaVersion(
+                        selectedPrompt.getGenerationMetadata().schemaVersion());
     }
 
     @Test
