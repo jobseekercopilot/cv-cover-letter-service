@@ -183,38 +183,117 @@ public class CvCoverLetterService {
             throw new InvalidLlmResponseException(
                     "LLM gateway returned no response");
         }
-        try {
-            SelectedDraftGenerationResponse response = materializeSelectedDraft(
-                    operationId,
-                    outputType,
-                    prepared,
-                    llmResponse,
-                    false);
-            log.info(
-                    "Selected draft generation completed operationId={} outputType={} jobId={} durationMs={}",
-                    operationId,
-                    outputType,
-                    prepared.jobId(),
-                    (System.nanoTime() - startedAt) / 1_000_000);
-            return response;
-        } catch (InvalidLlmResponseException rejection) {
-            captureRejectedResponse(
-                    ownerId,
-                    operationId,
-                    prepared,
-                    llmResponse,
-                    rejection);
-            if (outputType == DraftOutputType.CV) {
-                return deterministicFallback(
+
+        int maxRetries = maxValidationRetries();
+        InvalidLlmResponseException lastRejection = null;
+        for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            if (attempt > 0) {
+                // The previous attempt produced a well-formed provider response
+                // that failed deterministic output validation. Re-invoke with a
+                // perturbed temperature so a near-miss can vary enough to satisfy
+                // the unchanged validators. A transport failure or empty response
+                // here is terminal for the retry loop.
+                GenerationResponse retryResponse;
+                try {
+                    retryResponse = invokeModel(
+                            withRetryTemperature(prepared, attempt), operationId);
+                } catch (RestClientException exception) {
+                    log.warn(
+                            "Selected draft validation-retry model request failed operationId={} outputType={} jobId={} attempt={} error={}",
+                            operationId,
+                            outputType,
+                            prepared.jobId(),
+                            attempt,
+                            exception.getClass().getSimpleName());
+                    break;
+                }
+                if (retryResponse == null) {
+                    break;
+                }
+                llmResponse = retryResponse;
+            }
+            try {
+                SelectedDraftGenerationResponse response = materializeSelectedDraft(
+                        operationId,
+                        outputType,
+                        prepared,
+                        llmResponse,
+                        false);
+                log.info(
+                        "Selected draft generation completed operationId={} outputType={} jobId={} attempt={} durationMs={}",
+                        operationId,
+                        outputType,
+                        prepared.jobId(),
+                        attempt,
+                        (System.nanoTime() - startedAt) / 1_000_000);
+                return response;
+            } catch (InvalidLlmResponseException rejection) {
+                // Every attempt is validated by the full, unchanged validator
+                // suite (quality and safety gates alike); no gate is relaxed on
+                // retry. We only capture and, if attempts remain, re-roll.
+                lastRejection = rejection;
+                captureRejectedResponse(
+                        ownerId,
                         operationId,
                         prepared,
                         llmResponse,
-                        rejectionFallbackReason(
-                                "MODEL_OUTPUT_REJECTED", rejection),
-                        false);
+                        rejection);
+                if (attempt < maxRetries) {
+                    log.info(
+                            "Selected draft response rejected; retrying operationId={} outputType={} jobId={} attempt={} maxRetries={} reason={}",
+                            operationId,
+                            outputType,
+                            prepared.jobId(),
+                            attempt,
+                            maxRetries,
+                            rejection.getMessage());
+                }
             }
-            throw rejection;
         }
+
+        // All attempts were exhausted. Preserve the pre-retry terminal behaviour.
+        if (outputType == DraftOutputType.CV) {
+            return deterministicFallback(
+                    operationId,
+                    prepared,
+                    llmResponse,
+                    rejectionFallbackReason(
+                            "MODEL_OUTPUT_REJECTED", lastRejection),
+                    false);
+        }
+        throw lastRejection;
+    }
+
+    private int maxValidationRetries() {
+        Integer configured = llmProperties.getMaxValidationRetries();
+        if (configured == null || configured < 0) {
+            return 0;
+        }
+        // Hard ceiling independent of configuration to bound worst-case latency
+        // and provider cost on the draft path.
+        return Math.min(configured, 3);
+    }
+
+    private PreparedGeneration withRetryTemperature(
+            PreparedGeneration prepared, int attempt) {
+        Double base = llmProperties.getRetryTemperature();
+        double retryTemperature = base == null ? 0.4 : Math.max(0.0, Math.min(1.0, base));
+        GenerationRequest retryRequest = new GenerationRequest()
+                .contractVersion(prepared.llmRequest().getContractVersion())
+                .task(prepared.llmRequest().getTask())
+                .trustedInstructions(prepared.llmRequest().getTrustedInstructions())
+                .untrustedInput(prepared.llmRequest().getUntrustedInput())
+                .output(prepared.llmRequest().getOutput())
+                .limits(new GenerationLimits()
+                        .temperature(retryTemperature)
+                        .maxOutputTokens(llmProperties.getMaxTokens()));
+        return new PreparedGeneration(
+                prepared.input(),
+                prepared.prompt(),
+                retryRequest,
+                prepared.jobId(),
+                prepared.claimPolicyVersion(),
+                prepared.parserVersion());
     }
 
     private PreparedGeneration prepareGeneration(
