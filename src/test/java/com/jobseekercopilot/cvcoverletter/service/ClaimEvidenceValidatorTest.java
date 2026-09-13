@@ -4,6 +4,8 @@ import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validRe
 import static com.jobseekercopilot.cvcoverletter.GenerationInputFixtures.validVersionedRequest;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -82,6 +84,41 @@ class ClaimEvidenceValidatorTest {
                 new ClaimEvidenceValidator().mergeBoundedEvidenceReferences(
                         invalidProviderReferences,
                         List.of("SUPPLEMENTAL-1")));
+    }
+
+    @Test
+    void stripsOnlyUngroundedNumericsFromThePersonalSummary() {
+        ClaimEvidenceValidator validator = new ClaimEvidenceValidator();
+        // "17" is present in evidence; "42" is not. Result keeps 17, drops 42,
+        // and still satisfies the 20+ word / 2-4 sentence bounds.
+        String summary = "Built useful and reliable services with java 17 for "
+                + "42 organisations, delivering dependable useful reliable "
+                + "services that teams trust. Focused on quality outcomes.";
+        String evidence = "java 17 useful reliable services";
+
+        String result = validator.stripUnsupportedNumerics(summary, evidence);
+
+        assertNotNull(result);
+        assertFalse(result.contains("42"), result);
+        assertTrue(result.contains("17"), result);
+        assertFalse(result.contains("  "), "no doubled spaces: " + result);
+    }
+
+    @Test
+    void returnsNullWhenStrippingWouldBreakTheSummaryBounds() {
+        ClaimEvidenceValidator validator = new ClaimEvidenceValidator();
+        // After removing the ungrounded "5", too few words/sentences remain,
+        // so the caller must fail closed rather than emit a degenerate summary.
+        assertNull(validator.stripUnsupportedNumerics(
+                "Led 5 teams.", ""));
+    }
+
+    @Test
+    void returnsNullWhenEveryNumberIsAlreadyGrounded() {
+        ClaimEvidenceValidator validator = new ClaimEvidenceValidator();
+        // Nothing to strip: signals the caller that no repair was needed.
+        assertNull(validator.stripUnsupportedNumerics(
+                "Delivered 3 platforms across teams.", "3 platforms"));
     }
 
     @Test
