@@ -745,19 +745,85 @@ public class ClaimEvidenceValidator {
                 .filter(record -> !NUMERIC_CLAIM.matcher(record.value()).find())
                 .findFirst()
                 .orElse(null);
-        if (skill == null) {
+        if (skill != null) {
+            String canonical = "Profile-backed skills include "
+                    + skill.value().trim()
+                    + ".";
+            replaceText(output, path, canonical);
+            documents.getCv().setPersonalSummary(canonical);
+            for (GeneratedClaim claim : matchingClaims) {
+                claim.setDisposition(ClaimDisposition.SUPPORTED);
+                claim.setEvidenceIds(List.of(skill.evidenceId()));
+                claim.setReviewText("");
+            }
             return;
         }
-        String canonical = "Profile-backed skills include "
-                + skill.value().trim()
-                + ".";
-        replaceText(output, path, canonical);
-        documents.getCv().setPersonalSummary(canonical);
-        for (GeneratedClaim claim : matchingClaims) {
-            claim.setDisposition(ClaimDisposition.SUPPORTED);
-            claim.setEvidenceIds(List.of(skill.evidenceId()));
-            claim.setReviewText("");
+        // No digit-free demonstrated skill is available to anchor a canonical
+        // rewrite. Rather than fail the whole generation on an unsupported
+        // figure the model introduced, neutralise only the ungrounded numeric
+        // tokens in place, leaving the rest of the (evidence-grounded) summary
+        // intact. This upholds the anti-fabrication gate — the unsupported
+        // number is removed, never accepted — while keeping a usable summary.
+        String stripped = stripUnsupportedNumerics(
+                summaryNode.textValue(), evidenceText);
+        if (stripped == null) {
+            // Stripping could not yield a summary that still satisfies the
+            // deterministic quality bounds; leave the response to fail closed.
+            return;
         }
+        replaceText(output, path, stripped);
+        documents.getCv().setPersonalSummary(stripped);
+    }
+
+    /**
+     * Removes numeric tokens that are not present in the cited evidence text,
+     * then tidies the residual wording. Returns {@code null} when the result
+     * would no longer satisfy the personal-summary quality bounds (roughly 20+
+     * words across 2 to 4 sentences), so the caller can fail closed instead of
+     * emitting a degenerate summary.
+     */
+    String stripUnsupportedNumerics(
+            String summary, String evidenceText) {
+        Matcher matcher = NUMERIC_CLAIM.matcher(summary);
+        StringBuilder rebuilt = new StringBuilder();
+        int lastEnd = 0;
+        while (matcher.find()) {
+            String matched = normalise(matcher.group());
+            Pattern supported = Pattern.compile(
+                    "(?<![\\p{L}\\p{N}])"
+                            + Pattern.quote(matched)
+                            + "(?![\\p{L}\\p{N}])");
+            if (supported.matcher(evidenceText).find()) {
+                continue;
+            }
+            rebuilt.append(summary, lastEnd, matcher.start());
+            lastEnd = matcher.end();
+        }
+        if (lastEnd == 0) {
+            // Nothing was stripped; the number(s) must be grounded after all.
+            return null;
+        }
+        rebuilt.append(summary, lastEnd, summary.length());
+        // Collapse residue left by the removed tokens: stray spaces before
+        // punctuation and doubled spaces are tidied conservatively.
+        String cleaned = rebuilt.toString()
+                .replaceAll("\\s+([.,;:%])", "$1")
+                .replaceAll("\\s{2,}", " ")
+                .replaceAll("\\s+\\.", ".")
+                .trim();
+        int words = cleaned.isEmpty()
+                ? 0
+                : cleaned.split("\\s+").length;
+        int sentences = 0;
+        Matcher sentenceMatcher =
+                Pattern.compile("[.!?](?:\\s|$)").matcher(cleaned);
+        while (sentenceMatcher.find()) {
+            sentences++;
+        }
+        if (words < 20 || sentences < 2 || sentences > 4) {
+            return null;
+        }
+        return cleaned;
     }
 
     private boolean hasUnsupportedMatch(
