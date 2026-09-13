@@ -38,6 +38,8 @@ rejected-generation-quarantine:
 services:
   llm-gateway:
     base-url: ${LLM_GATEWAY_BASE_URL:http://localhost:8090}
+    connect-timeout: ${LLM_GATEWAY_CONNECT_TIMEOUT:PT5S}
+    read-timeout: ${LLM_GATEWAY_READ_TIMEOUT:PT90S}
   document-store-service:
     base-url: ${DOCUMENT_STORE_SERVICE_BASE_URL:http://localhost:8089}
   application-tracker-service:
