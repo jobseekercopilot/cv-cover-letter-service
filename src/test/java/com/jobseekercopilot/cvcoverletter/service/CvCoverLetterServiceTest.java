@@ -296,8 +296,7 @@ class CvCoverLetterServiceTest {
                 .thenReturn(selectedInput);
         when(promptBuilderService.buildPrompt(selectedInput, outputType))
                 .thenReturn(selectedPrompt);
-        String rejected = selectedCoverLetterJson().replace(
-                "\"/coverLetter/title\"", "\"/coverLetter/personalSummary\"");
+        String rejected = unrepairableCoverLetterJson();
         when(llmGatewayApi.generateV2(any()))
                 .thenReturn(selectedResponse(rejected, selectedPrompt))
                 .thenReturn(selectedResponse(
@@ -331,8 +330,7 @@ class CvCoverLetterServiceTest {
                 .thenReturn(selectedInput);
         when(promptBuilderService.buildPrompt(selectedInput, outputType))
                 .thenReturn(selectedPrompt);
-        String rejected = selectedCoverLetterJson().replace(
-                "\"/coverLetter/title\"", "\"/coverLetter/personalSummary\"");
+        String rejected = unrepairableCoverLetterJson();
         when(llmGatewayApi.generateV2(any()))
                 .thenReturn(selectedResponse(rejected, selectedPrompt));
 
@@ -1339,6 +1337,22 @@ class CvCoverLetterServiceTest {
                   }
                 }
                 """;
+    }
+
+    /**
+     * A cover letter the parser cannot repair, for exercising retry mechanics.
+     *
+     * <p>These tests used to corrupt an ordinary claim's content path. That is
+     * no longer a rejection: the parser prunes ordinary-claim pointers the
+     * reviewed schema forbids, because one such pointer was discarding entire
+     * cover letters in production. A canonical claim's content path is fixed by
+     * the schema and never pruned, so it still fails the bounded text policy and
+     * still reaches the retry path these tests are about.
+     */
+    static String unrepairableCoverLetterJson() {
+        return selectedCoverLetterJson().replace(
+                "\"contentPath\": \"/coverLetter/openingParagraph\"",
+                "\"contentPath\": \"/coverLetter/personalSummary\"");
     }
 
     static String selectedCoverLetterJson() {

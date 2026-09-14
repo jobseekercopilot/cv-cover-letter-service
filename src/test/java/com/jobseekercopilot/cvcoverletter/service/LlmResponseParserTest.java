@@ -14,6 +14,7 @@ import com.jobseekercopilot.cvcoverletter.exception.InvalidLlmResponseException;
 import com.jobseekercopilot.cvcoverletter.model.ClaimEvidenceCatalog;
 import java.io.InputStream;
 import java.util.List;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -315,6 +316,91 @@ class LlmResponseParserTest {
     }
 
     @Test
+    void prunesOrdinaryClaimPointersTheReviewedSchemaForbids()
+            throws Exception {
+        // The live cover-letter failure, four fixes in. /coverLetter/greeting
+        // is a constant the service writes itself, so the reviewed schema
+        // forbids it in claims[] — but no hand-maintained entry covered it, and
+        // that single pointer failed the entire generation on "does not satisfy
+        // the bounded text policy", discarding a complete cover letter. The
+        // prune now reads the schema's own allowlist, so greeting and signOff
+        // are covered without either being named in isInlineNarrativePath.
+        Pattern permitted = Pattern.compile(applicationQualitySchema.at(
+                        "/properties/claims/items/properties"
+                                + "/contentPaths/items/pattern")
+                .asText());
+        List<String> forbiddenPointers = List.of(
+                "/coverLetter/greeting",
+                "/coverLetter/signOff");
+        for (String forbidden : forbiddenPointers) {
+            assertFalse(
+                    permitted.matcher(forbidden).find(),
+                    "the fixture must genuinely forbid " + forbidden
+                            + ", or this test proves nothing");
+        }
+
+        JsonNode output = inlineNarrativeOutput();
+        ((ObjectNode) output.path("cv")).put(
+                "personalSummary",
+                "Software developer who builds reliable Java services. "
+                        + "Applies practical engineering skills to useful products.");
+        addBodyParagraph(output);
+        int suffix = 0;
+        for (String forbidden : forbiddenPointers) {
+            ObjectNode claim = ((ArrayNode) output.path("claims")).addObject();
+            claim.put("claimId", "CLAIM-920" + suffix++);
+            claim.put("disposition", "SUPPORTED");
+            claim.put("reviewText", "");
+            claim.putArray("contentPaths").add(forbidden);
+            claim.putArray("evidenceIds").add("PROFILE.SKILL.1");
+        }
+
+        GeneratedApplicationDocuments result = parser.parseDetailed(
+                objectMapper.writeValueAsString(output),
+                applicationQualitySchema).documents();
+
+        assertFalse(
+                result.getClaims().stream()
+                        .flatMap(claim -> claim.getContentPaths().stream())
+                        .anyMatch(forbiddenPointers::contains),
+                "a pointer the reviewed schema forbids must not survive as an "
+                        + "ordinary claim");
+        // The cover letter is what the old behaviour threw away wholesale.
+        assertEquals(
+                "Dear Hiring Manager",
+                result.getCoverLetter().getGreeting());
+        assertEquals(
+                List.of("PROFILE.SKILL.1"),
+                claimFor(result, "/coverLetter/bodyParagraphs/0")
+                        .getEvidenceIds());
+    }
+
+    @Test
+    void keepsOrdinaryClaimPointersTheReviewedSchemaPermits()
+            throws Exception {
+        // The guard is only safe if it prunes exactly what the contract
+        // forbids. A permitted pointer carries provenance nothing else asserts,
+        // so losing one would silently weaken the claim ledger.
+        JsonNode output = inlineNarrativeOutput();
+        ((ObjectNode) output.path("cv")).put(
+                "personalSummary",
+                "Software developer who builds reliable Java services. "
+                        + "Applies practical engineering skills to useful products.");
+        addBodyParagraph(output);
+
+        GeneratedApplicationDocuments result = parser.parseDetailed(
+                objectMapper.writeValueAsString(output),
+                applicationQualitySchema).documents();
+
+        assertEquals(
+                List.of("JOB.TITLE"),
+                claimFor(result, "/cv/targetRole").getEvidenceIds());
+        assertEquals(
+                List.of("JOB.COMPANY"),
+                claimFor(result, "/coverLetter/companyName").getEvidenceIds());
+    }
+
+    @Test
     void prunesPointersIntoADocumentTheResponseDoesNotContain()
             throws Exception {
         // A selected-output generation carries one document. A pointer into the
@@ -358,21 +444,22 @@ class LlmResponseParserTest {
             throws Exception {
         // The rejection previously reported only its position, so identifying
         // the offending pointer meant inferring it from the schema.
-        JsonNode output = inlineNarrativeOutput();
-        ObjectNode unknownPointerClaim =
-                ((ArrayNode) output.path("claims")).addObject();
-        unknownPointerClaim.put("claimId", "CLAIM-9300");
-        unknownPointerClaim.put("disposition", "SUPPORTED");
-        unknownPointerClaim.put("reviewText", "");
-        unknownPointerClaim.putArray("contentPaths")
+        //
+        // The active contract is the right place to assert this now. Under an
+        // inline-narrative contract a forbidden pointer is pruned rather than
+        // rejected, so the message cannot be provoked there; the active contract
+        // does not prune, and is where the diagnostic still earns its keep.
+        JsonNode output = objectMapper.readTree(
+                CvCoverLetterServiceTest.activeValidJson());
+        ((ArrayNode) output.at("/claims/0/contentPaths"))
+                .removeAll()
                 .add("/cv/notARealField");
-        unknownPointerClaim.putArray("evidenceIds").add("PROFILE.SKILL.1");
 
         InvalidLlmResponseException thrown = assertThrows(
                 InvalidLlmResponseException.class,
                 () -> parser.parseDetailed(
                         objectMapper.writeValueAsString(output),
-                        inlineNarrativeSchema));
+                        schema));
 
         assertTrue(
                 thrown.getMessage().contains("/cv/notARealField"),
