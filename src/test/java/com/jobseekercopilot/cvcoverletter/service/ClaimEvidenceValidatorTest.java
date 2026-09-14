@@ -122,6 +122,57 @@ class ClaimEvidenceValidatorTest {
     }
 
     @Test
+    void stripsOnlyUngroundedNumericsFromACoverLetterParagraph() {
+        ClaimEvidenceValidator validator = new ClaimEvidenceValidator();
+        // The live failure was an ungrounded figure in body prose, which had no
+        // salvage and so hard-failed the whole generation. "17" is grounded and
+        // must survive; "42" is fabricated and must be removed.
+        String paragraph = "I have built reliable services with java 17 across "
+                + "42 organisations, and I would bring that same care to this "
+                + "role.";
+        String evidence = "java 17 reliable services";
+
+        String result = validator.stripUnsupportedParagraphNumerics(
+                paragraph, evidence);
+
+        assertNotNull(result);
+        assertFalse(result.contains("42"), result);
+        assertTrue(result.contains("17"), result);
+        assertFalse(result.contains("  "), "no doubled spaces: " + result);
+    }
+
+    @Test
+    void returnsNullWhenStrippingWouldLeaveAnUnusableParagraph() {
+        ClaimEvidenceValidator validator = new ClaimEvidenceValidator();
+        // Too little prose survives to be a body paragraph, so the caller must
+        // fail closed on the grounding gate rather than emit a stub.
+        assertNull(validator.stripUnsupportedParagraphNumerics(
+                "Led 5 teams.", ""));
+    }
+
+    @Test
+    void returnsNullWhenAParagraphNumberIsAlreadyGrounded() {
+        ClaimEvidenceValidator validator = new ClaimEvidenceValidator();
+        // Nothing to strip: no repair was needed for this paragraph.
+        assertNull(validator.stripUnsupportedParagraphNumerics(
+                "I delivered 3 platforms across several teams this year.",
+                "3 platforms"));
+    }
+
+    @Test
+    void keepsACoverLetterParagraphWithinTheDensityCap() {
+        ClaimEvidenceValidator validator = new ClaimEvidenceValidator();
+        // A paragraph beyond the downstream 130-word density cap must not be
+        // rescued into a state the quality validator would then reject.
+        String longParagraph = "I delivered 99 releases "
+                + "and ".repeat(200)
+                + "teams trust the outcome.";
+
+        assertNull(validator.stripUnsupportedParagraphNumerics(
+                longParagraph, ""));
+    }
+
+    @Test
     void acceptsCompleteLedgerAndKeepsReviewOnlyClaimsOutOfFinalContent() throws Exception {
         ObjectNode output = validOutput();
         ArrayNode claims = (ArrayNode) output.path("claims");

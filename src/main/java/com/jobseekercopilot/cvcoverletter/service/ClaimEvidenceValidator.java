@@ -601,6 +601,12 @@ public class ClaimEvidenceValidator {
                 evidenceById,
                 projectedCoreSkillEvidenceByPath,
                 versionedEvidence);
+        canonicalizeUnsupportedCoverLetterNumerics(
+                output,
+                documents,
+                claims,
+                evidenceById,
+                versionedEvidence);
         Set<String> expectedPaths = claimBearingPaths(output);
         claims = addExactCoverageClaims(
                 output,
@@ -775,6 +781,80 @@ public class ClaimEvidenceValidator {
         documents.getCv().setPersonalSummary(stripped);
     }
 
+    // The numeric grounding gate is generic across content paths, but the
+    // salvage above only covered /cv/personalSummary. The model exhibits the
+    // same tendency in cover-letter body prose, where an ungrounded figure was
+    // therefore a hard 422 with no recovery: live generations failed on
+    // "numeric claim is absent from approved evidence at
+    // /coverLetter/bodyParagraphs/2" through every retry while the CV recovered
+    // from the identical behaviour. Apply the same in-place strip so both
+    // documents are equally resilient, and keep failing closed when a strip
+    // cannot leave usable prose.
+    private void canonicalizeUnsupportedCoverLetterNumerics(
+            JsonNode output,
+            GeneratedApplicationDocuments documents,
+            List<GeneratedClaim> claims,
+            Map<String, List<ApprovedEvidenceRecord>> evidenceById,
+            boolean versionedEvidence
+    ) {
+        if (!versionedEvidence || documents.getCoverLetter() == null) {
+            return;
+        }
+        JsonNode paragraphs = output.at(BODY_PARAGRAPHS_PATH);
+        if (!paragraphs.isArray()) {
+            return;
+        }
+        List<String> revised = new ArrayList<>(
+                safe(documents.getCoverLetter().getBodyParagraphs()));
+        boolean changed = false;
+        for (int index = 0; index < paragraphs.size(); index++) {
+            String path = BODY_PARAGRAPHS_PATH + "/" + index;
+            JsonNode node = paragraphs.get(index);
+            if (node == null
+                    || !node.isTextual()
+                    || !NUMERIC_CLAIM.matcher(node.textValue()).find()) {
+                continue;
+            }
+            List<GeneratedClaim> matchingClaims = claims.stream()
+                    .filter(java.util.Objects::nonNull)
+                    .filter(candidate -> safe(candidate.getContentPaths())
+                            .contains(path))
+                    .toList();
+            if (matchingClaims.isEmpty()) {
+                continue;
+            }
+            String evidenceText = matchingClaims.stream()
+                    .flatMap(claim -> safe(claim.getEvidenceIds()).stream())
+                    .flatMap(id -> evidenceById
+                            .getOrDefault(id, List.of()).stream())
+                    .map(ApprovedEvidenceRecord::value)
+                    .filter(StringUtils::hasText)
+                    .map(this::normalise)
+                    .distinct()
+                    .collect(java.util.stream.Collectors.joining(" "));
+            if (!hasUnsupportedMatch(
+                    NUMERIC_CLAIM.matcher(node.textValue()),
+                    evidenceText)) {
+                continue;
+            }
+            String stripped = stripUnsupportedParagraphNumerics(
+                    node.textValue(), evidenceText);
+            if (stripped == null) {
+                // Stripping could not leave usable prose for this paragraph;
+                // leave the response to fail closed on the grounding gate.
+                continue;
+            }
+            replaceText(output, path, stripped);
+            if (index < revised.size()) {
+                revised.set(index, stripped);
+                changed = true;
+            }
+        }
+        if (changed) {
+            documents.getCoverLetter().setBodyParagraphs(List.copyOf(revised));
+        }
+    }
+
     /**
      * Removes numeric tokens that are not present in the cited evidence text,
      * then tidies the residual wording. Returns {@code null} when the result
@@ -784,7 +864,35 @@ public class ClaimEvidenceValidator {
      */
     String stripUnsupportedNumerics(
             String summary, String evidenceText) {
-        Matcher matcher = NUMERIC_CLAIM.matcher(summary);
+        String cleaned = stripUnsupportedNumericTokens(summary, evidenceText);
+        if (cleaned == null) {
+            return null;
+        }
+        int words = cleaned.isEmpty()
+                ? 0
+                : cleaned.split("\\s+").length;
+        int sentences = 0;
+        Matcher sentenceMatcher =
+                Pattern.compile("[.!?](?:\\s|$)").matcher(cleaned);
+        while (sentenceMatcher.find()) {
+            sentences++;
+        }
+        if (words < 20 || sentences < 2 || sentences > 4) {
+            return null;
+        }
+        return cleaned;
+    }
+
+    /**
+     * Removes ungrounded numeric tokens and tidies the residual wording,
+     * returning {@code null} when nothing needed stripping. Quality bounds are
+     * deliberately left to the caller: a personal summary and a cover-letter
+     * body paragraph are held to different limits, so sharing one bound here
+     * would silently apply the summary's shape to prose it does not describe.
+     */
+    private String stripUnsupportedNumericTokens(
+            String text, String evidenceText) {
+        Matcher matcher = NUMERIC_CLAIM.matcher(text);
         StringBuilder rebuilt = new StringBuilder();
         int lastEnd = 0;
         while (matcher.find()) {
@@ -796,31 +904,41 @@ public class ClaimEvidenceValidator {
             if (supported.matcher(evidenceText).find()) {
                 continue;
             }
-            rebuilt.append(summary, lastEnd, matcher.start());
+            rebuilt.append(text, lastEnd, matcher.start());
             lastEnd = matcher.end();
         }
         if (lastEnd == 0) {
             // Nothing was stripped; the number(s) must be grounded after all.
             return null;
         }
-        rebuilt.append(summary, lastEnd, summary.length());
+        rebuilt.append(text, lastEnd, text.length());
         // Collapse residue left by the removed tokens: stray spaces before
         // punctuation and doubled spaces are tidied conservatively.
-        String cleaned = rebuilt.toString()
+        return rebuilt.toString()
                 .replaceAll("\\s+([.,;:%])", "$1")
                 .replaceAll("\\s{2,}", " ")
                 .replaceAll("\\s+\\.", ".")
                 .trim();
+    }
+
+    /**
+     * Cover-letter body-paragraph counterpart to
+     * {@link #stripUnsupportedNumerics(String, String)}. A paragraph must stay
+     * substantive prose and within the downstream per-paragraph density cap;
+     * anything outside that fails closed so the response is rejected rather
+     * than degraded.
+     */
+    String stripUnsupportedParagraphNumerics(
+            String paragraph, String evidenceText) {
+        String cleaned = stripUnsupportedNumericTokens(
+                paragraph, evidenceText);
+        if (cleaned == null) {
+            return null;
+        }
         int words = cleaned.isEmpty()
                 ? 0
                 : cleaned.split("\\s+").length;
-        int sentences = 0;
-        Matcher sentenceMatcher =
-                Pattern.compile("[.!?](?:\\s|$)").matcher(cleaned);
-        while (sentenceMatcher.find()) {
-            sentences++;
-        }
-        if (words < 20 || sentences < 2 || sentences > 4) {
+        if (words < 8 || words > 130) {
             return null;
         }
         return cleaned;
