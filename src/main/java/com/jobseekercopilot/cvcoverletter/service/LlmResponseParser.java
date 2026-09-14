@@ -203,7 +203,8 @@ public class LlmResponseParser {
             int redundantInlineNarrativeClaimsRemoved =
                     usesInlineNarrativeEvidence
                             ? removeRedundantInlineNarrativeClaims(
-                                    providerOutput)
+                                    providerOutput,
+                                    schema)
                             : 0;
             int duplicateClaimReferencesRemoved =
                     usesInlineNarrativeEvidence
@@ -432,11 +433,15 @@ public class LlmResponseParser {
         return claimsToNormalize.size();
     }
 
-    private int removeRedundantInlineNarrativeClaims(JsonNode output) {
+    private int removeRedundantInlineNarrativeClaims(
+            JsonNode output,
+            JsonNode schema
+    ) {
         JsonNode claims = output.path("claims");
         if (!(claims instanceof ArrayNode array)) {
             return 0;
         }
+        Pattern permittedPaths = ordinaryClaimContentPathPattern(schema);
         int removedItems = 0;
         ArrayNode retained = objectMapper.createArrayNode();
         for (JsonNode claim : array) {
@@ -452,7 +457,10 @@ public class LlmResponseParser {
             for (JsonNode path : paths) {
                 String pathValue = path.asText("");
                 if (isInlineNarrativePath(pathValue)
-                        || pointsAtAbsentDocument(output, pathValue)) {
+                        || pointsAtAbsentDocument(output, pathValue)
+                        || isOutsideOrdinaryClaimContract(
+                                permittedPaths,
+                                path)) {
                     removedItems++;
                 } else if (retainedPaths.add(pathValue)) {
                     ordinaryPaths.add(path);
@@ -468,6 +476,70 @@ public class LlmResponseParser {
         array.removeAll();
         array.addAll(retained);
         return removedItems;
+    }
+
+    /**
+     * The reviewed schema's own allowlist for ordinary claim content paths.
+     *
+     * <p>Reading the pattern from the schema rather than restating it here is
+     * deliberate. {@link #isInlineNarrativePath} is a hand-maintained list that
+     * has repeatedly drifted from the contract it is meant to shadow, and every
+     * omission cost a whole generation. The schema is the reviewed artefact and
+     * PromptBuilderService narrows it per selected output, so it is the only
+     * copy that is guaranteed to be current.
+     *
+     * <p>Returns {@code null} when no usable pattern is present — an absent,
+     * blank, referenced or malformed pattern leaves the prune exactly as it was
+     * and lets validateSchema report the contract problem itself.
+     */
+    private Pattern ordinaryClaimContentPathPattern(JsonNode schema) {
+        JsonNode pattern = schema.path("properties")
+                .path("claims")
+                .path("items")
+                .path("properties")
+                .path("contentPaths")
+                .path("items")
+                .path("pattern");
+        if (!pattern.isTextual() || pattern.textValue().isBlank()) {
+            return null;
+        }
+        try {
+            return Pattern.compile(pattern.textValue());
+        } catch (PatternSyntaxException exception) {
+            return null;
+        }
+    }
+
+    /**
+     * True when the reviewed schema forbids this pointer in {@code claims[]}.
+     *
+     * <p>Such a pointer is unusable by construction. It is either a path the
+     * service projects provenance for itself, a path owned by an inline
+     * narrative object, or a path into a document this response does not carry.
+     * All three are asserted separately and fail closed if genuinely missing:
+     * requireProjectedCanonicalApplicationClaims,
+     * requireProjectedPersonalSummaryClaim, the inline narrative projection and
+     * validateCanonicalIdentity. So dropping the pointer costs no provenance,
+     * whereas keeping it fails the entire generation on the schema pattern.
+     *
+     * <p>Cover letters had no such floor. A single forbidden pointer — most
+     * recently {@code /coverLetter/greeting}, a constant the service writes
+     * itself — discarded a complete, well-grounded cover letter while the CV in
+     * the same operation succeeded.
+     *
+     * <p>The match mirrors validateString exactly, including {@code find()}
+     * semantics, so this can only ever drop a pointer that validation would
+     * have rejected. Non-textual entries are left alone: a type violation is a
+     * structural anomaly rather than a known model habit, and validateSchema
+     * should still refuse it.
+     */
+    private boolean isOutsideOrdinaryClaimContract(
+            Pattern permittedPaths,
+            JsonNode path
+    ) {
+        return permittedPaths != null
+                && path.isTextual()
+                && !permittedPaths.matcher(path.textValue()).find();
     }
 
     /**
@@ -516,6 +588,14 @@ public class LlmResponseParser {
      * is not weakened by pruning, because the projected claims are separately
      * asserted by requireProjectedCanonicalApplicationClaims and the inline
      * narrative projection, both of which fail closed when absent.
+     *
+     * <p>This list is no longer the only guard: isOutsideOrdinaryClaimContract
+     * prunes anything the reviewed schema forbids. The list is still needed
+     * because some reviewed patterns do permit projected pointers — the
+     * core-skill projection contract admits {@code /cv/personalSummary} and
+     * {@code /coverLetter/bodyParagraphs/N}, for instance — and those remain
+     * redundant even though the schema would accept them. Prefer widening the
+     * schema-driven guard over adding entries here.
      */
     private boolean isInlineNarrativePath(String path) {
         return "/cv/title".equals(path)
