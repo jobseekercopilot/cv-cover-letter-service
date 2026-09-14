@@ -315,6 +315,72 @@ class LlmResponseParserTest {
     }
 
     @Test
+    void prunesPointersIntoADocumentTheResponseDoesNotContain()
+            throws Exception {
+        // A selected-output generation carries one document. A pointer into the
+        // other cannot resolve, but the narrowed claim pattern rejected the
+        // whole response over it, which is how cover-letter-only generations
+        // kept failing on "does not satisfy the bounded text policy".
+        // A selected-output response omits the unused document, and the parser
+        // fills it with an explicit null.
+        ObjectNode coverLetterOnly = objectMapper.createObjectNode();
+        coverLetterOnly.putObject("coverLetter");
+        coverLetterOnly.putNull("cv");
+
+        assertTrue(
+                parser.pointsAtAbsentDocument(
+                        coverLetterOnly, "/cv/workHistory/0/jobTitle"),
+                "a CV pointer cannot resolve in a cover-letter-only response");
+        assertTrue(
+                parser.pointsAtAbsentDocument(
+                        coverLetterOnly, "/cv/targetRole"),
+                "an absent document is absent whatever the leaf");
+        assertFalse(
+                parser.pointsAtAbsentDocument(
+                        coverLetterOnly, "/coverLetter/jobTitle"),
+                "the present document must never be pruned");
+
+        // A paired response contains both, so nothing is pruned and that path
+        // keeps its existing behaviour.
+        ObjectNode paired = objectMapper.createObjectNode();
+        paired.putObject("cv");
+        paired.putObject("coverLetter");
+        assertFalse(
+                parser.pointsAtAbsentDocument(
+                        paired, "/cv/workHistory/0/jobTitle"));
+        assertFalse(
+                parser.pointsAtAbsentDocument(
+                        paired, "/coverLetter/bodyParagraphs/0"));
+    }
+
+    @Test
+    void namesTheRejectedPointerSoAFailureIsSelfDiagnosing()
+            throws Exception {
+        // The rejection previously reported only its position, so identifying
+        // the offending pointer meant inferring it from the schema.
+        JsonNode output = inlineNarrativeOutput();
+        ObjectNode unknownPointerClaim =
+                ((ArrayNode) output.path("claims")).addObject();
+        unknownPointerClaim.put("claimId", "CLAIM-9300");
+        unknownPointerClaim.put("disposition", "SUPPORTED");
+        unknownPointerClaim.put("reviewText", "");
+        unknownPointerClaim.putArray("contentPaths")
+                .add("/cv/notARealField");
+        unknownPointerClaim.putArray("evidenceIds").add("PROFILE.SKILL.1");
+
+        InvalidLlmResponseException thrown = assertThrows(
+                InvalidLlmResponseException.class,
+                () -> parser.parseDetailed(
+                        objectMapper.writeValueAsString(output),
+                        inlineNarrativeSchema));
+
+        assertTrue(
+                thrown.getMessage().contains("/cv/notARealField"),
+                "the rejection must name the offending pointer: "
+                        + thrown.getMessage());
+    }
+
+    @Test
     void collapsesExactDuplicateBulletsInsideOneNarrativeList()
             throws Exception {
         JsonNode output = inlineNarrativeOutput();
