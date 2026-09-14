@@ -469,9 +469,32 @@ public class LlmResponseParser {
         return removedItems;
     }
 
+    /**
+     * Content paths whose provenance the service projects itself, so an
+     * ordinary claim repeating one is redundant rather than informative.
+     *
+     * <p>The reviewed schema forbids these pointers in {@code claims[]}, and
+     * the prompt states that inline narrative objects and the service own them.
+     * The model nonetheless emits them, so they are pruned here rather than
+     * failing the whole generation on a duplicate that carries no new meaning.
+     *
+     * <p>The cover-letter pointers were originally absent, which made an
+     * otherwise recoverable habit terminal: a model-emitted
+     * {@code /coverLetter/bodyParagraphs/N} survived this prune and then failed
+     * schema validation as "does not satisfy the bounded text policy", losing
+     * the cover letter while the CV in the same operation succeeded. Coverage
+     * is not weakened by pruning, because the projected claims are separately
+     * asserted by requireProjectedCanonicalApplicationClaims and the inline
+     * narrative projection, both of which fail closed when absent.
+     */
     private boolean isInlineNarrativePath(String path) {
         return "/cv/title".equals(path)
                 || "/cv/personalSummary".equals(path)
+                || "/coverLetter/title".equals(path)
+                || "/coverLetter/openingParagraph".equals(path)
+                || "/coverLetter/closingParagraph".equals(path)
+                || path.matches(
+                        "^/coverLetter/bodyParagraphs/[0-9]+(?:/text)?$")
                 || path.matches(
                         "^/cv/coreSkills/[0-9]+/(?:name|evidence)$")
                 || path.matches(
