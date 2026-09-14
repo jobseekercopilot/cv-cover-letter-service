@@ -451,7 +451,8 @@ public class LlmResponseParser {
             Set<String> retainedPaths = new LinkedHashSet<>();
             for (JsonNode path : paths) {
                 String pathValue = path.asText("");
-                if (isInlineNarrativePath(pathValue)) {
+                if (isInlineNarrativePath(pathValue)
+                        || pointsAtAbsentDocument(output, pathValue)) {
                     removedItems++;
                 } else if (retainedPaths.add(pathValue)) {
                     ordinaryPaths.add(path);
@@ -467,6 +468,35 @@ public class LlmResponseParser {
         array.removeAll();
         array.addAll(retained);
         return removedItems;
+    }
+
+    /**
+     * True when a pointer names a document this response does not contain.
+     *
+     * <p>A selected-output generation carries only the requested document.
+     * PromptBuilderService removes the unused one from the schema and narrows
+     * the claim pointer pattern to the remaining document, and the parser fills
+     * the absent document with an explicit null. A pointer into the missing
+     * document therefore cannot resolve to anything: it is dangling by
+     * construction rather than evidence, yet the narrowed pattern rejected the
+     * entire response over it. Dropping it costs no provenance, because there
+     * is no content at that path to be provenance for.
+     *
+     * <p>A paired generation contains both documents, so nothing is pruned
+     * here and that path is unchanged.
+     */
+    boolean pointsAtAbsentDocument(JsonNode output, String path) {
+        if (path.startsWith("/cv/")) {
+            return isAbsent(output.path("cv"));
+        }
+        if (path.startsWith("/coverLetter/")) {
+            return isAbsent(output.path("coverLetter"));
+        }
+        return false;
+    }
+
+    private boolean isAbsent(JsonNode document) {
+        return document.isMissingNode() || document.isNull();
     }
 
     /**
@@ -1494,7 +1524,9 @@ public class LlmResponseParser {
             try {
                 Pattern pattern = Pattern.compile(schema.get("pattern").asText());
                 require(pattern.matcher(value.textValue()).find(),
-                        path, "does not satisfy the bounded text policy");
+                        path,
+                        "does not satisfy the bounded text policy"
+                                + rejectedPointerDetail(path, value));
             } catch (PatternSyntaxException exception) {
                 throw new IllegalStateException(
                         "Generation output schema contains an invalid pattern at " + path,
@@ -1557,6 +1589,22 @@ public class LlmResponseParser {
 
     private String child(String path, String field) {
         return "$".equals(path) ? "$." + field : path + "." + field;
+    }
+
+    /**
+     * Names the offending value when, and only when, it is a claim content
+     * pointer.
+     *
+     * <p>A rejected pointer previously reported its position but not its value,
+     * so diagnosing which path the model emitted required inferring it from the
+     * schema. A contentPaths entry is a structural pointer rather than
+     * candidate prose, so echoing it carries no payload-disclosure risk; every
+     * other patterned string is deliberately excluded for that reason.
+     */
+    private String rejectedPointerDetail(String path, JsonNode value) {
+        return path.matches("^\\$\\.claims\\[[0-9]+\\]\\.contentPaths\\[[0-9]+\\]$")
+                ? " (rejected pointer \"" + value.textValue() + "\")"
+                : "";
     }
 
     private void require(boolean condition, String path, String reason) {
