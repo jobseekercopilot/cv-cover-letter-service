@@ -244,6 +244,77 @@ class LlmResponseParserTest {
     }
 
     @Test
+    void prunesServiceProjectedCoverLetterPointersFromOrdinaryClaims()
+            throws Exception {
+        // The live failure: the model repeats a body-paragraph pointer in
+        // claims[], which the reviewed schema forbids. Before the cover-letter
+        // pointers were pruned this failed schema validation as "does not
+        // satisfy the bounded text policy" on every attempt, losing the cover
+        // letter while the CV in the same operation succeeded.
+        JsonNode output = inlineNarrativeOutput();
+        ((ObjectNode) output.path("cv")).put(
+                "personalSummary",
+                "Software developer who builds reliable Java services. "
+                        + "Applies practical engineering skills to useful products.");
+        addBodyParagraph(output);
+        ObjectNode duplicatePointerClaim =
+                ((ArrayNode) output.path("claims")).addObject();
+        duplicatePointerClaim.put("claimId", "CLAIM-9100");
+        duplicatePointerClaim.put("disposition", "SUPPORTED");
+        duplicatePointerClaim.put("reviewText", "");
+        duplicatePointerClaim.putArray("contentPaths")
+                .add("/coverLetter/bodyParagraphs/0");
+        duplicatePointerClaim.putArray("evidenceIds")
+                .add("PROFILE.SKILL.1");
+
+        GeneratedApplicationDocuments result = parser.parseDetailed(
+                objectMapper.writeValueAsString(output),
+                applicationQualitySchema).documents();
+
+        // Provenance still arrives, projected from the inline narrative object
+        // that legitimately owns the paragraph.
+        assertEquals(
+                List.of("PROFILE.SKILL.1"),
+                claimFor(result, "/coverLetter/bodyParagraphs/0")
+                        .getEvidenceIds());
+    }
+
+    @Test
+    void prunesCoverLetterBookendAndTitlePointersFromOrdinaryClaims()
+            throws Exception {
+        // The bookends and title are projected by the service too, so an
+        // ordinary claim naming them is redundant rather than informative.
+        JsonNode output = inlineNarrativeOutput();
+        ((ObjectNode) output.path("cv")).put(
+                "personalSummary",
+                "Software developer who builds reliable Java services. "
+                        + "Applies practical engineering skills to useful products.");
+        addBodyParagraph(output);
+        for (String path : List.of(
+                "/coverLetter/openingParagraph",
+                "/coverLetter/closingParagraph",
+                "/coverLetter/title")) {
+            ObjectNode claim = ((ArrayNode) output.path("claims")).addObject();
+            claim.put("claimId", "CLAIM-910" + path.length());
+            claim.put("disposition", "SUPPORTED");
+            claim.put("reviewText", "");
+            claim.putArray("contentPaths").add(path);
+            claim.putArray("evidenceIds").add("PROFILE.SKILL.1");
+        }
+
+        GeneratedApplicationDocuments result = parser.parseDetailed(
+                objectMapper.writeValueAsString(output),
+                applicationQualitySchema).documents();
+
+        assertFalse(
+                result.getClaims().stream()
+                        .flatMap(claim -> claim.getContentPaths().stream())
+                        .anyMatch(path -> path.equals("/coverLetter/title")),
+                "a service-projected title pointer must not survive as an "
+                        + "ordinary claim");
+    }
+
+    @Test
     void collapsesExactDuplicateBulletsInsideOneNarrativeList()
             throws Exception {
         JsonNode output = inlineNarrativeOutput();
@@ -1112,6 +1183,17 @@ class LlmResponseParserTest {
                 type,
                 value,
                 false);
+    }
+
+    /** The application-quality schema requires four body paragraphs. */
+    private void addBodyParagraph(JsonNode output) {
+        ObjectNode paragraph = ((ArrayNode) output.at(
+                "/coverLetter/bodyParagraphs")).addObject();
+        paragraph.put(
+                "text",
+                "I would bring careful delivery and clear communication.");
+        paragraph.put("disposition", "REWORDED");
+        paragraph.putArray("evidenceIds").add("PROFILE.SKILL.1");
     }
 
     private JsonNode inlineNarrativeOutput() throws Exception {
